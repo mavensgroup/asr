@@ -1,5 +1,26 @@
 # TODO (ordered; updated each session)
 
+## HANDOFF 2026-10-09 (read first; details in STATUS.md, plan in ROADMAP.md "Real-disorder roadmap")
+**Decision (user):** we build ASR as in AMscf, not KKR-ASA.  AMscf's energy-dependent recursion equals the H^(2) augmented-space recursion
+(E - H(E) = T (E - H^(2)) T), so production disorder = energy-independent augmented-space route (`asr_augsym`, order 2 or 3).
+The exact KKR-ASA energy-dependent code (`asr_pfun`, `potential_function = "exact"`, `kkr_check`) is kept as an ordered-system reference only.
+**Workflow:** code sync via git hub `desktop:~/asr.git` (`asr_sync` / `asr_pull` in env.sh); desktop needs the SRM VPN; heavy runs on the
+desktop in `~/asr_remote4/trial/*`; after module type changes `rm -rf build/ifx_*` (fpm keeps stale objects); never `pkill -f` a pattern that
+matches the ssh command; one process per run directory.
+**State:**
+- Ordered systems validated: EI order 3 fixes CuZn E_F and FeCo Co moment (depth 64); exact KKR-ASA ED == same-model k-space KKR (D0 passed).
+- D2 CuZn disordered, EI order 2, depth 4 rank 1 (trial/d2): converged, positive DOS; 50:50 matches Banerjee 2010 (Zn d 4 mRy, Cu d 21 mRy);
+  concentration trend opposite to that paper, whose Fig. 3 is internally inconsistent (Cu0.75 panel holds +1.04 e below its "E_F").
+- Running at handoff: trial/d2/x{24,50,75}_o3 (order 3, 62099 nodes, ~35-55 its in).
+**Next (in order):**
+1. [ ] Read trial/d2/*_o3 results; compare order 2 vs 3 for the concentration series.
+2. [ ] Second, independent CuZn concentration reference (KKR-CPA literature / own supercell averages) to settle the trend.
+3. [ ] Depth convergence of D2 (depth 5, order 3 cost) and SIM beta check (D3).
+4. [ ] Magnetic disorder on the EI route (D4): FeCo bcc x = 0.5, FeV 50-50 (Chakrabarti & Mookerjee 2005: Fe 1.12, V -0.11 muB).
+5. [ ] Optional: literal AMscf H(E) form as a cross-check (identical G at infinite depth).
+6. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
+
+
 ## Now: finish M4 (own LMTO) in this order
 1. [x] Spin polarisation (collinear) — DONE 2026-10-02: Fe 2.18, Ni 0.64, Cu 0.00 muB (`test_asa_mag`),
        SCF generalised to multiple classes + spin; `test_asa_ag` unchanged. Moments converge to Fe ~2.23, Ni ~0.64

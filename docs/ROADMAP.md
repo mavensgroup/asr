@@ -239,7 +239,7 @@ Multi-component (ternary, HEA), short-range order (Warren-Cowley), off-diagonal 
 | M4 own LMTO | **mostly done for non-magnetic single-atom metals**: radial solver, libxc, atom SCF, potential parameters, ASA SCF reproduce Stuttgart Ag to ~1%. Next: spin polarisation, multi-atom cells + Madelung, Fermi-level integration, TOML wiring |
 | M2 augmented space | binary single-orbital done and exact vs brute force (`test_augspace`); point-group reduction (M3 part) done, ~40x; first disordered terminator study measured. Next: multi-orbital / LMTO augmented Hamiltonian (M5), multi-component + SRO (M7) |
 | M5/M6 alloy SCF | done for the EI route (exact augmented space, D4h reduction, SIM, ordered B2 real-space); ED route: ordered systems validated (FeCo, CuZn, Fe), disordered only at depth 3 |
-| D0-D7 real disorder (ED) | D0 started 2026-10-07 |
+| D0-D7 real disorder | 2026-10-09: decision ASR as in AMscf (EI augmented space; AMscf ED == H^(2)); D0 passed (KKR-ASA reference); D1 pole control dropped; D2 CuZn series run (order 2 done, order 3 running) |
 
 ## Immediate next steps
 See `docs/TODO.md` (ordered list, updated every session).
