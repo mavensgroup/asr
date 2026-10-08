@@ -572,3 +572,16 @@ same-model check `kkr_check = 24` (k-space KKR-ASA, BZ sum of [P(z) - S(k)]^-1 w
 => the earlier "gaps" to our k-space LMTO-ASA (CuZn E_F 10-16 mRy, Fe moment +0.03-0.04) are the LMTO linearisation of the k-space code, not ED errors.
 Exact KKR-ASA values: bcc Fe 2.26 muB; B2 FeCo 2.80 / 1.80; CuZn E_F -0.091 (all-electron LSDA literature: Fe ~2.2, FeCo 2.75 / ~1.75 -- ASA itself
 is ~0.03-0.05 muB high here).  Open: CuZn p-channel convergence (depth_tol / terminator for the wide sp band) -> D1 setup.
+
+## D1 first pass (2026-10-08/09, desktop trial/d1): disordered CuZn, exact ED (exact P + density), sigma 0.7 screening
+| depth/rank | E_F | Cu d / Zn d occ. | Cu d / Zn d peak vs E_F | min real-axis DOS |
+|---|---|---|---|---|
+| 3 / 2 | -0.0236 | 9.64 / 10.06 | -0.183 / -0.599 | -1.9 |
+| 4 / 1 | -0.0425 (not conv., 80 its) | 9.69 / 9.97 | -0.218 / -0.623 | -11.5 |
+| 5 / 1 | -0.0577 | 9.56 / 10.04 | -0.149 / -0.576 | -15.0 |
+Gross over-count gone (old route: Cu d 11.7 e at depth 4), BUT gate failed: negative real-axis DOS growing with depth, real-axis vs contour
+occupations disagree (Cu d 3.06 vs 4.78 per spin at depth 5), E_F not depth-converged (34 mRy), depth-4 SCF unconverged.
+Diagnosis: real pole of the exact P^alpha_d of Zn inside the valence window (~ -0.54 Ry with sigma-0.7 alpha_d).  In augmented space the start
+node carries <P> = x P_A + y P_B, so a truncated chain cannot cancel a single species' pole in lambda_A + mu_A^2 <n g>/x (in the ordered case the
+start site carries the exact P of its species and the cancellation holds).  Next (D1 pole control): choose alpha_l per l (alpha_d <= 0 moves
+the d pole to just above the lower pole of P^0, ~ -2.1 Ry) so that no P^alpha pole of any species lies in [ebot, E_F + 0.3].
