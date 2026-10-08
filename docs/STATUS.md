@@ -589,9 +589,10 @@ the d pole to just above the lower pole of P^0, ~ -2.1 Ry) so that no P^alpha po
 ## Decision 2026-10-09: ASR as in AMscf (not KKR-ASA)
 AMscf's energy-dependent ASR (ASR/main.f90 ap1..ap13, hop_endep.f90): H(E) = E - T(E - E_nu - h)T - T hoh T, T = Delta_c^1/2 Delta^-1/2 (linear
 P(E) = (E - C)/Delta scaled by the central species' Delta, central site fixed to one species, seeds + spline, BP tail).  Since
-E - H(E) = T (E - H^(2)) T, its central-site G equals the H^(2) Green function exactly (only the Lanczos basis differs).  => production disorder
-runs use the energy-independent augmented-space route (exact Delta disorder, species via transition elements); the exact KKR-ASA ED stays an
-ordered-system reference.  D1 pole control is dropped.
+E - H(E) = T (E - H^(2)) T, its central-site G equals the H^(2) Green function exactly (only the Lanczos basis differs).  => the user's decision:
+production = AMscf's energy-dependent ASR in its literal form (to be implemented); the EI augmented-space route and the exact KKR-ASA ED are
+cross-checks/references.  D1 pole control (of the KKR-ASA route) is dropped.  [Correction 2026-10-09: an earlier draft of this entry said
+"production uses the EI route"; that contradicted the user's instruction and was withdrawn.]
 
 ## D2 (2026-10-09, desktop trial/d2): disordered bcc CuZn, EI route, depth 4 rank 1, a = 2.85 A
 | x_Cu | E_F | Zn d / Cu d peak vs E_F (ours) | Banerjee & Mookerjee 2010 Fig. 3 (digitised) | min DOS |

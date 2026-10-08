@@ -1,25 +1,30 @@
 # TODO (ordered; updated each session)
 
 ## HANDOFF 2026-10-09 (read first; details in STATUS.md, plan in ROADMAP.md "Real-disorder roadmap")
-**Decision (user):** we build ASR as in AMscf, not KKR-ASA.  AMscf's energy-dependent recursion equals the H^(2) augmented-space recursion
-(E - H(E) = T (E - H^(2)) T), so production disorder = energy-independent augmented-space route (`asr_augsym`, order 2 or 3).
-The exact KKR-ASA energy-dependent code (`asr_pfun`, `potential_function = "exact"`, `kkr_check`) is kept as an ordered-system reference only.
+**Decision (user, explicit and repeated):** the production method is the ENERGY-DEPENDENT ASR in the AMscf sense, implemented in AMscf's literal
+form.  Not KKR-ASA, and NOT the energy-independent route (do not substitute it on equivalence grounds; ask first if a shortcut seems justified).
+AMscf form (ASR/main.f90 ap1..ap13, ASR/hop_endep.f90): for central species c, H(E) = E - T(E - E_nu - h)T - T hoh T, T = Delta_c^1/2 Delta^-1/2:
+linear P(E) = (E - C)/Delta, structure constants Delta_c^1/2 S Delta_c^1/2 (non-random), disorder only in the site-diagonal E-dependent term
+(and in the scaled o), central site fixed to species c, one recursion per species, G_c(E) = <1|(E - H(E))^-1|1>.
+Cross-checks only: EI H^(2)/H^(3) augmented-space route (E - H(E) = T (E - H^(2)) T, so identical G at infinite depth) and the exact KKR-ASA code
+(`asr_pfun`, `potential_function = "exact"`, `kkr_check`).
 **Workflow:** code sync via git hub `desktop:~/asr.git` (`asr_sync` / `asr_pull` in env.sh); desktop needs the SRM VPN; heavy runs on the
 desktop in `~/asr_remote4/trial/*`; after module type changes `rm -rf build/ifx_*` (fpm keeps stale objects); never `pkill -f` a pattern that
 matches the ssh command; one process per run directory.
 **State:**
 - Ordered systems validated: EI order 3 fixes CuZn E_F and FeCo Co moment (depth 64); exact KKR-ASA ED == same-model k-space KKR (D0 passed).
-- D2 CuZn disordered, EI order 2, depth 4 rank 1 (trial/d2): converged, positive DOS; 50:50 matches Banerjee 2010 (Zn d 4 mRy, Cu d 21 mRy);
-  concentration trend opposite to that paper, whose Fig. 3 is internally inconsistent (Cu0.75 panel holds +1.04 e below its "E_F").
-- Running at handoff: trial/d2/x{24,50,75}_o3 (order 3, 62099 nodes, ~35-55 its in).
+- Cross-check data for D2 (EI order 2, CuZn bcc, depth 4 rank 1, trial/d2): 50:50 matches Banerjee 2010 (Zn d 4 mRy, Cu d 21 mRy); the
+  concentration trend is opposite to that paper, whose Fig. 3 is internally inconsistent (Cu0.75 panel holds +1.04 e below its "E_F").
+  EI order-3 runs trial/d2/x{24,50,75}_o3 were running at handoff (cross-check only).
 **Next (in order):**
-1. [ ] Read trial/d2/*_o3 results; compare order 2 vs 3 for the concentration series.
-2. [ ] Second, independent CuZn concentration reference (KKR-CPA literature / own supercell averages) to settle the trend.
-3. [ ] Depth convergence of D2 (depth 5, order 3 cost) and SIM beta check (D3).
-4. [ ] Magnetic disorder on the EI route (D4): FeCo bcc x = 0.5, FeV 50-50 (Chakrabarti & Mookerjee 2005: Fe 1.12, V -0.11 muB).
-5. [ ] Optional: literal AMscf H(E) form as a cross-check (identical G at infinite depth).
-6. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
-
+1. [ ] Implement the AMscf energy-dependent ASR in the augmented-space operator: central site fixed to species c (non-flippable start site),
+       Delta_c-scaled non-random S, site-diagonal E-dependent random term E(1 - Delta_c/Delta) + Delta_c C/Delta, scaled o term (-T hoh T);
+       complex-symmetric Lanczos per contour energy (as in asr_endep) or AMscf's real seeds + spline; one recursion per species and orbital.
+2. [ ] Gates: ordered limit == ordered ED/EI; disordered CuZn vs the EI cross-check at the same depth (equal at infinite depth; compare depth
+       convergence and node counts); positive DOS; sum rules.
+3. [ ] Production D2 on the AMscf ED route: CuZn x = 0.24 / 0.5 / 0.75; second independent concentration reference (KKR-CPA / supercells).
+4. [ ] D3 electrostatics (SIM beta), D4 magnetic disorder (FeCo, FeV: Chakrabarti & Mookerjee 2005 Fe 1.12, V -0.11 muB) on the AMscf ED route.
+5. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
 
 ## Now: finish M4 (own LMTO) in this order
 1. [x] Spin polarisation (collinear) — DONE 2026-10-02: Fe 2.18, Ni 0.64, Cu 0.00 muB (`test_asa_mag`),
