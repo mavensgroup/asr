@@ -16,7 +16,7 @@ module asr_augorb
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state, toggled, is_down
   implicit none
   private
-  public :: orb_alloy_t, augorb_op, build_augorb_operator, augorb_set_params, augorb_hph
+  public :: orb_alloy_t, augorb_op, build_augorb_operator, augorb_set_params, augorb_hph, augorb_freeze_site
 
   type :: orb_alloy_t
     integer :: nl = 1
@@ -34,12 +34,13 @@ module asr_augorb
     real(dp), allocatable :: c0(:), c1(:), d0(:), d1(:), o0(:), o1(:), e0(:), e1(:), block(:, :, :), block0(:, :)
     real(dp), allocatable :: p0(:), p1(:)               !! p^gamma (order 3)
     integer :: order = 2                                !! 2: E + h - hoh;  3: + hohoh - (hphh + hhph)/2
-    integer, allocatable :: flip(:), hop(:, :), level(:)
+    integer, allocatable :: flip(:), hop(:, :), level(:), site(:)
     real(dp), allocatable :: md(:)                     !! diagonal part of M_R on each node (x or y)
     real(dp), pointer :: wk(:, :) => null()            !! work space (n, 6), allocated once (apply is not thread-safe across calls)
   contains
     procedure :: apply => augorb_apply
     procedure :: dim => augorb_dim
+    procedure :: mapply => augorb_mapply
   end type augorb_op
 
 contains
@@ -73,6 +74,31 @@ contains
       y = y + self%wk(:, 7)
     end if
   end subroutine augorb_apply
+
+  !> y = M x  (the configuration operator n_R -> M_R at every node, no parameters)
+  subroutine augorb_mapply(self, x, y)
+    class(augorb_op), intent(in) :: self
+    real(dp), intent(in) :: x(:)
+    real(dp), intent(out) :: y(:)
+    real(dp) :: z9(self%nl), o9(self%nl)
+    z9 = 0.0_dp; o9 = 1.0_dp
+    call apply_rand(self, z9, o9, x, y)
+  end subroutine augorb_mapply
+
+  !> Freeze `site` to a definite species: M_R -> mc (1 = A, 0 = B) on every node of that site.  The site must not have been
+  !> flippable when the node set was built (flippable(site) = .false.), so that no node carries a flip of it.
+  subroutine augorb_freeze_site(op, site, mc)
+    type(augorb_op), intent(inout) :: op
+    integer, intent(in) :: site
+    real(dp), intent(in) :: mc
+    integer :: i
+    do i = 1, op%nn
+      if (op%site(i) == site) then
+        if (op%flip(i) /= 0) error stop 'augorb_freeze_site: the frozen site was flippable'
+        op%md(i) = mc
+      end if
+    end do
+  end subroutine augorb_freeze_site
 
   !> y = h p h x (p = p^gamma): overlap term, for the sphere-charge start vector (1 - h p h / 2)|L>
   subroutine augorb_hph(self, x, y)
@@ -213,7 +239,7 @@ contains
     op%nn = st%n; op%nl = mdl%nl; op%x = mdl%x; op%y = 1.0_dp - mdl%x; op%s = sqrt(mdl%x * (1.0_dp - mdl%x))
     ns = maxval(g%nbr_ptr(2:g%n + 1) - g%nbr_ptr(1:g%n))
     op%nslot = ns
-    allocate (op%flip(st%n), op%hop(ns, st%n), op%md(st%n), op%level(st%n))
+    allocate (op%flip(st%n), op%hop(ns, st%n), op%md(st%n), op%level(st%n), op%site(st%n))
     op%flip = 0; op%hop = 0
     op%c0 = mdl%c0; op%c1 = mdl%c1; op%d0 = mdl%d0; op%d1 = mdl%d1; op%o0 = mdl%o0; op%o1 = mdl%o1; op%e0 = mdl%e0; op%e1 = mdl%e1
     allocate (op%p0(mdl%nl), op%p1(mdl%nl)); op%p0 = 0.0_dp; op%p1 = 0.0_dp
@@ -226,7 +252,7 @@ contains
     do i = 1, st%n
       r = st%site(i)
       c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      op%level(i) = st%level(i)
+      op%level(i) = st%level(i); op%site(i) = r
       op%md(i) = op%x; if (is_down(c0, r)) op%md(i) = op%y
       if (canflip(r)) then
         tmp = toggled(c0, r)

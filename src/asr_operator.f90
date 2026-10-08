@@ -11,6 +11,7 @@ module asr_operator
   contains
     procedure(apply_if), deferred :: apply   ! y = H x
     procedure(dim_if),   deferred :: dim
+    procedure :: mapply => linop_mapply          ! y = M x, the configuration projector (augmented-space operators only)
   end type linop
 
   abstract interface
@@ -37,6 +38,14 @@ module asr_operator
   end type csr_op
 
 contains
+
+  subroutine linop_mapply(self, x, y)
+    class(linop), intent(in) :: self
+    real(dp), intent(in)  :: x(:)
+    real(dp), intent(out) :: y(:)
+    y = 0.0_dp
+    error stop 'linop%mapply: not an augmented-space operator'
+  end subroutine linop_mapply
 
   subroutine csr_apply(self, x, y)
     class(csr_op), intent(in) :: self

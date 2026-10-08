@@ -143,7 +143,8 @@ contains
     call get_value(child, 'density', dns, 'expand'); inp%ai%density = dns
     call get_value(child, 'symmetry', inp%ai%symmetry, .true.)
     call get_value(child, 'hamiltonian', hamil, 'energy-independent')
-    inp%ai%energy_dependent = (hamil == 'energy-dependent')
+    inp%ai%energy_dependent = (hamil == 'energy-dependent' .or. hamil == 'amscf')
+    inp%ai%ed_amscf = (hamil == 'amscf')
 
     call section(table, 'dos', child)
     call check_keys(child, ['emin   ', 'emax   ', 'npoints', 'eta    '], '[dos]', msg); if (len(msg) > 0) return
@@ -175,7 +176,7 @@ contains
     if (trm /= 'avg2' .and. trm /= 'bp') msg = "[asr] terminator must be 'avg2' or 'bp'"
     if (dns /= 'expand' .and. dns /= 'stuttgart') msg = "[asr] density must be 'expand' or 'stuttgart'"
     if (scr /= 'standard' .and. scr /= 'hardcore' .and. scr /= 'auto') msg = "[asr] screening must be 'auto', 'standard' or 'hardcore'"
-    if (hamil /= 'energy-dependent' .and. hamil /= 'energy-independent') msg = "[asr] hamiltonian must be 'energy-dependent' or 'energy-independent'"
+    if (hamil /= 'energy-dependent' .and. hamil /= 'energy-independent' .and. hamil /= 'amscf') msg = "[asr] hamiltonian must be 'energy-dependent', 'energy-independent' or 'amscf'"
     if (inp%ai%energy_dependent .and. .not. inp%ai%ordered .and. .not. inp%ai%symmetry) msg = '[asr] energy-dependent recursion needs symmetry = true'
   end subroutine read_alloy_input
 

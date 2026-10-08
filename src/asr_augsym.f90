@@ -13,7 +13,7 @@ module asr_augsym
   use asr_augorb, only: orb_alloy_t
   implicit none
   private
-  public :: augsym_op, build_augsym_operator, augsym_set_params, augsym_set_start, augsym_ops, augsym_hph
+  public :: augsym_op, build_augsym_operator, augsym_set_params, augsym_set_start, augsym_ops, augsym_hph, augsym_freeze_site
 
   integer, parameter :: nop = 16
 
@@ -24,7 +24,7 @@ module asr_augsym
     real(dp), allocatable :: p0(:), p1(:)               !! p^gamma (order 3)
     integer :: order = 2                                !! 2: E + h - hoh;  3: + hohoh - (hphh + hhph)/2
     real(dp), allocatable :: btab(:, :, :, :)           !! btab(l, l2, slot, g): S block times D(g)^T (chi applied at run time)
-    integer, allocatable :: flipr(:), flipg(:), hopr(:, :), hopg(:, :), level(:)
+    integer, allocatable :: flipr(:), flipg(:), hopr(:, :), hopg(:, :), level(:), site(:)
     real(dp), allocatable :: md(:), norb(:), sq(:)
     integer :: pi(9, nop), start_l = 1
     real(dp) :: sg(9, nop), chi(nop)
@@ -32,6 +32,7 @@ module asr_augsym
   contains
     procedure :: apply => augsym_apply
     procedure :: dim => augsym_dim
+    procedure :: mapply => augsym_mapply
   end type augsym_op
 
 contains
@@ -106,6 +107,42 @@ contains
     end do
     !$omp end parallel do
   end subroutine augsym_apply
+
+  !> y = M x in normalised coordinates (configuration operator at every node)
+  subroutine augsym_mapply(self, x, y)
+    class(augsym_op), intent(in) :: self
+    real(dp), intent(in) :: x(:)
+    real(dp), intent(out) :: y(:)
+    real(dp), parameter :: z9(9) = 0.0_dp, o9(9) = 1.0_dp
+    integer :: i, l
+    if (.not. associated(self%wk)) error stop 'augsym_mapply: work space not allocated'
+    !$omp parallel do private(l)
+    do i = 1, self%nn
+      do l = 1, 9; self%wk(9 * (i - 1) + l, 7) = x(9 * (i - 1) + l) / self%sq(i); end do
+    end do
+    !$omp end parallel do
+    call apply_rand(self, z9, o9, self%wk(:, 7), self%wk(:, 1))
+    !$omp parallel do private(l)
+    do i = 1, self%nn
+      do l = 1, 9; y(9 * (i - 1) + l) = self%sq(i) * self%wk(9 * (i - 1) + l, 1); end do
+    end do
+    !$omp end parallel do
+  end subroutine augsym_mapply
+
+  !> Freeze `site` (invariant under the group, e.g. the start site) to a definite species: M_R -> mc (1 = A, 0 = B).
+  !> The site must not have been flippable when the node set was built.
+  subroutine augsym_freeze_site(op, site, mc)
+    type(augsym_op), intent(inout) :: op
+    integer, intent(in) :: site
+    real(dp), intent(in) :: mc
+    integer :: i
+    do i = 1, op%nn
+      if (op%site(i) == site) then
+        if (op%flipr(i) /= 0) error stop 'augsym_freeze_site: the frozen site was flippable'
+        op%md(i) = mc
+      end if
+    end do
+  end subroutine augsym_freeze_site
 
   !> y = h p h x (normalised coordinates; p = p^gamma): the overlap term of the third-order Hamiltonian, used for the
   !> sphere-charge start vector (1 - h p h / 2)|L>.
@@ -373,7 +410,7 @@ contains
     ! ---- tables
     op%nn = st%n; op%nl = 9; op%x = mdl%x; op%y = 1.0_dp - mdl%x; op%s = sqrt(mdl%x * (1.0_dp - mdl%x))
     ns = maxval(g%nbr_ptr(2:g%n + 1) - g%nbr_ptr(1:g%n)); op%nslot = ns
-    allocate (op%flipr(st%n), op%flipg(st%n), op%hopr(ns, st%n), op%hopg(ns, st%n), op%md(st%n), op%level(st%n), op%norb(st%n), op%sq(st%n))
+    allocate (op%flipr(st%n), op%flipg(st%n), op%hopr(ns, st%n), op%hopg(ns, st%n), op%md(st%n), op%level(st%n), op%norb(st%n), op%sq(st%n), op%site(st%n))
     op%flipr = 0; op%flipg = 1; op%hopr = 0; op%hopg = 1
     op%c0 = mdl%c0; op%c1 = mdl%c1; op%d0 = mdl%d0; op%d1 = mdl%d1; op%o0 = mdl%o0; op%o1 = mdl%o1; op%e0 = mdl%e0; op%e1 = mdl%e1
     allocate (op%p0(9), op%p1(9)); op%p0 = 0.0_dp; op%p1 = 0.0_dp
@@ -407,7 +444,7 @@ contains
     do i = 1, st%n
       r = st%site(i)
       c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      op%level(i) = st%level(i); op%norb(i) = real(st%orb(i), dp); op%sq(i) = sqrt(op%norb(i))
+      op%level(i) = st%level(i); op%norb(i) = real(st%orb(i), dp); op%sq(i) = sqrt(op%norb(i)); op%site(i) = r
       op%md(i) = op%x; if (is_down(c0, r)) op%md(i) = op%y
       if (canflip(r)) then
         c1 = toggled(c0, r)

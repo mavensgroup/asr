@@ -14,7 +14,7 @@ module asr_endep
   implicit none
   private
   public :: ed_params_t, ed_work_t, ed_functions, ed_species_green, ed_work_init, ed_ordered_green
-  public :: ed_depth_tol, ed_nchain, ed_nlev
+  public :: ed_depth_tol, ed_nchain, ed_nlev, cf_species
 
   !> adaptive depth: from level 8, every 4 levels, stop when the terminated Green function changes by less than ed_depth_tol
   !> (relative); 0 = always use the full depth.  ed_nchain / ed_nlev count chains and levels used (statistics).
