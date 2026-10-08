@@ -1,0 +1,36 @@
+# Ferromagnetic bcc Fe (collinear), generated from scratch.
+[calculation]
+name = "bcc Fe"
+kind = "lmto"
+
+[structure]
+lattice = "bcc"
+alat = 2.8665
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[scf]
+spin = 2
+zeta0 = 0.4              # initial spin polarisation (seed)
+xc = "vbh"
+nk = 16
+bz = "tetra"
+mixing = 0.3
+tolerance = 1.0e-5
+max_iterations = 200
+
+[dos]
+emin = -0.9
+emax = 0.8
+npoints = 801
+smear = 0.01
+nk = 24
+
+[output]
+dos_file = "fe_bcc_dos.dat"
+params_file = "fe_bcc_params.dat"

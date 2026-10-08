@@ -1,0 +1,45 @@
+# Disordered bcc Cu50Zn50 from the augmented-space recursion (own LMTO parameters, self-consistent).
+[calculation]
+name = "CuZn bcc alloy"
+kind = "alloy"
+
+[structure]
+lattice = "bcc"
+alat = 2.85              # Angstrom
+
+[[species]]
+symbol = "Cu"
+z = 29
+nval = 11
+konfig = [4, 4, 3, 4]
+occupations = [1.0, 10.0]
+concentration = 0.5
+
+[[species]]
+symbol = "Zn"
+z = 30
+nval = 12
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 10.0]
+
+[scf]
+spin = 1
+xc = "vbh"
+sim_beta = 0.7
+max_iterations = 60
+
+[asr]
+levels = 3               # Lanczos levels (depth); convergence must be checked
+rank = 2                 # max flipped sites per augmented-space state
+supercell = 8            # ASR graph size in conventional cells
+symmetry = true          # exact D4h reduction
+hamiltonian = "energy-independent"   # or "energy-dependent" (P(z)-S recursion per complex energy; see example/cuzn_alloy_ed.toml)
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 801
+eta = 0.02
+
+[output]
+dos_file = "cuzn_alloy_dos.dat"

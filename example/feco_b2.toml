@@ -1,0 +1,44 @@
+# Ordered B2 FeCo, ferromagnetic (collinear), first trial of the multi-class spin SCF
+[calculation]
+name = "B2 FeCo FM"
+kind = "lmto"
+
+[structure]
+lattice = "b2"
+alat = 2.857             # Angstrom
+ratio = 1.0
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Co"
+z = 27
+nval = 9
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 7.0]
+
+[scf]
+spin = 2
+xc = "vbh"
+nk = 16
+bz = "tetra"
+mixing = 0.2
+tolerance = 1.0e-6
+max_iterations = 150
+zeta0 = 0.1
+
+[dos]
+emin = -0.9
+emax = 0.6
+npoints = 601
+smear = 0.01
+nk = 24
+
+[output]
+dos_file = "feco_dos.dat"
+params_file = "feco_params.dat"

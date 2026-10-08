@@ -1,0 +1,25 @@
+# Ordered fcc nearest-neighbour single-band model (hopping in units of t).
+# Run from anywhere:   asr example/fcc_ordered.toml
+# Output is written next to this file.
+[calculation]
+name = "fcc NN s-band"
+kind = "model"
+
+[structure]
+lattice = "fcc"
+
+[model]
+hopping = 1.0
+
+[recursion]
+nlevels = 40
+terminator = "sqrt-avg2"
+
+[dos]
+emin = -14.0
+emax = 14.0
+eta = 0.05
+npoints = 801
+
+[output]
+dos_file = "fcc_ordered_dos.dat"
