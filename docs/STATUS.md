@@ -585,3 +585,22 @@ Diagnosis: real pole of the exact P^alpha_d of Zn inside the valence window (~ -
 node carries <P> = x P_A + y P_B, so a truncated chain cannot cancel a single species' pole in lambda_A + mu_A^2 <n g>/x (in the ordered case the
 start site carries the exact P of its species and the cancellation holds).  Next (D1 pole control): choose alpha_l per l (alpha_d <= 0 moves
 the d pole to just above the lower pole of P^0, ~ -2.1 Ry) so that no P^alpha pole of any species lies in [ebot, E_F + 0.3].
+
+## Decision 2026-10-09: ASR as in AMscf (not KKR-ASA)
+AMscf's energy-dependent ASR (ASR/main.f90 ap1..ap13, hop_endep.f90): H(E) = E - T(E - E_nu - h)T - T hoh T, T = Delta_c^1/2 Delta^-1/2 (linear
+P(E) = (E - C)/Delta scaled by the central species' Delta, central site fixed to one species, seeds + spline, BP tail).  Since
+E - H(E) = T (E - H^(2)) T, its central-site G equals the H^(2) Green function exactly (only the Lanczos basis differs).  => production disorder
+runs use the energy-independent augmented-space route (exact Delta disorder, species via transition elements); the exact KKR-ASA ED stays an
+ordered-system reference.  D1 pole control is dropped.
+
+## D2 (2026-10-09, desktop trial/d2): disordered bcc CuZn, EI route, depth 4 rank 1, a = 2.85 A
+| x_Cu | E_F | Zn d / Cu d peak vs E_F (ours) | Banerjee & Mookerjee 2010 Fig. 3 (digitised) | min DOS |
+|---|---|---|---|---|
+| 0.24 | 0.0922 | -0.750 / -0.444 | -0.579 / -0.224 | 0.505 |
+| 0.50 | 0.0220 | -0.686 / -0.330 | -0.682 / -0.309 | 0.406 |
+| 0.75 | -0.0413 | -0.621 / -0.261 | -0.790 / -0.387 | 0.271 |
+Panel labels checked (caption: left Cu0.24Zn0.76, middle Cu0.5Zn0.5, right Cu0.75Zn0.25; the Cu0.24 panel has the big deep Zn-d peak).  But the
+published DOS integrated to E = 0 gives 11.57 / 11.68 / 12.29 electrons vs 11.76 / 11.50 / 11.25: the Cu0.75 panel is +1.04 e off, so its energy
+zero is not E_F and its peaks are too deep.  Our trend (Zn-rich -> d bands deeper below E_F) is the rigid-band expectation; at 50:50 (reference
+electron count +0.18) we agree to 4 / 21 mRy.  The concentration trend is not a gate against this figure; needs a second reference (KKR-CPA).
+Order-3 runs (same inputs) pending: node generation over three-hop paths is slow (single-threaded).
