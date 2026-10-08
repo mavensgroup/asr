@@ -45,3 +45,10 @@ Outputs are written next to the input file. Input is one validated TOML record; 
 ## Conventions
 Rydberg atomic units; `alat` in Å in inputs, Bohr internally; orbital order s, p(y,z,x), d(xy,yz,3z²−r²,xz,x²−y²).
 Stuttgart (AMscf) and Questaal are reference *code* only — no numbers from them are used as inputs.
+
+## Machines and code sync
+Heavy runs go to the desktop (`ssh desktop`, needs the SRM VPN: `nmcli con up id "SRM"`).  Code moves only through git:
+the bare hub `desktop:~/asr.git` (remote `hub`) is shared by this checkout and the desktop working copy `~/asr_remote4`.
+Commit, then `asr_sync` (laptop -> hub -> desktop fast-forward) or `asr_pull` (fetch commits made on the other side).
+The desktop working copy must stay clean (commit there before syncing); run outputs live in the ignored `trial/`.
+
