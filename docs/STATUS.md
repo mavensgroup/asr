@@ -605,3 +605,25 @@ published DOS integrated to E = 0 gives 11.57 / 11.68 / 12.29 electrons vs 11.76
 zero is not E_F and its peaks are too deep.  Our trend (Zn-rich -> d bands deeper below E_F) is the rigid-band expectation; at 50:50 (reference
 electron count +0.18) we agree to 4 / 21 mRy.  The concentration trend is not a gate against this figure; needs a second reference (KKR-CPA).
 Order-3 runs (same inputs) pending: node generation over three-hop paths is slow (single-threaded).
+
+## AMscf-form energy-dependent ASR implemented (2026-10-09): asr_edam, `hamiltonian = "amscf"`
+Operator (AMscf ap1..ap13 in our augmented space): for central species c (start site frozen, non-flippable, M_R -> 1 or 0 there; one operator and one
+recursion per species and start orbital) H(E) = [E - D_c (E - E_nu,R)/D_R] + h' - h' q h', h' = g + S', S' = D_c^1/2 S D_c^1/2 (non-random),
+g_R = (D_c/D_R)(C_R - E_nu,R), q_R = o_R D_R/D_c (D = Delta^alpha).  It is the existing H^(2)-type operator with c -> g, d -> sqrt(D_c), o -> q and the E_nu term replaced
+by the complex E-dependent diagonal; the real part is applied to Re/Im of the Lanczos vector, the diagonal through M (`linop%mapply`);
+complex-symmetric chain per contour energy, eigenvalue-hull tail (`cf_species`).  G_c(E) = <1|(E - H(E))^-1|1> is used directly (no lambda/mu) in the
+EI moment formulas.  Default screening for `amscf` = standard TB-LMTO alpha (the form has no P^alpha poles).  Code: src/asr_edam.f90,
+`augorb/augsym_freeze_site`, `alloy_input_t%ed_amscf`; example/cuzn_alloy_amscf.toml.
+Gates (all pass): test_edam (ring, 9 orbitals, exact configuration average of [E-H(E)]^-1_00 for both central species == dense H(E) == dense
+[E-H^(2)]^-1_00 to 1e-15, i.e. E - H(E) = T(E - H^(2))T with T_c = 1); test_edam_sym (D4h-reduced == unreduced chain 2e-11, fcc 94702 -> 6843
+nodes; ordered limit A = B: ED chain == H^(2) chain 5e-14); sum rule M0(E_F = 6 Ry) = 1.0000 for all l, both species.  Desktop: clean rebuild, all 39 test
+programs pass.
+First production point (desktop trial/amscf/x50_l4r1; bcc Cu50Zn50, a = 2.85 A, levels 4, rank 1, supercell 8, 32 contour points; 14.5 min, 39 its,
+17515 nodes) vs the EI cross-check at the same depth (trial/d2/x50_o2, order 2):
+| | E_F (Ry) | qnet Cu | Cu d / Zn d C (Ry) | d-peak vs E_F Zn / Cu | min DOS |
+|---|---|---|---|---|---|
+| AMscf ED | 0.0145 | +0.044 | -0.254 / -0.677 | -0.728 / -0.278 | 0.48 |
+| EI order 2 | 0.0220 | +0.029 | -0.279 / -0.641 | -0.686 / -0.330 | 0.41 |
+DOS positive everywhere.  Banerjee-Mookerjee 2010 (50:50): Zn d -0.682, Cu d -0.309 vs E_F; Zn d C -0.677 vs their -0.682.  The two routes are equal at
+infinite depth, not at depth 4: differences here are depth/rank-1 truncation (the ED peaks are broader/lower: Zn d 47 vs 70 states/Ry).
+Open: depth convergence (levels 5-6, rank 2) of both routes at x = 0.5; then x = 0.24 / 0.75.
