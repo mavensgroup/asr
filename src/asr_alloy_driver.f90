@@ -143,8 +143,8 @@ contains
     call get_value(child, 'density', dns, 'expand'); inp%ai%density = dns
     call get_value(child, 'symmetry', inp%ai%symmetry, .true.)
     call get_value(child, 'hamiltonian', hamil, 'energy-independent')
-    inp%ai%energy_dependent = (hamil == 'energy-dependent' .or. hamil == 'amscf')
-    inp%ai%ed_amscf = (hamil == 'amscf')
+    inp%ai%energy_dependent = (hamil == 'energy-dependent' .or. hamil == 'asr_ed')
+    inp%ai%ed_asr = (hamil == 'asr_ed')
 
     call section(table, 'dos', child)
     call check_keys(child, ['emin   ', 'emax   ', 'npoints', 'eta    '], '[dos]', msg); if (len(msg) > 0) return
@@ -176,7 +176,7 @@ contains
     if (trm /= 'avg2' .and. trm /= 'bp') msg = "[asr] terminator must be 'avg2' or 'bp'"
     if (dns /= 'expand' .and. dns /= 'stuttgart') msg = "[asr] density must be 'expand' or 'stuttgart'"
     if (scr /= 'standard' .and. scr /= 'hardcore' .and. scr /= 'auto') msg = "[asr] screening must be 'auto', 'standard' or 'hardcore'"
-    if (hamil /= 'energy-dependent' .and. hamil /= 'energy-independent' .and. hamil /= 'amscf') msg = "[asr] hamiltonian must be 'energy-dependent', 'energy-independent' or 'amscf'"
+    if (hamil /= 'energy-dependent' .and. hamil /= 'energy-independent' .and. hamil /= 'asr_ed') msg = "[asr] hamiltonian must be 'energy-dependent', 'energy-independent' or 'asr_ed'"
     if (inp%ai%energy_dependent .and. .not. inp%ai%ordered .and. .not. inp%ai%symmetry) msg = '[asr] energy-dependent recursion needs symmetry = true'
   end subroutine read_alloy_input
 
@@ -265,7 +265,7 @@ contains
     else
       write (ru, '(a,f7.4,a,f7.4)') '  concentration  x_A = ', x, '   x_B = ', 1.0_dp - x
     end if
-    write (ru, '(a,a,a,i0,a,i0,a,i0)') '  recursion      ', merge('energy-dependent  ', 'energy-independent', res%ed), '   levels=', inp%ai%nlevels, &
+    write (ru, '(a,a,a,i0,a,i0,a,i0)') '  recursion      ', merge(merge('energy-dependent (asr_ed)', 'energy-dependent         ', inp%ai%ed_asr), 'energy-independent       ', res%ed), '   levels=', inp%ai%nlevels, &
       '  max rank=', inp%ai%maxrank, '  supercell=', inp%ai%lsuper
     if (.not. res%ed) write (ru, '(a,i0,a)') '  Hamiltonian    orthonormal ASA expanded to order ', inp%ai%order, ' in h (2: E_nu + h - hoh; 3: + hohoh - (hphh + hhph)/2)'
     write (ru, '(a,a,a,3f9.5,a,f6.3,a,f6.3)') '  screening      ', trim(inp%ai%screening), '  alpha(s,p,d)=', alloy_alpha(inp%ai), &

@@ -35,7 +35,7 @@ rank = 2
 supercell = 8
 contour_points = 32
 symmetry = true          # exact D4h reduction
-hamiltonian = "amscf"   # AMscf H(E) = E - T(E - E_nu - h)T - T hoh T, one recursion per central species
+hamiltonian = "asr_ed"   # energy-dependent ASR, AMscf form H(E) = E - T(E - E_nu - h)T - T hoh T, one recursion per central species
 
 [dos]
 emin = -0.9
@@ -44,4 +44,4 @@ npoints = 201
 eta = 0.02
 
 [output]
-dos_file = "cuzn_alloy_amscf_dos.dat"
+dos_file = "cuzn_alloy_asr_ed_dos.dat"

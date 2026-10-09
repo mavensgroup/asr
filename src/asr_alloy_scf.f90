@@ -24,7 +24,7 @@ module asr_alloy_scf
   use asr_augorb
   use asr_augsym
   use asr_endep
-  use asr_edam
+  use asr_ed
   use asr_pfun, only: pfun_exact
   use asr_symmetry, only: d4h_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, set_alloy_params
@@ -59,7 +59,7 @@ module asr_alloy_scf
     logical :: symmetry = .true.                !! D4h point-group reduction of the augmented space (exact)
     logical :: ordered = .false.                !! ordered B2 on the bcc graph (A even / B odd sublattice): real-space recursion, no augmented space, exact Madelung
     logical :: energy_dependent = .false.       !! recursion on P(z) - S per complex energy (needs symmetry = true)
-    logical :: ed_amscf = .false.               !! with energy_dependent: AMscf's literal form H(E) = E - T(E - E_nu - h)T - T hoh T (asr_edam), one
+    logical :: ed_asr = .false.               !! with energy_dependent: AMscf's literal form H(E) = E - T(E - E_nu - h)T - T hoh T (asr_ed), one
                                                  !! recursion per central species, start site frozen; default screening = standard
     real(dp) :: ed_eta = 0.01_dp                  !! energy-dependent route: the contour arc ends at Im z = ed_eta
     logical :: ed_scan = .false.                !! diagnostic: print N(E_F) on a grid in iteration 1, then stop
@@ -170,8 +170,8 @@ contains
     type(orb_alloy_t) :: mdl
     type(augorb_op) :: op
     type(augsym_op) :: sop, sopc(2)
-    type(edam_t) :: edm(2)
-    logical :: amscf
+    type(asr_ed_t) :: edp_c(2)
+    logical :: asr_ed
     integer, allocatable :: perm(:, :), mats(:, :, :)
     real(dp), allocatable :: dmat(:, :, :)
     integer :: nd, nnodes, flip1, nfe, jf
@@ -218,10 +218,10 @@ contains
     nelec = xs(1) * real(inp%spec(1)%nval, dp) + xs(2) * real(inp%spec(2)%nval, dp)
     nlev = inp%nlevels
     ed = inp%energy_dependent
-    amscf = ed .and. inp%ed_amscf
+    asr_ed = ed .and. inp%ed_asr
     omm = 0
     if (ed .and. .not. ordered .and. .not. inp%symmetry) error stop 'alloy_scf: energy_dependent requires symmetry = .true.'
-    if (amscf .and. (ordered .or. inp%ed_exact)) error stop 'alloy_scf: the AMscf form is for the disordered alloy with parametrised potential functions'
+    if (asr_ed .and. (ordered .or. inp%ed_exact)) error stop 'alloy_scf: the AMscf form is for the disordered alloy with parametrised potential functions'
     do i = 1, 9; alpha9(i) = alpha(lorb9(i)); end do
     call xc_init(xf, inp%xc)
     ! ---- meshes and atomic starts
@@ -268,7 +268,7 @@ contains
     if (inp%symmetry) then
       call d4h_ops(coord, 2 * inp%lsuper, perm, mats)
       call orbital_rep(mats, dmat)
-      if (amscf) then                                  ! one operator per central species, start site frozen (not flippable)
+      if (asr_ed) then                                  ! one operator per central species, start site frozen (not flippable)
         flippable(1) = .false.
         do i = 1, 2
           call build_augsym_operator(g, mdl, perm, dmat, 1, nlev, sopc(i), inp%maxrank, flippable, order=2)
@@ -608,16 +608,16 @@ contains
       if (dens) then; allocate (ph(nmax, 0:2, 2), ts(nmax, 0:2, 2)); rhov = 0.0_dp; end if
       mo = 0.0_dp; dosv = 0.0_dp
       do gg = 1, nsp
-        if (amscf) call amscf_prepare(gg)
+        if (asr_ed) call asr_ed_prepare(gg)
         do j = 1, nq + 1
           z = zq(j)
           if (exact_now) call set_exact(z, gg, dens .and. j <= nq, ph, ts)
           do o = 1, 4
             ll = lorb(o)
-            if (amscf) then
+            if (asr_ed) then
               do pp = 1, 2
                 call augsym_set_start(sopc(pp), iorb(o), dmat)
-                call edam_green(sopc(pp), edw, edm(pp), z, iorb(o), nlev, gs(pp))
+                call asr_ed_green(sopc(pp), edw, edp_c(pp), z, iorb(o), nlev, gs(pp))
               end do
             else if (ordered) then
               do pp = 1, 2
@@ -813,15 +813,15 @@ contains
         return
       end if
       do gg = 1, nsp
-        if (amscf) call amscf_prepare(gg)
+        if (asr_ed) call asr_ed_prepare(gg)
         do o = 1, 4
-          if (.not. amscf) call augsym_set_start(sop, iorb(o), dmat)
-          if (amscf) then
+          if (.not. asr_ed) call augsym_set_start(sop, iorb(o), dmat)
+          if (asr_ed) then
             ll = lorb(o)
             do ie = 1, inp%ndos
               do pp = 1, 2
                 call augsym_set_start(sopc(pp), iorb(o), dmat)
-                call edam_green(sopc(pp), edw, edm(pp), cmplx(res%edos_e(ie), inp%dos_eta, dp), iorb(o), nlev, ga1)
+                call asr_ed_green(sopc(pp), edw, edp_c(pp), cmplx(res%edos_e(ie), inp%dos_eta, dp), iorb(o), nlev, ga1)
                 res%edos(ie, ll, pp, gg) = res%edos(ie, ll, pp, gg) - worb(o) * aimag(ga1) / pi
               end do
             end do
@@ -839,14 +839,14 @@ contains
     end subroutine ed_dos_final
 
     !> AMscf form: operator parameters (central species A, B) and the energy-dependent diagonals for spin gg
-    subroutine amscf_prepare(gg)
+    subroutine asr_ed_prepare(gg)
       integer, intent(in) :: gg
       integer :: cc
       do cc = 1, 2
-        call edam_setup(mdl, pps(1, gg), pps(2, gg), alpha, cc == 1, edm(cc))
+        call asr_ed_setup(mdl, pps(1, gg), pps(2, gg), alpha, cc == 1, edp_c(cc))
         call augsym_set_params(sopc(cc), mdl)
       end do
-    end subroutine amscf_prepare
+    end subroutine asr_ed_prepare
 
     subroutine all_params()
       integer :: ss, gg, ll
@@ -928,7 +928,7 @@ contains
     real(dp) :: al(0:2)
     ! H^(2) needs the standard constants (Fe moment 2.26 vs 2.34 with sigma 0.7); the energy-dependent route is formally representation
     ! independent but its SCF did not converge for CuZn with the standard alpha (P(z) pole of Zn d just below E_F), so it keeps sigma.
-    if (trim(inp%screening) == 'hardcore' .or. (trim(inp%screening) == 'auto' .and. inp%energy_dependent .and. .not. inp%ed_amscf)) then
+    if (trim(inp%screening) == 'hardcore' .or. (trim(inp%screening) == 'auto' .and. inp%energy_dependent .and. .not. inp%ed_asr)) then
       al = alpha_from_sigma(inp%sigma, 1.0_dp)
     else
       al = standard_alpha()

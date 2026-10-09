@@ -1,15 +1,15 @@
-!> AMscf-form energy-dependent ASR (asr_edam) vs brute force on a ring of N sites (9 orbitals per site), start site frozen to
+!> AMscf-form energy-dependent ASR (asr_ed) vs brute force on a ring of N sites (9 orbitals per site), start site frozen to
 !> the central species c, the other sites A (concentration x) or B.  Krylov space (nearly) exhausted => the recursion must equal
 !>   (1) the exact configuration average of the dense  [E - H(E)]^-1_{00},  H(E) = E - T (E - E_nu - h) T - T h o h T,
 !>   (2) the same average of [E - H^(2)]^-1_{00} (E - H(E) = T (E - H^(2)) T and T_0 = 1 at the central site),
 !> for both central species, with the nonrandom S' = Delta_c^1/2 S Delta_c^1/2 of the AMscf form.
-program test_edam
+program test_asr_ed
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_endep, only: ed_work_t, ed_work_init
-  use asr_edam
+  use asr_ed
   use asr_testing
   implicit none
   integer, parameter :: n = 4, nl = 9, nd = n * nl, nlev = 200
@@ -18,7 +18,7 @@ program test_edam
   type(orb_alloy_t) :: mdl
   type(augorb_op) :: op
   type(potpar_t) :: pa, pb, qq(2)
-  type(edam_t) :: ed
+  type(asr_ed_t) :: ed
   type(ed_work_t) :: wk
   real(dp) :: alpha(0:2), x, pc, oo(0:2, 2), blk1(nl, nl)
   complex(dp) :: z, gre, gdense, gh2, a(nlev), b(nlev)
@@ -27,7 +27,7 @@ program test_edam
   logical :: isa(n), ctr_a
   external :: zgesv
 
-  print '(a)', 'test_edam'
+  print '(a)', 'test_asr_ed'
   do l = 0, 2
     pa%enu(l) = 0.1_dp * l; pa%c(l) = 0.3_dp - 0.15_dp * l; pa%sqrdel(l) = 0.30_dp - 0.07_dp * l
     pa%p(l) = 0.9_dp - 0.1_dp * l; pa%gamma(l) = 0.25_dp - 0.1_dp * l; pa%alpha_rep(l) = pa%gamma(l)
@@ -60,7 +60,7 @@ program test_edam
   err1 = 0.0_dp; err2 = 0.0_dp; err3 = 0.0_dp
   do cen = 1, 2
     ctr_a = (cen == 1)
-    call edam_setup(mdl, pa, pb, alpha, ctr_a, ed)
+    call asr_ed_setup(mdl, pa, pb, alpha, ctr_a, ed)
     block
       logical :: flippable(n)
       flippable = .true.; flippable(1) = .false.
@@ -73,7 +73,7 @@ program test_edam
     do l0 = 1, 9, 4
       do kz = 1, 4
         z = cmplx(-0.3_dp + 0.25_dp * kz, 0.3_dp, dp)
-        call edam_green(op, wk, ed, z, l0, nlev, gre, a, b, m)
+        call asr_ed_green(op, wk, ed, z, l0, nlev, gre, a, b, m)
         gre = cf_complex(a, b, m, z)
         ! brute force
         gdense = (0.0_dp, 0.0_dp); gh2 = (0.0_dp, 0.0_dp)
@@ -167,4 +167,4 @@ contains
     call zgesv(nd, 1, a2, nd, ipiv, r2, nd, info)
     gh2_ = gh2_ + w * r2(l0_)
   end subroutine dense_green
-end program test_edam
+end program test_asr_ed

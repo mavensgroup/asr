@@ -606,16 +606,16 @@ zero is not E_F and its peaks are too deep.  Our trend (Zn-rich -> d bands deepe
 electron count +0.18) we agree to 4 / 21 mRy.  The concentration trend is not a gate against this figure; needs a second reference (KKR-CPA).
 Order-3 runs (same inputs) pending: node generation over three-hop paths is slow (single-threaded).
 
-## AMscf-form energy-dependent ASR implemented (2026-10-09): asr_edam, `hamiltonian = "amscf"`
+## AMscf-form energy-dependent ASR implemented (2026-10-09): asr_ed, `hamiltonian = "asr_ed"`
 Operator (AMscf ap1..ap13 in our augmented space): for central species c (start site frozen, non-flippable, M_R -> 1 or 0 there; one operator and one
 recursion per species and start orbital) H(E) = [E - D_c (E - E_nu,R)/D_R] + h' - h' q h', h' = g + S', S' = D_c^1/2 S D_c^1/2 (non-random),
 g_R = (D_c/D_R)(C_R - E_nu,R), q_R = o_R D_R/D_c (D = Delta^alpha).  It is the existing H^(2)-type operator with c -> g, d -> sqrt(D_c), o -> q and the E_nu term replaced
 by the complex E-dependent diagonal; the real part is applied to Re/Im of the Lanczos vector, the diagonal through M (`linop%mapply`);
 complex-symmetric chain per contour energy, eigenvalue-hull tail (`cf_species`).  G_c(E) = <1|(E - H(E))^-1|1> is used directly (no lambda/mu) in the
-EI moment formulas.  Default screening for `amscf` = standard TB-LMTO alpha (the form has no P^alpha poles).  Code: src/asr_edam.f90,
-`augorb/augsym_freeze_site`, `alloy_input_t%ed_amscf`; example/cuzn_alloy_amscf.toml.
-Gates (all pass): test_edam (ring, 9 orbitals, exact configuration average of [E-H(E)]^-1_00 for both central species == dense H(E) == dense
-[E-H^(2)]^-1_00 to 1e-15, i.e. E - H(E) = T(E - H^(2))T with T_c = 1); test_edam_sym (D4h-reduced == unreduced chain 2e-11, fcc 94702 -> 6843
+EI moment formulas.  Default screening for `asr_ed` = standard TB-LMTO alpha (the form has no P^alpha poles).  Code: src/asr_ed.f90,
+`augorb/augsym_freeze_site`, `alloy_input_t%ed_asr`; example/cuzn_alloy_asr_ed.toml.
+Gates (all pass): test_asr_ed (ring, 9 orbitals, exact configuration average of [E-H(E)]^-1_00 for both central species == dense H(E) == dense
+[E-H^(2)]^-1_00 to 1e-15, i.e. E - H(E) = T(E - H^(2))T with T_c = 1); test_asr_ed_sym (D4h-reduced == unreduced chain 2e-11, fcc 94702 -> 6843
 nodes; ordered limit A = B: ED chain == H^(2) chain 5e-14); sum rule M0(E_F = 6 Ry) = 1.0000 for all l, both species.  Desktop: clean rebuild, all 39 test
 programs pass.
 First production point (desktop trial/amscf/x50_l4r1; bcc Cu50Zn50, a = 2.85 A, levels 4, rank 1, supercell 8, 32 contour points; 14.5 min, 39 its,

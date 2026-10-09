@@ -11,7 +11,7 @@
 !> complex, energy-dependent diagonal e_R(E) = E - Delta_c (E - E_nu,R)/Delta_R.  The real part R = h' - h' q h' is applied to the
 !> real and imaginary parts of the Lanczos vector, e_R(E) = e0 + e1 M by M and a complex-symmetric three-term recursion is run
 !> for each E.  At infinite depth E - H(E) = T (E - H^(2)) T, so G_c equals the species-resolved EI Green function.
-module asr_edam
+module asr_ed
   use asr_kinds, only: dp
   use asr_operator, only: linop
   use asr_augorb, only: orb_alloy_t
@@ -19,27 +19,27 @@ module asr_edam
   use asr_endep, only: ed_work_t, ed_depth_tol, ed_nchain, ed_nlev, cf_species
   implicit none
   private
-  public :: edam_t, edam_setup, edam_green
+  public :: asr_ed_t, asr_ed_setup, asr_ed_green
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
   !> energy-dependent diagonal e_R(E) = E - dc (E - enu_R)/del_R for the two species (per orbital) and the central species flag
-  type :: edam_t
+  type :: asr_ed_t
     real(dp) :: dc(9) = 1.0_dp, dela(9) = 1.0_dp, delb(9) = 1.0_dp, enua(9) = 0.0_dp, enub(9) = 0.0_dp
     real(dp) :: mc = 1.0_dp                    !! 1: the central species is A, 0: B
-  end type edam_t
+  end type asr_ed_t
 
 contains
 
   !> Fill the operator parameters of `mdl` (blocks, concentration and node-set data already present) for the central species
   !> (central_is_a) from the gamma-representation parameters of A and B and the screening alpha, and the energy-dependent
   !> diagonal `ed`.  mdl%e0 = mdl%e1 = 0: the E_nu term is applied separately (complex, per energy).
-  subroutine edam_setup(mdl, ppa, ppb, alpha, central_is_a, ed)
+  subroutine asr_ed_setup(mdl, ppa, ppb, alpha, central_is_a, ed)
     type(orb_alloy_t), intent(inout) :: mdl
     type(potpar_t), intent(in) :: ppa, ppb
     real(dp), intent(in) :: alpha(0:2)
     logical, intent(in) :: central_is_a
-    type(edam_t), intent(out) :: ed
+    type(asr_ed_t), intent(out) :: ed
     type(potpar_t) :: qa, qb, qc
     real(dp) :: oa(0:2), ob(0:2), dc, da, db, ga, gb, wa, wb
     integer :: i, ll
@@ -61,15 +61,15 @@ contains
       ed%dc(i) = dc; ed%dela(i) = da; ed%delb(i) = db; ed%enua(i) = qa%enu(ll); ed%enub(i) = qb%enu(ll)
     end do
     ed%mc = merge(1.0_dp, 0.0_dp, central_is_a)
-  end subroutine edam_setup
+  end subroutine asr_ed_setup
 
   !> G_c(E) for the start orbital l0 (`iv`: index of the start component in the operator's vector, 9 (node-1) + l0).
-  !> The operator `op` carries the parameters set by edam_setup, the start site frozen to the central species, and `mapply`.
+  !> The operator `op` carries the parameters set by asr_ed_setup, the start site frozen to the central species, and `mapply`.
   !> wk must have been initialised with ed_work_init(wk, op%dim()).
-  subroutine edam_green(op, wk, ed, z, iv, nlev, g, acoef, bcoef, mused)
+  subroutine asr_ed_green(op, wk, ed, z, iv, nlev, g, acoef, bcoef, mused)
     class(linop), intent(in) :: op
     type(ed_work_t), intent(inout) :: wk
-    type(edam_t), intent(in) :: ed
+    type(asr_ed_t), intent(in) :: ed
     complex(dp), intent(in) :: z
     integer, intent(in) :: iv, nlev
     complex(dp), intent(out) :: g
@@ -124,5 +124,5 @@ contains
     if (present(acoef)) acoef(1:m) = a(1:m)
     if (present(bcoef)) bcoef(1:m) = b(1:m)
     if (present(mused)) mused = m
-  end subroutine edam_green
-end module asr_edam
+  end subroutine asr_ed_green
+end module asr_ed

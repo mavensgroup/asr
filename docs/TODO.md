@@ -17,7 +17,7 @@ matches the ssh command; one process per run directory.
   concentration trend is opposite to that paper, whose Fig. 3 is internally inconsistent (Cu0.75 panel holds +1.04 e below its "E_F").
   EI order-3 runs trial/d2/x{24,50,75}_o3 were running at handoff (cross-check only).
 **Next (in order):**
-1. [x] DONE 2026-10-09 (asr_edam, `hamiltonian = "amscf"`, STATUS.md "AMscf-form energy-dependent ASR implemented"; first point x=0.5 levels 4 rank 1 done) Implement the AMscf energy-dependent ASR in the augmented-space operator: central site fixed to species c (non-flippable start site),
+1. [x] DONE 2026-10-09 (asr_ed, `hamiltonian = "asr_ed"`, STATUS.md "AMscf-form energy-dependent ASR implemented"; first point x=0.5 levels 4 rank 1 done) Implement the AMscf energy-dependent ASR in the augmented-space operator: central site fixed to species c (non-flippable start site),
        Delta_c-scaled non-random S, site-diagonal E-dependent random term E(1 - Delta_c/Delta) + Delta_c C/Delta, scaled o term (-T hoh T);
        complex-symmetric Lanczos per contour energy (as in asr_endep) or AMscf's real seeds + spline; one recursion per species and orbital.
 2. [x] (ordered limit, brute-force ring average, sym==unreduced, sum rule: DONE; EI depth comparison open: levels 5-6 / rank 2 at x=0.5) Gates: ordered limit == ordered ED/EI; disordered CuZn vs the EI cross-check at the same depth (equal at infinite depth; compare depth
