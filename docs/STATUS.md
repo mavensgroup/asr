@@ -665,3 +665,35 @@ Gates (all pass): test_augn: ring N = 4, nl = 2, ns = 3: nodes N ns^N, recursion
 2e-15; ns = 2 == asr_augorb (same node count, coefficients 3e-16); complex-parameter application.  test_asr_ed_n: ring, 9 orbitals, three species (0.3/0.5/0.2),
 each central species: ED recursion == dense average of [E - H(E)]^-1 == dense average of [E - H^(2)]^-1 to 3e-15.
 Not yet: D4h point-group reduction of the n-component space (asr_augn is unreduced), alloy_scf with ns species (driver is two-species), short-range order.
+
+## asr_ed depth series to level 7, concentration series, magnetic validation (2026-10-10/11, desktop trial/q2, trial/q3)
+CORRECTION of the convergence entry above: it concluded from levels 4-5 that asr_ed is converged to ~6 mRy in depth.  Levels 6 and 7 show otherwise for the DOS peaks.
+CuZn x = 0.5, a = 2.85 A, rank 1, asr_ed (Zn d / Cu d peaks vs E_F, Ry):
+| levels | E_F | qnet Cu | Cu C_d | Zn C_d | Zn d peak (height) | Cu d peak | wall |
+|---|---|---|---|---|---|---|---|
+| 4 | 0.0145 | 0.0444 | -0.2544 | -0.6769 | -0.728 (47) | -0.278 | 14.5 min |
+| 5 | 0.0170 | 0.0367 | -0.2566 | -0.6705 | -0.733 (36) | -0.287 | 35 min |
+| 6 | 0.0149 | 0.0412 | -0.2389 | -0.6771 | -0.691 (42) | -0.267 | ~1 h |
+| 7 | 0.0014 | 0.0386 | -0.2464 | -0.6732 | -0.675 (44) | -0.241 | 1 h 29 min |
+The band centres C_d (Zn -0.673 +- 0.004) and qnet (0.037-0.044) are stable, but E_F still moves by 13 mRy at level 7 and the DOS peak positions drift by 40-60 mRy
+(Zn d -0.733 -> -0.675, towards the ordered -0.636): not converged at level 7; the earlier statement "disordered Zn d is 0.1 Ry deeper than ordered" is therefore
+only ~0.04 Ry at level 7 and still moving.  Level 8 (~3.5 h) not run.
+Concentration series, asr_ed level 5 rank 1 (NOT depth converged, peaks uncertain by ~50 mRy at this depth):
+| x_Cu | E_F | qnet Cu | Cu C_d | Zn C_d | Zn d peak | Cu d peak |
+|---|---|---|---|---|---|---|
+| 0.24 | 0.0983 | 0.0589 | -0.2106 | -0.6391 | -0.724 | -0.322 |
+| 0.50 | 0.0170 | 0.0367 | -0.2566 | -0.6705 | -0.733 | -0.287 |
+| 0.75 | -0.0536 | 0.0171 | -0.2973 | -0.6961 | -0.668 | -0.266 |
+The band centres C_d move down with Cu content (Zn C_d -0.639 -> -0.696), E_F falls (rigid-band direction), qnet Cu rises with Zn content; peak positions are not monotonic at this
+depth, so no trend statement against Banerjee-Mookerjee 2010 yet.
+Magnetic binary validation, asr_ed (spin 2, zeta0 0.1, a as stated):
+| system | levels / rank | result | reference | verdict |
+|---|---|---|---|---|
+| bcc Fe (A = B), a = 2.8665 | 12 / 0 | 2.199 muB, E_F -0.0907 | k-space ASA 2.226, -0.0926 | -1.2 %: pass |
+| fcc Ni (A = B), a = 3.524 | 24 / 0 | 0.554 muB (sign = seed orientation), E_F -0.1069 | k-space ASA 0.632, -0.1014 | -12 %: needs depth >= 30 (as EI): inconclusive |
+| bcc FeCo 50:50, a = 2.857 | 4 / 1 | Fe 2.624, Co 1.584 (cell mean 2.104), qnet Fe -0.019 | ordered B2: Fe 2.76 / Co 1.77 (ASA), Elk 2.75 / 1.75 | Fe -5 %, Co -10 % at depth 4: depth study needed |
+| bcc FeCo, EI order 2, same input | 4 / 1 | collapsed to the NON-magnetic solution (moments 0.0004) | | EI cross-check failed (seed/stability), no comparison available |
+| bcc FeV 50:50, a = 2.95 (Vegard guess, not the paper's) | 4 / 1 | Fe -2.682, V -0.080 (V parallel to Fe) | Chakrabarti-Mookerjee 2005: Fe 1.12, V -0.11 (antiparallel) | FAILS: Fe far too large, V sign wrong |
+| bcc FeV, EI order 2 | 4 / 1 | non-magnetic collapse | | cross-check failed |
+Status: magnetic binary systems are NOT yet validated beyond pure Fe.  Open: depth study of FeCo (levels 5-7), FeV (lattice constant scan 2.85-3.0 A, spin seeds, depth), Ni at 30-40 levels,
+a working magnetic EI cross-check (larger seed / order 3).
