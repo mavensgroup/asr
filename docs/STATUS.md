@@ -627,3 +627,22 @@ First production point (desktop trial/amscf/x50_l4r1; bcc Cu50Zn50, a = 2.85 A, 
 DOS positive everywhere.  Banerjee-Mookerjee 2010 (50:50): Zn d -0.682, Cu d -0.309 vs E_F; Zn d C -0.677 vs their -0.682.  The two routes are equal at
 infinite depth, not at depth 4: differences here are depth/rank-1 truncation (the ED peaks are broader/lower: Zn d 47 vs 70 states/Ry).
 Open: depth convergence (levels 5-6, rank 2) of both routes at x = 0.5; then x = 0.24 / 0.75.
+
+## asr_ed vs EI depth/rank convergence, CuZn x = 0.5 (2026-10-09/10, desktop trial/conv_x50, trial/amscf, trial/d2)
+bcc Cu50Zn50, a = 2.85 A, supercell 8, 32 contour points (asr_ed), EI = order 2.  Peaks relative to E_F; C_d = gamma-representation band centre (Ry).
+| run | E_F | qnet Cu | Cu C_d | Zn C_d | Zn d peak (height) | Cu d peak | min DOS | nodes | wall |
+|---|---|---|---|---|---|---|---|---|---|
+| EI  l4 r1 | 0.0220 | 0.0286 | -0.2791 | -0.6405 | -0.686 (70) | -0.330 | 0.41 | 17630 | min |
+| EI  l4 r2 | 0.0220 | 0.0286 | -0.2790 | -0.6406 | -0.686 (70) | -0.330 | 0.41 | 554471 | 2 min |
+| EI  l5 r1 | 0.0071 | 0.0334 | -0.2636 | -0.6462 | -0.685 (49) | -0.259 | 0.48 | 40817 | 20 s |
+| ED  l4 r1 | 0.0145 | 0.0444 | -0.2544 | -0.6769 | -0.728 (47) | -0.278 | 0.48 | 17515 | 14.5 min |
+| ED  l4 r2 | 0.0146 | 0.0445 | -0.2543 | -0.6769 | -0.729 (47) | -0.279 | 0.48 | 536956 | 9 h 43 min |
+| ED  l5 r1 | 0.0170 | 0.0367 | -0.2566 | -0.6705 | -0.733 (36) | -0.287 | 0.49 | 40702 | 35 min |
+Findings: (1) rank 1 -> 2 changes nothing at level 4 on either route (E_F < 0.1 mRy, C_d < 0.1 mRy, peaks < 1 mRy): rank 1 is enough here; rank 2 costs
+31x the nodes (ED: 40x the time) for no gain.  (2) Depth 4 -> 5 (rank 1): EI moves E_F by 15 mRy, Cu d C by 15 mRy, Cu d peak by 70 mRy, Zn d peak
+height 70 -> 49; asr_ed moves E_F by 2.6 mRy, C_d by 2-6 mRy, peaks by 5-9 mRy: asr_ed is much better converged in depth, as expected for a
+recursion whose non-random hops start from the right site.  (3) At level 5 the routes approach each other (qnet 0.0334 vs 0.0367, Cu C_d -0.264 vs
+-0.257) but Zn C_d differs by 25 mRy and E_F by 10 mRy; they are equal only at infinite depth.  Level 6 not yet run (cost per level ~2.4x: ~85 min).
+(4) The disordered Zn d peak stays at -0.73 Ry (-9.9 eV) vs E_F in asr_ed (EI -0.69), i.e. 0.13-0.18 Ry deeper than the ordered B2 values (-0.555 k-space ASA,
+-0.619 real space, LAPW-PBE Keast 2015 Fig. 2c about -7.3 eV).  Not a depth/rank artefact.  Open: those ordered numbers are at a = 2.92 A, these runs at
+2.85 A => run ordered B2 at 2.85 A to separate lattice constant from disorder.
