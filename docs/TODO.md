@@ -23,6 +23,11 @@ matches the ssh command; one process per run directory.
 2. [x] (ordered limit, brute-force ring average, sym==unreduced, sum rule: DONE; EI depth comparison open: levels 5-6 / rank 2 at x=0.5) Gates: ordered limit == ordered ED/EI; disordered CuZn vs the EI cross-check at the same depth (equal at infinite depth; compare depth
        convergence and node counts); positive DOS; sum rules.
 3. [ ] (x=0.5 levels 4 rank 1 done; next: depth/rank convergence, then x=0.24/0.75) Production D2 on the AMscf ED route: CuZn x = 0.24 / 0.5 / 0.75; second independent concentration reference (KKR-CPA / supercells).
+3b. [x] n-component operator (2026-10-10): asr_augn + asr_edn exact vs brute force (ns = 3); next in this line: (i) D4h reduction for asr_augn, (ii) alloy_scf with ns species
+       (spec(2), pps(2,2), cr(2) ... generalise), (iii) a 3-component bcc test (e.g. Cu-Zn-Ni) vs EI, (iv) Warren-Cowley SRO (non-product measure).
+3c. [ ] (queued on desktop trial/q3, after q2) magnetic binary validation of asr_ed before going to magnetic HEAs: pure Fe / Ni (A = B, vs k-space ASA 2.226 / 0.632), disordered
+       FeCo (a = 2.857; ordered Fe 2.76 / Co 1.77) and FeV (a = 2.95 assumed (Vegard), paper: Fe 1.12, V -0.11) on asr_ed and EI.  asr_ed is SECOND order only (AMscf form):
+       expect the EI order-2 moment excesses (Fe +1.5%, FeCo Fe +1.4%); third order for asr_ed would be a separate development.
 4. [ ] D3 electrostatics (SIM beta), D4 magnetic disorder (FeCo, FeV: Chakrabarti & Mookerjee 2005 Fe 1.12, V -0.11 muB) on the AMscf ED route.
 5. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
 

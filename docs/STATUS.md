@@ -646,3 +646,22 @@ recursion whose non-random hops start from the right site.  (3) At level 5 the r
 (4) The disordered Zn d peak stays at -0.73 Ry (-9.9 eV) vs E_F in asr_ed (EI -0.69), i.e. 0.13-0.18 Ry deeper than the ordered B2 values (-0.555 k-space ASA,
 -0.619 real space, LAPW-PBE Keast 2015 Fig. 2c about -7.3 eV).  Not a depth/rank artefact.  Open: those ordered numbers are at a = 2.92 A, these runs at
 2.85 A => run ordered B2 at 2.85 A to separate lattice constant from disorder.
+
+## Lattice constant vs disorder for the CuZn Zn d position (2026-10-10, desktop trial/q2): ordered B2, real-space EI, levels 24, supercell 16
+| a (A) | E_F (Ry) | Cu qnet | Cu C_d | Zn C_d | Zn d peak vs E_F | Cu d peak |
+|---|---|---|---|---|---|---|
+| 2.85 | 0.0024 | +0.138 | -0.277 | -0.634 | -0.636 (-8.7 eV) | -0.259 |
+| 2.92055 | -0.0447 | +0.137 | -0.307 | -0.664 | -0.619 (-8.4 eV) | -0.244 |
+The lattice constant moves the Zn d peak (vs E_F) by only 17 mRy, so it does not explain the shift to the disordered alloys at 2.85 A: EI x = 0.5 depth 4-5: -0.686,
+asr_ed depth 4-5: -0.73 Ry.  Disorder deepens Zn d (vs E_F) by 50 mRy (EI) to ~95 mRy (asr_ed) relative to the ordered EI value at the same a (depths differ:
+24 vs 4-5 levels).  LAPW-PBE ordered (Keast et al. 2015, Fig. 2c, read by eye) -7.3 eV.
+
+## n-component augmented space (2026-10-10): asr_augn, asr_edn
+`asr_augn`: random species s_R in {1..ns} (probabilities x_s, uncorrelated).  Local basis phi_0 = 1, phi_1..phi_{ns-1} (Gram-Schmidt on species indicators),
+indicator-of-s matrix M^(s)_lk = x_s phi_l(s) phi_k(s) (rank one), site parameter X_R -> W_lk = sum_s X_s M^(s)_lk; nodes = (site, flipped sites with states 1..ns-1),
+closure over paths R -> R1 -> R2 with every visited site in any of its ns states (ns^3 combinations), rank limit, non-flippable sites carry the average W_00, a
+site may be frozen to one species.  `asr_edn` = the asr_ed form for n species (T-scaled parameters per central species, per-species complex diagonal).
+Gates (all pass): test_augn: ring N = 4, nl = 2, ns = 3: nodes N ns^N, recursion == exact configuration average of the resolvent 2e-15; frozen start site (species 2)
+2e-15; ns = 2 == asr_augorb (same node count, coefficients 3e-16); complex-parameter application.  test_asr_ed_n: ring, 9 orbitals, three species (0.3/0.5/0.2),
+each central species: ED recursion == dense average of [E - H(E)]^-1 == dense average of [E - H^(2)]^-1 to 3e-15.
+Not yet: D4h point-group reduction of the n-component space (asr_augn is unreduced), alloy_scf with ns species (driver is two-species), short-range order.
