@@ -744,3 +744,22 @@ wild early iterations (E_F +-0.4 Ry, qnet +-1.5 e, moment sign flips, also for p
 Legacy note: AMscf and ASR_CORRECT hard-code `read(11)(map(i,j),j=1,15)`; the BCC map has 17 integers per record (FCC 15), so with PARAM_BCC the flip flag (col 16)
 and the real-space site index used as the central-site test (col 17) are never read: bcc runs never freeze the central site and drop the (y - x) diagonal terms
 (ap9/ap13/p3; irrelevant at x = 0.5).  AMscf's map is exact to 6 augmented-space hops (73109 nodes) and it runs 12 recursion steps on it.
+
+## How AMscf differs (re-checked 2026-10-11) and the hard-wall recursion (`recursion_steps`, commit 0973dd0; desktop trial/q10)
+AMscf (ASR/main.f90, hop_endep.f90, newfit.f90, cgreen.f90, pardos.f90; files/BCC_MAP decoded):
+- Augmented space = a FIXED map: 1105 real-space sites (6 hops of the 1st+2nd-shell bcc graph), configurations with <= 3 flipped sites, 73109 nodes;
+  links leaving the map are dropped (hard wall).  On it AMscf runs 12 Lanczos steps (maxrec), real-symmetric, at 8 real seed energies (-0.9 ... 3.0 Ry),
+  spline-interpolates a_n(E), b_n(E) to 900 real energies, Beer-Pettifor tail (eigen of the modified chain, a_inf fixed point), real-axis DOS and E_F.
+  Its map is SMALLER than our level-4 rank-1 space (6 hops vs 8; each H^(2) step moves 2 hops), but it does not stop the chain at the edge of the exact
+  space: the extra steps see the finite cluster.  Our code tied the Lanczos depth to the generation depth (`levels`), so it terminated after 4-6 steps.
+- Madelung: vm = ruban * x q / w with ruban = 0.10 (pardos.f90), i.e. essentially no SIM (ours: beta 2 alpha_M q/S = 2.5 q/S).
+- bcc reading bug (15 of 17 map columns, see above).
+New option `[asr] recursion_steps` (default = levels): Lanczos steps run on the node set generated to `levels` (links outside the set are dropped by
+build_augsym_operator, i.e. a hard wall as in AMscf).  Pure Fe (A = B), levels 4 (215 reduced nodes), asr_ed, k-space ASA 2.226 muB:
+| recursion steps | 4 | 12 | 16 | 24 |
+|---|---|---|---|---|
+| hull tail | 2.643 | 2.200 | 2.299 | 2.246 |
+| bp tail | 2.438 | 2.234 | running | running |
+=> generating the augmented space to a modest depth and running many steps on it (AMscf's recipe) removes the depth swing for Fe (levels-only: 2.64 / 2.01 /
+2.27 / 2.13 at 4/5/6/8).  Disordered FeCo / FeV with levels 4, recursion_steps 12, bp: running (q10).
+Also: FeCo levels 4 (no hard-wall extension) with bp tail: Fe 2.426 / Co 1.404, E_F -0.0769 (hull: 2.624 / 1.584).
