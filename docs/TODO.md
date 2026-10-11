@@ -28,6 +28,13 @@ matches the ssh command; one process per run directory.
 3c. [ ] (queued on desktop trial/q3, after q2) magnetic binary validation of asr_ed before going to magnetic HEAs: pure Fe / Ni (A = B, vs k-space ASA 2.226 / 0.632), disordered
        FeCo (a = 2.857; ordered Fe 2.76 / Co 1.77) and FeV (a = 2.95 assumed (Vegard), paper: Fe 1.12, V -0.11) on asr_ed and EI.  asr_ed is SECOND order only (AMscf form):
        expect the EI order-2 moment excesses (Fe +1.5%, FeCo Fe +1.4%); third order for asr_ed would be a separate development.
+3d. [ ] (2026-10-11, STATUS "Why disordered magnetic binaries fail at levels 4-6") magnetic disordered alloys -- needs USER decisions:
+       (a) depth: Fe-type moments need ~8-12 levels, FeV/Ni-type >= 24; exact rank-1 augmented space stops at ~8.  Candidate (AMscf-like): exact augmented
+           space to k_ex hops, then continue the Lanczos to 12-24 levels with non-flippable (averaged) sites beyond; alternative: CPA medium beyond k_ex.
+           Gate: ordered limits (B2 FeV real-space l24 / k-space) and SQS supercells with the k-space code.
+       (b) ED tail default hull -> bp (bp halves the shallow-depth oscillation; avg2 ran away once).
+       (c) SIM coefficient: V = beta 2 alpha_M q/S over-screens (1.25 vs exact-B2 1.00 x 2q/S); calibrate vs SQS supercell charge transfer (changes CuZn too).
+       (d) magnetic SCF start: early iterations swing E_F +-0.4 Ry and flip moments; start from converged pure-element potentials or damp the first iterations.
 4. [ ] D3 electrostatics (SIM beta), D4 magnetic disorder (FeCo, FeV: Chakrabarti & Mookerjee 2005 Fe 1.12, V -0.11 muB) on the AMscf ED route.
 5. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
 

@@ -710,3 +710,37 @@ a working magnetic EI cross-check (larger seed / order 3).
 Status: pure Fe and Ni pass (Ni with depth 36); disordered magnetic binaries (FeCo, FeV) are NOT validated: depth 4-6 is far from converged for them (moment oscillation),
 and FeV contradicts the reference.  Needs investigation in the development thread (terminator / depth for spin-split d bands near E_F, multiple SCF solutions,
 EI-vs-ED disagreement at fixed potentials).
+
+## Why disordered magnetic binaries fail at levels 4-6 (2026-10-11, desktop trial/q5-q9; code 9204e4e)
+Question: q3/q4 left FeCo (moment oscillating ~0.4 muB with depth) and FeV (Fe 2.5-2.8 vs paper 1.12, V parallel) unexplained.  Tests, each isolating one cause:
+1. Pure bcc Fe (A = B, no disorder; a = 2.8665, supercell 16).  In this limit the asr_ed operator IS H^(2) (gate test_asr_ed_sym 5e-14), so asr_ed vs EI differ only
+   in the tail and contour.  k-space ASA 2.226 muB:
+| levels | 4 | 5 | 6 | 8 | 12 |
+|---|---|---|---|---|---|
+| asr_ed, hull tail (default) | 2.64 | 2.01 | 2.27 | 2.13 | 2.20 |
+| asr_ed, `ed_terminator = "bp"` | 2.44 | 2.15 | 2.33 | 2.16 | |
+| asr_ed, `ed_terminator = "avg2"` | 2.29 | runaway (-4.78, E_F +0.67) | 2.32 | 2.16 | |
+| EI (avg2 tail) | 2.31 | 2.21 | 2.34 | 2.19 | |
+   => The FeCo oscillation (Fe 2.62 / 2.15 / 2.49 at levels 4/5/6) is the pure-Fe behaviour of the hull tail (2.64 / 2.01 / 2.27), not disorder.  Hull = band edges
+   at the extreme Ritz values of the m x m chain, well inside the band at m = 4-6 -> too narrow -> too magnetic.  New option `ed_terminator` (asr_endep%ed_tail):
+   'bp' = complex Beer-Pettifor fixed point (edges where the terminated fraction has its poles; == bp_asymptote on real chains, test_terminators) halves the
+   spread; 'avg2' tracks EI but ran away once (complex avg2 is not guaranteed analytic).  Default still 'hull'.  bp costs ~15 small zgeev per fraction: with
+   threaded MKL this dominated tiny runs (pure Fe 50x slower); run with MKL_NUM_THREADS=1.
+2. Ordered B2 FeV, our k-space LMTO-ASA (independent of the recursion), a = 2.85 / 2.91 / 2.95 / 3.00 A: Fe 1.007 / 1.201 / 1.353 / 1.575, V -0.112 / -0.292 /
+   -0.434 / -0.644 (antiparallel), qnet(Fe) +0.331 / 0.333 / 0.332 / 0.329, E_F 0.029 / -0.018 / -0.047 / -0.079.  (Moruzzi-Marcus PRB 45, 2934 (1992), FLAPW
+   ordered FeV: Fe ~0.66, V ~0, alignment volume dependent.)  The Chakrabarti-Mookerjee 2005 disordered numbers (Fe 1.12, V -0.11, 0.31 e V -> Fe) are close to
+   our ordered B2 values; that paper gives neither the lattice constant nor the recursion depth (linear mixing, 250 iterations) -> weak gate.
+3. Ordered B2 FeV through the real-space EI recursion (same code path as the alloys, no disorder), a = 2.95: levels 4 / 6 / 8 / 12 / 24 -> Fe 1.85 / 0.98 / 0 / 0 /
+   1.42, V -0.46 / -0.38 / 0 / 0 / 0.62 (opposite sign = antiparallel), qnet 0.336 at every depth (= k-space).  FeV is a marginal magnet (like Ni): its moment
+   needs >= 24 levels even without disorder; at 8-12 levels the magnetic solution is lost.
+4. SIM strength (disordered FeV, asr_ed bp level 4, a = 2.95): sim_beta 0.7 -> qnet 0.04; 0 -> qnet 0.084, Fe -2.47, V +0.18 (antiparallel).  The SIM is not what
+   keeps Fe at ~2.5.  But the SIM coefficient is suspicious: V = beta 2 alpha_M q/S with alpha_M = 1.79 gives 1.25 x 2q/S, stronger than the exact B2 shift
+   (2 (1.7627/d_NN) q = 1.00 x 2q/S; ordered transfer 0.33 e).  Ruban-Skriver write V = -alpha e^2 q/S with alpha ~ 0.6-0.8 (no alpha_M factor) -> our SIM
+   over-screens by ~1.8x (disordered transfer 0.04 vs ordered 0.33 in FeV; 0.04 vs 0.137 in CuZn).  Not yet changed (affects CuZn results; needs a supercell gate).
+Conclusions: (i) levels 4-6 cannot give moments of disordered magnetic alloys: Fe-type needs ~8-12 levels with a good tail, FeV/Ni-type >= 24; exact rank-1
+generation stops at ~8 (2.4x nodes per level).  (ii) The hull tail adds a +-0.3 muB depth oscillation at 4-6 levels; bp is the better ED tail.  (iii) The FeV
+reference is weak; our own ordered B2 k-space values and SQS supercells (k-space code, multi-atom cells) are the right gates.  (iv) Every magnetic SCF passes through
+wild early iterations (E_F +-0.4 Ry, qnet +-1.5 e, moment sign flips, also for pure Fe at 12 levels): which magnetic solution is reached is not controlled.
+Legacy note: AMscf and ASR_CORRECT hard-code `read(11)(map(i,j),j=1,15)`; the BCC map has 17 integers per record (FCC 15), so with PARAM_BCC the flip flag (col 16)
+and the real-space site index used as the central-site test (col 17) are never read: bcc runs never freeze the central site and drop the (y - x) diagonal terms
+(ap9/ap13/p3; irrelevant at x = 0.5).  AMscf's map is exact to 6 augmented-space hops (73109 nodes) and it runs 12 recursion steps on it.
