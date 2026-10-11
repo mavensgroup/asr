@@ -697,3 +697,16 @@ Magnetic binary validation, asr_ed (spin 2, zeta0 0.1, a as stated):
 | bcc FeV, EI order 2 | 4 / 1 | non-magnetic collapse | | cross-check failed |
 Status: magnetic binary systems are NOT yet validated beyond pure Fe.  Open: depth study of FeCo (levels 5-7), FeV (lattice constant scan 2.85-3.0 A, spin seeds, depth), Ni at 30-40 levels,
 a working magnetic EI cross-check (larger seed / order 3).
+
+## q4 (2026-10-11, desktop trial/q4, same binary as q2/q3): CuZn level 8, Ni depth, FeCo depth, FeV scan, magnetic EI cross-checks
+- CuZn x = 0.5, asr_ed level 8: E_F 0.0044, qnet Cu 0.040, Cu C_d -0.243, Zn C_d -0.677, Zn d peak -0.680, Cu d peak -0.232 (level 7: 0.0014 / -0.675 / -0.241).
+  Levels 7 -> 8 change E_F by 3 mRy and the peaks by 5-9 mRy: approaching convergence.  Disordered Zn d peak -0.68 vs ordered -0.636 (same a): ~0.04 Ry.
+- fcc Ni (A = B) asr_ed level 36: 0.609 muB (level 24: 0.554) vs k-space ASA 0.632: -3.7 %, converging with depth as on the EI route.
+- bcc FeCo 50:50 asr_ed, rank 1: level 4 Fe 2.624 / Co 1.584; level 5 2.151 / 1.297 (E_F -0.105); level 6 2.493 / 1.730 (E_F -0.079).  NOT converged, oscillates by
+  ~0.4 muB with depth.  EI order 2 level 4 with seed 0.25: Fe 2.049 / Co 1.573 (seed 0.1 collapsed to non-magnetic).  Ordered B2 reference 2.76 / 1.77.
+- bcc FeV 50:50 asr_ed level 4: Fe 2.477 / 2.588 / 2.683 / 2.764 and V +0.008 / +0.036 / +0.080 / +0.146 at a = 2.85 / 2.90 / 2.95 / 3.00 A; seed 0.25 at 2.95 gives the same
+  solution (2.683 / 0.080).  EI order 2 stays non-magnetic with seed 0.25.  Paper (Chakrabarti-Mookerjee 2005): Fe 1.12, V -0.11.  The two routes (equal at infinite depth)
+  disagree qualitatively at level 4 (2.7 vs 0) and neither matches the paper.
+Status: pure Fe and Ni pass (Ni with depth 36); disordered magnetic binaries (FeCo, FeV) are NOT validated: depth 4-6 is far from converged for them (moment oscillation),
+and FeV contradicts the reference.  Needs investigation in the development thread (terminator / depth for spin-split d bands near E_F, multiple SCF solutions,
+EI-vs-ED disagreement at fixed potentials).
