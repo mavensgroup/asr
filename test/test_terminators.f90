@@ -8,6 +8,7 @@ program test_terminators
   use asr_kspace, only: kspace_green_b2
   use asr_terminator
   use asr_testing, only: check
+  use asr_endep, only: cf_species, ed_tail
   implicit none
   integer, parameter :: ne = 81
   integer :: n, k, centre, m, ie
@@ -18,6 +19,7 @@ program test_terminators
   type(terminator_t) :: t
   integer :: ni
   logical :: ok
+  complex(dp) :: ca(6), cb(6), cc(6), fdum
 
   print '(a)', 'test_terminators'
   ! 1. p=1 periodic tail == sqrt terminator
@@ -66,6 +68,23 @@ program test_terminators
   print '(a,es10.3,a,es10.3)', '    B2 gapped, depth 32: sqrt-avg2 err=', e_avg, '   periodic2 err=', e_per
   ok = e_per < 1.0e-3_dp .and. e_per * 20.0_dp < e_avg
   call check(ok, 'B2: periodic2 < 1e-3 and >=20x better than one-band tail')
+  ! 6. complex-symmetric chain tail (asr_endep%cf_species, ed_tail = 'bp') on a real chain == real Beer-Pettifor (bp_asymptote)
+  a(1:6) = [0.10_dp, -0.05_dp, 0.20_dp, 0.00_dp, 0.15_dp, 0.05_dp]; b(1:6) = [0.90_dp, 1.10_dp, 0.95_dp, 1.05_dp, 1.00_dp, 1.00_dp]
+  call bp_asymptote(a, b, 6, ainf, binf)
+  ca = a(1:6); cb = b(1:6); cc = (0.0_dp, 0.0_dp)
+  ed_tail = 'bp'
+  d = 0.0_dp
+  do ie = 1, 9
+    z = cmplx(-2.4_dp + 0.6_dp * (ie - 1), 0.05_dp, dp)
+    call cf_species(ca, cb, cc, 6, z, g1, fdum)
+    g2 = 1.0_dp / (z - a(6) - sqrt_tail(z, ainf, binf))
+    do k = 5, 1, -1
+      g2 = 1.0_dp / (z - a(k) - b(k)**2 * g2)
+    end do
+    d = max(d, abs(g1 - g2))
+  end do
+  ed_tail = 'hull'
+  call check_c(d, 1.0e-10_dp, 'cf_species bp tail == bp_asymptote on a real chain')
   call report_all()
 contains
   subroutine check_c(val, tol, name)

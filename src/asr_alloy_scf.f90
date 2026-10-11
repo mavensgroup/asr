@@ -74,6 +74,7 @@ module asr_alloy_scf
                                                  !! .false.: density from the energy moments of the exact G (phi, phidot, phiddot at E_nu)
     logical :: ed_third_order = .false.          !! energy-dependent route: Taylor P = (z - C + p eps^3)/Delta (experimental; SCF diverges)
     real(dp) :: depth_tol = 1.0e-5_dp             !! energy-dependent route: stop a chain when G changes < depth_tol (levels = maximum)
+    character(len=8) :: ed_tail = 'hull'          !! energy-dependent route: tail of the chain, 'hull' | 'bp' | 'avg2' (asr_endep%ed_tail)
     character(len=8) :: charges = 'lowdin'       !! order 3: 'lowdin' (orthonormal-orbital weights) | 'sphere' (start vectors (1 - hph/2)|L>,
                                                  !! ASA sphere charges; loses ~0.03 e per cell at this order -> E_F shifts ~10 mRy in CuZn)
     character(len=10) :: density = 'expand'      !! M2 term: 'expand' = M2 (phidot^2 + phi phiddot) | 'stuttgart' = M2 (phidot^2 - p phi^2) (LMTO47 newrho)
@@ -307,6 +308,7 @@ contains
 
     order_now = merge(2, min(inp%order, 2), ed .and. .not. inp%ed_third_order); dv_last = huge(1.0_dp); cnrm = 1.0_dp; onrm = 1.0_dp
     ed_depth_tol = 0.0_dp; if (ed) ed_depth_tol = inp%depth_tol
+    ed_tail = inp%ed_tail
     allocate (hvec(nd), rhoex(nmax, 2, 2)); rhoex = 0.0_dp
     exact_now = inp%ed_exact
     do it = 1, inp%maxit

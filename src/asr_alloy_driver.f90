@@ -46,7 +46,7 @@ contains
     type(toml_error), allocatable :: perr
     integer :: i, j, slash, nsp
     real(dp) :: x, alat, xs(2)
-    character(len=:), allocatable :: lat, xcs, hamil, scr, trm, dns, chg, pfs
+    character(len=:), allocatable :: lat, xcs, hamil, scr, trm, dns, chg, pfs, edt
 
     msg = ''
     call toml_load(table, filename, error=perr)
@@ -122,7 +122,7 @@ contains
 
     call section(table, 'asr', child)
     call check_keys(child, ['levels            ', 'rank              ', 'supercell         ', 'flip_radius       ', 'contour_points    ', &
-                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         '], '[asr]', msg)
+                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     '], '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ai%nlevels, 4)
     call get_value(child, 'rank', inp%ai%maxrank, 2)
@@ -137,6 +137,7 @@ contains
     call get_value(child, 'order_switch', inp%ai%order_switch, inp%ai%order_switch)
     call get_value(child, 'charges', chg, 'lowdin'); inp%ai%charges = chg
     call get_value(child, 'depth_tol', inp%ai%depth_tol, inp%ai%depth_tol)
+    call get_value(child, 'ed_terminator', edt, 'hull'); inp%ai%ed_tail = edt
     call get_value(child, 'potential_function', pfs, 'parametrised'); inp%ai%ed_exact = (pfs == 'exact')
     call get_value(child, 'exact_density', inp%ai%ed_exact_density, inp%ai%ed_exact_density)
     call get_value(child, 'kkr_check', inp%ai%kkr_check, inp%ai%kkr_check)
@@ -174,6 +175,7 @@ contains
     if (pfs /= 'exact' .and. pfs /= 'parametrised') msg = "[asr] potential_function must be 'exact' or 'parametrised'"
     if (chg /= 'lowdin' .and. chg /= 'sphere') msg = "[asr] charges must be 'lowdin' or 'sphere'"
     if (trm /= 'avg2' .and. trm /= 'bp') msg = "[asr] terminator must be 'avg2' or 'bp'"
+    if (edt /= 'hull' .and. edt /= 'bp' .and. edt /= 'avg2') msg = "[asr] ed_terminator must be 'hull', 'bp' or 'avg2'"
     if (dns /= 'expand' .and. dns /= 'stuttgart') msg = "[asr] density must be 'expand' or 'stuttgart'"
     if (scr /= 'standard' .and. scr /= 'hardcore' .and. scr /= 'auto') msg = "[asr] screening must be 'auto', 'standard' or 'hardcore'"
     if (hamil /= 'energy-dependent' .and. hamil /= 'energy-independent' .and. hamil /= 'asr_ed') msg = "[asr] hamiltonian must be 'energy-dependent', 'energy-independent' or 'asr_ed'"

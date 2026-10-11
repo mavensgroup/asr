@@ -14,12 +14,15 @@ module asr_endep
   implicit none
   private
   public :: ed_params_t, ed_work_t, ed_functions, ed_species_green, ed_work_init, ed_ordered_green
-  public :: ed_depth_tol, ed_nchain, ed_nlev, cf_species
+  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_tail, cf_species
 
   !> adaptive depth: from level 8, every 4 levels, stop when the terminated Green function changes by less than ed_depth_tol
   !> (relative); 0 = always use the full depth.  ed_nchain / ed_nlev count chains and levels used (statistics).
   real(dp) :: ed_depth_tol = 0.0_dp
   integer(8) :: ed_nchain = 0, ed_nlev = 0
+  !> square-root tail of cf_species: 'hull' (band edges = extreme eigenvalues of the finite chain), 'bp' (Beer-Pettifor fixed
+  !> point: edges where the terminated fraction has its poles, outside the hull), 'avg2' (last two coefficients)
+  character(len=8) :: ed_tail = 'hull'
 
   !> gamma-representation parameters (9 orbitals) of one species / spin; p = 0: two-parameter P^gamma = (z - C)/Delta,
   !> p > 0: third-order P^gamma = (z - C + p (z - E_nu)^3)/Delta (p = <phidot|phidot>, exact to third order in z - E_nu)
@@ -215,8 +218,12 @@ contains
     if (info == 0) then
       ilo = minloc(real(ev), 1); ihi = maxloc(real(ev), 1)
       aa = 0.5_dp * (ev(ilo) + ev(ihi)); bb = 0.25_dp * (ev(ihi) - ev(ilo))
+      if (trim(ed_tail) == 'bp') call bp_fixed_point()
     else
       aa = a(m); bb = (0.0_dp, 0.0_dp); if (m > 1) bb = b(m - 1)
+    end if
+    if (trim(ed_tail) == 'avg2' .and. m >= 3) then
+      aa = 0.5_dp * (a(m) + a(m - 1)); bb = sqrt(0.5_dp * (b(m - 1)**2 + b(m - 2)**2))
     end if
     d = z - aa
     if (abs(bb) < 1.0e-14_dp) then
@@ -237,5 +244,40 @@ contains
       f = f + c(k) * prod
       if (k < m) prod = prod * b(k) * gt(k + 1)
     end do
+  contains
+    !> Beer-Pettifor: A + 2B (A - 2B) = extreme eigenvalue of the chain with a_m -> a_m + B (a_m - B), i.e. the terminated
+    !> fraction has its poles exactly at the tail band edges (complex-symmetric version of asr_terminator%bp_asymptote);
+    !> keeps the hull values if the fixed point does not converge
+    subroutine bp_fixed_point()
+      complex(dp) :: ep, em, an, bn
+      integer :: it
+      do it = 1, 200
+        call chain_matrix(a(m) + bb); call zgeev('N', 'N', m, tm, m, ev, vl, 1, vr, 1, wrk, size(wrk), rw, info)
+        if (info /= 0) return
+        ep = ev(maxloc(real(ev), 1))
+        call chain_matrix(a(m) - bb); call zgeev('N', 'N', m, tm, m, ev, vl, 1, vr, 1, wrk, size(wrk), rw, info)
+        if (info /= 0) return
+        em = ev(minloc(real(ev), 1))
+        an = 0.5_dp * (ep + em); bn = 0.25_dp * (ep - em)
+        if (abs(an - aa) + abs(bn - bb) < 1.0e-12_dp * (1.0_dp + abs(bn))) then
+          aa = an; bb = bn; return
+        end if
+        aa = an; bb = bn
+      end do
+      ! not converged: back to the hull
+      call chain_matrix(a(m)); call zgeev('N', 'N', m, tm, m, ev, vl, 1, vr, 1, wrk, size(wrk), rw, info)
+      ilo = minloc(real(ev), 1); ihi = maxloc(real(ev), 1)
+      aa = 0.5_dp * (ev(ilo) + ev(ihi)); bb = 0.25_dp * (ev(ihi) - ev(ilo))
+    end subroutine bp_fixed_point
+
+    subroutine chain_matrix(am)
+      complex(dp), intent(in) :: am
+      tm = (0.0_dp, 0.0_dp)
+      do j = 1, m
+        tm(j, j) = a(j)
+        if (j < m) then; tm(j, j + 1) = b(j); tm(j + 1, j) = b(j); end if
+      end do
+      tm(m, m) = am
+    end subroutine chain_matrix
   end subroutine cf_species
 end module asr_endep
