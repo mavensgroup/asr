@@ -761,5 +761,12 @@ build_augsym_operator, i.e. a hard wall as in AMscf).  Pure Fe (A = B), levels 4
 | hull tail | 2.643 | 2.200 | 2.299 | 2.246 |
 | bp tail | 2.438 | 2.234 | 2.288 | 2.249 |
 => generating the augmented space to a modest depth and running many steps on it (AMscf's recipe) removes the depth swing for Fe (levels-only: 2.64 / 2.01 /
-2.27 / 2.13 at 4/5/6/8).  Disordered FeCo / FeV with levels 4, recursion_steps 12, bp: running (q10).
+2.27 / 2.13 at 4/5/6/8).
+Disordered, asr_ed, levels 4, rank 1 (17515 nodes), recursion_steps 12, bp tail, SIM beta 0.7 (q10, ~5.5 min per SCF iteration with two runs sharing 28 cores):
+| system | result (Fe positive) | E_F | qnet Fe | before (levels 4 only, hull) | reference |
+|---|---|---|---|---|---|
+| FeCo 50:50, a = 2.857 | Fe 2.512 / Co 1.767 (parallel) | -0.0806 | -0.013 | 2.624 / 1.584 | ordered B2 2.76 / 1.77 |
+| FeV 50:50, a = 2.95 | Fe 1.726 / V -0.361 (antiparallel) | -0.0668 | +0.051 | 2.682 / +0.080 | ordered B2 k-space 1.353 / -0.434 (qnet 0.332); paper 1.12 / -0.11 |
+The hard-wall recursion fixes both qualitatively (FeV: V antiparallel, Fe moment down by 1 muB).  Open: convergence in recursion_steps (16/24), the SIM
+(FeV transfer 0.05 e vs 0.33 ordered; more charge on Fe lowers its moment), and an independent disordered reference (SQS).
 Also: FeCo levels 4 (no hard-wall extension) with bp tail: Fe 2.426 / Co 1.404, E_F -0.0769 (hull: 2.624 / 1.584).
