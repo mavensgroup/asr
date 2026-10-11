@@ -759,7 +759,7 @@ build_augsym_operator, i.e. a hard wall as in AMscf).  Pure Fe (A = B), levels 4
 | recursion steps | 4 | 12 | 16 | 24 |
 |---|---|---|---|---|
 | hull tail | 2.643 | 2.200 | 2.299 | 2.246 |
-| bp tail | 2.438 | 2.234 | running | running |
+| bp tail | 2.438 | 2.234 | 2.288 | 2.249 |
 => generating the augmented space to a modest depth and running many steps on it (AMscf's recipe) removes the depth swing for Fe (levels-only: 2.64 / 2.01 /
 2.27 / 2.13 at 4/5/6/8).  Disordered FeCo / FeV with levels 4, recursion_steps 12, bp: running (q10).
 Also: FeCo levels 4 (no hard-wall extension) with bp tail: Fe 2.426 / Co 1.404, E_F -0.0769 (hull: 2.624 / 1.584).
