@@ -770,3 +770,14 @@ Disordered, asr_ed, levels 4, rank 1 (17515 nodes), recursion_steps 12, bp tail,
 The hard-wall recursion fixes both qualitatively (FeV: V antiparallel, Fe moment down by 1 muB).  Open: convergence in recursion_steps (16/24), the SIM
 (FeV transfer 0.05 e vs 0.33 ordered; more charge on Fe lowers its moment), and an independent disordered reference (SQS).
 Also: FeCo levels 4 (no hard-wall extension) with bp tail: Fe 2.426 / Co 1.404, E_F -0.0769 (hull: 2.624 / 1.584).
+
+## FeRh vs SPR-KKR-CPA (2026-10-12, desktop trial/q11)
+Reference: Greeshma & Banerjee, Pramana 97, 95 (2023) (references/FeRh_SPRKKR.pdf): SPR-KKR, full potential, PBE, lmax 2; Table 1 at the optimised a
+(fig. 1b minimum ~5.78, axis labelled A but read as Bohr -> 3.059 A): ordered B2 Fe 3.271 / Rh 0.942, disordered A2 (CPA) Fe 3.070 / Rh 0.725.
+Ours (LDA vbh, ASA equal spheres, a = 3.059 A):
+| | Fe | Rh | qnet Fe | E_F |
+|---|---|---|---|---|
+| ordered B2, k-space LMTO-ASA | 3.229 | 1.064 | +0.126 | -0.1132 |
+| disordered A2, asr_ed levels 4 rank 1, recursion_steps 12, bp, SIM 0.7 | 2.867 | 0.751 | +0.022 | -0.1272 |
+Ordered: within 0.04 (Fe) / 0.12 (Rh) of SPR-KKR despite LDA vs PBE.  Disordered: Rh matches CPA (0.75 vs 0.73); Fe 0.20 low (ordered -> disordered
+drop 0.36 vs CPA 0.20).  24 steps running.
