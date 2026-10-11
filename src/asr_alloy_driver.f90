@@ -6,7 +6,8 @@
 !>   [[species]]    (two) symbol, z, nval, konfig, occupations, concentration (A only; B = 1 - x_A)
 !>   [scf]          spin = 1|2, xc, sigma, sim_beta, mixing, tolerance, max_iterations, zeta0, relativistic
 !>   [asr]          levels, rank, supercell, flip_radius, contour_points, cluster_radius, inversion_radius, screening, terminator,
-!>                  density, order (2|3: second/third-order H), symmetry, hamiltonian
+!>                  density, order (2|3: second/third-order H), symmetry, hamiltonian, ed_terminator (hull|bp|avg2),
+!>                  recursion_steps (Lanczos steps on the generated node set, hard wall; default = levels)
 !>   [dos]          emin, emax, npoints, eta
 !>   [output]       dos_file, out_file
 !> Unknown sections/keys are errors.
@@ -122,9 +123,10 @@ contains
 
     call section(table, 'asr', child)
     call check_keys(child, ['levels            ', 'rank              ', 'supercell         ', 'flip_radius       ', 'contour_points    ', &
-                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     '], '[asr]', msg)
+                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     ', 'recursion_steps   '], '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ai%nlevels, 4)
+    call get_value(child, 'recursion_steps', inp%ai%nrec, 0)
     call get_value(child, 'rank', inp%ai%maxrank, 2)
     call get_value(child, 'supercell', inp%ai%lsuper, 8)
     call get_value(child, 'flip_radius', inp%ai%flip_radius, 99)
@@ -168,6 +170,7 @@ contains
     end do
     if (inp%ai%nspin /= 1 .and. inp%ai%nspin /= 2) msg = '[scf] spin must be 1 or 2'
     if (inp%ai%nlevels < 2) msg = '[asr] levels must be >= 2'
+    if (inp%ai%nrec /= 0 .and. inp%ai%nrec < inp%ai%nlevels) msg = '[asr] recursion_steps must be 0 or >= levels'
     if (inp%ai%maxrank < 0) msg = '[asr] rank must be >= 0'
     if (inp%ai%symmetry .and. inp%ai%lsuper < 2) msg = '[asr] supercell must be >= 2'
     if (inp%emax <= inp%emin) msg = '[dos] emax must exceed emin'

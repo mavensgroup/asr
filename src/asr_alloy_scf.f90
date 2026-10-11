@@ -51,6 +51,8 @@ module asr_alloy_scf
     real(dp) :: rinv = 0.0_dp                     !! inversion cluster radius for S^alpha (alat); <= rcl: invert on the rcl cluster
     integer :: lsuper = 24                       !! supercell (conventional cells) of the ASR graph
     integer :: nlevels = 8, maxrank = 2, flip_radius = 2
+    integer :: nrec = 0                          !! Lanczos steps (0: = nlevels); > nlevels runs on the generated node set as a hard wall (AMscf: map
+                                                 !! exact to 6 hops, 12 steps)
     integer :: ncont = 60                        !! contour points
     real(dp) :: beta = 0.3_dp, sim_beta = 0.7_dp, tol = 1.0e-5_dp
     integer :: maxit = 60, mix_history = 6, nspin = 1
@@ -190,7 +192,7 @@ contains
     real(dp), allocatable :: yc(:, :, :), vtmp(:, :), etmp(:, :)
     real(dp) :: alpha(0:2), c, avw, enu(0:2, 2, 2), xs(2), ef, nelec, amad, lo, hi, nn, vm, dvc, dv, e, fs, s_s
     real(dp) :: mom(2, 2, 0:2, 0:2)                  ! (species, spin, k, l)
-    integer :: nlev, mm(4, 2), s, sg, nsp, l, oc, n, it, i, k, nx, nmax, is, nod
+    integer :: nlev, ngen, mm(4, 2), s, sg, nsp, l, oc, n, it, i, k, nx, nmax, is, nod
     logical :: vb, core_ok
     logical :: exact_now
     real(dp) :: ebot_exact
@@ -217,7 +219,8 @@ contains
     alpha = alloy_alpha(inp)
     amad = madelung_const(trim(inp%lattice))
     nelec = xs(1) * real(inp%spec(1)%nval, dp) + xs(2) * real(inp%spec(2)%nval, dp)
-    nlev = inp%nlevels
+    ngen = inp%nlevels                               ! augmented-space generation depth
+    nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec   ! recursion steps
     ed = inp%energy_dependent
     asr_ed = ed .and. inp%ed_asr
     omm = 0
@@ -272,21 +275,21 @@ contains
       if (asr_ed) then                                  ! one operator per central species, start site frozen (not flippable)
         flippable(1) = .false.
         do i = 1, 2
-          call build_augsym_operator(g, mdl, perm, dmat, 1, nlev, sopc(i), inp%maxrank, flippable, order=2)
+          call build_augsym_operator(g, mdl, perm, dmat, 1, ngen, sopc(i), inp%maxrank, flippable, order=2)
           call augsym_freeze_site(sopc(i), 1, merge(1.0_dp, 0.0_dp, i == 1))
         end do
         nd = sopc(1)%dim(); nnodes = sopc(1)%nn; flip1 = 0; md1 = 0.0_dp; sflip = 0.0_dp
       else
-        call build_augsym_operator(g, mdl, perm, dmat, 1, nlev, sop, inp%maxrank, flippable, order=merge(inp%order, 2, .not. ed))
+        call build_augsym_operator(g, mdl, perm, dmat, 1, ngen, sop, inp%maxrank, flippable, order=merge(inp%order, 2, .not. ed))
         nd = sop%dim(); nnodes = sop%nn; flip1 = sop%flipr(1); md1 = sop%md(1); sflip = sop%s
       end if
     else
-      call build_augorb_operator(g, mdl, 1, nlev, op, inp%maxrank, flippable, order=merge(inp%order, 2, .not. ed))
+      call build_augorb_operator(g, mdl, 1, ngen, op, inp%maxrank, flippable, order=merge(inp%order, 2, .not. ed))
       nd = op%dim(); nnodes = op%nn; flip1 = op%flip(1); md1 = op%md(1); sflip = op%s
     end if
     end if
     res%nodes = nnodes
-    if (vb) print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,l1,a,l1,a,l1)', '  alloy ASR: nodes=', nnodes, '  levels=', nlev, '  rank<=', inp%maxrank, '  flip radius=', inp%flip_radius, '  nspin=', nsp, '  sym=', inp%symmetry, '  energy-dependent=', inp%energy_dependent, '  ordered=', ordered
+    if (vb) print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,l1,a,l1,a,l1)', '  alloy ASR: nodes=', nnodes, '  levels=', ngen, '  recursion steps=', nlev, '  rank<=', inp%maxrank, '  flip radius=', inp%flip_radius, '  nspin=', nsp, '  sym=', inp%symmetry, '  energy-dependent=', inp%energy_dependent, '  ordered=', ordered
     allocate (offx(3)); offx(1) = 0
     do s = 1, 2; offx(s + 1) = offx(s) + (cr(s)%mesh%n + 3) * nsp; end do
     nx = offx(3)
