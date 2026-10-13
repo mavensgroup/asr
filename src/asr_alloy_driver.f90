@@ -190,7 +190,7 @@ contains
     logical, intent(out) :: ok
     type(alloy_result_t) :: res
     real(dp), allocatable :: egrid(:), dos(:, :, :, :)
-    real(dp) :: tot, x
+    real(dp) :: tsp(2), tot, x
     integer :: i, ie, l, s, sg, u, np
     character(len=:), allocatable :: dfile
     character(len=8) :: syms(2)
@@ -238,13 +238,15 @@ contains
     open (newunit=u, file=dfile, status='replace', action='write')
     write (u, '(a)') '# '//inp%name//'   states/Ry/atom, summed over spin'
     write (u, '(a,f12.8)') '# E_F = ', res%ef
-    write (u, '(a)') '# E(Ry)  total  A_s A_p A_d  B_s B_p B_d   (A = '//inp%species(1)%symbol//', B = '//inp%species(2)%symbol//')'
+    write (u, '(a)') '# E(Ry)  total  A_s A_p A_d  B_s B_p B_d  total_spin1 total_spin2  (A = '//inp%species(1)%symbol//', B = '// &
+                     inp%species(2)%symbol//'; per-spin totals per atom, concentration weighted)'
     do ie = 1, np
-      tot = 0.0_dp
+      tot = 0.0_dp; tsp = 0.0_dp
       do sg = 1, inp%ai%nspin
-        tot = tot + x * sum(dos(ie, :, 1, sg)) + (1.0_dp - x) * sum(dos(ie, :, 2, sg))
+        tsp(sg) = x * sum(dos(ie, :, 1, sg)) + (1.0_dp - x) * sum(dos(ie, :, 2, sg))
+        tot = tot + tsp(sg)
       end do
-      write (u, '(f12.6,7es14.6)') egrid(ie), tot, ((sum(dos(ie, l, s, :)), l=0, 2), s=1, 2)
+      write (u, '(f12.6,9es14.6)') egrid(ie), tot, ((sum(dos(ie, l, s, :)), l=0, 2), s=1, 2), tsp
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
