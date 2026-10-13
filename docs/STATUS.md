@@ -783,3 +783,17 @@ Ours (LDA vbh, ASA equal spheres, a = 3.059 A):
 Ordered: within 0.04 (Fe) / 0.12 (Rh) of SPR-KKR despite LDA vs PBE.  Disordered: Rh matches CPA (0.75 vs 0.73); Fe 0.20 low (ordered -> disordered
 drop 0.36 vs CPA 0.20).  12 -> 24 steps: Fe +0.03, Rh -0.04, i.e. converged in steps; the remaining Fe deficit (0.17) is not recursion depth.
 Candidates: SIM (Fe gains 0.02 e vs 0.13 ordered; SPR-KKR-CPA has no SIM), the hard-wall node set (levels 4), LDA vs PBE, or a genuine ASR-vs-CPA difference.
+SIM strength and functional (2026-10-13/14, desktop trial/q12, q13; disordered A2, levels 4, recursion_steps 12, bp; PBE added in 7c64127):
+| run | Fe | Rh | qnet Fe | E_F |
+|---|---|---|---|---|
+| LDA, sim_beta 0.7 | 2.867 | 0.751 | 0.022 | -0.1272 |
+| LDA, sim_beta 0.39 (mixing 0.1) | 2.863 | 0.755 | 0.028 | -0.1270 |
+| LDA, sim_beta 0.2 (mixing 0.1) | 2.859 | 0.758 | 0.033 | -0.1271 |
+| LDA, sim_beta 0 (mixing 0.2) | SCF fell onto the non-magnetic solution (early swings) | | 0.058 | -0.1474 |
+| PBE, sim_beta 0.7 (mixing 0.1) | 2.951 | 0.905 | 0.020 | -0.0575 |
+| ordered B2 k-space, PBE | 3.305 | 1.068 | 0.107 | -0.0397 |
+SPR-KKR (PBE): ordered 3.271 / 0.942, CPA 3.070 / 0.725.
+=> The SIM does not matter (moments within 0.01 for beta 0.2-0.7; the transfer stays 0.02-0.03 e: small transfer is the disordered environment, not the SIM).
+=> PBE vs PBE: Rh +0.13 (ordered) / +0.18 (disordered) high in both: ASA (equal spheres) offset.  Fe: ordered +0.03, disordered -0.12; the
+   ordered -> disordered Fe drop is 0.35 (ours, LDA and PBE alike) vs 0.20 (CPA).  Not depth, node set, SIM or functional: either ASR (local
+   environments) vs single-site CPA, or ASA vs full potential.  Decisive check: SQS supercell with our own k-space ASA (same ASA and functional).
