@@ -115,7 +115,7 @@ contains
       do i = 2, n; rho(i) = nrr(i) / (4.0_dp * pi * res%mesh%r(i)**2); end do
       rho(1) = rho(2)
       call poisson_hartree(res%mesh, nrr, vh)
-      call xc_eval(xf, rho, exc, vxc)
+      call xc_eval(xf, rho, exc, vxc, res%mesh%r)
       vnew(2:) = -2.0_dp * z / res%mesh%r(2:) + vh(2:) + vxc(2:)
       vnew(1) = vnew(2)
       dv = maxval(abs(vnew(2:n) - v(2:n)) * res%mesh%r(2:n) / (1.0_dp + res%mesh%r(2:n)))

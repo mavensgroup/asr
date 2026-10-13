@@ -227,9 +227,9 @@ contains
         do k = 2, n; rho(k, :) = cr(ic)%nrad(k, :) / (4.0_dp * pi * cr(ic)%mesh%r(k)**2); end do
         rho(1, :) = rho(2, :)
         if (nsp == 1) then
-          call xc_eval(xf, rho(:, 1), exc, vxc(:, 1)); vxc(:, 2) = vxc(:, 1)
+          call xc_eval(xf, rho(:, 1), exc, vxc(:, 1), cr(ic)%mesh%r); vxc(:, 2) = vxc(:, 1)
         else
-          call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2))
+          call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(ic)%mesh%r)
         end if
         do s = 1, nsp
           vnew(2:n, s) = -2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n) + vh(2:n) + vxc(2:n, s) + vmad(ic)
@@ -326,8 +326,8 @@ contains
     end block
     v(1, 1) = v(2, 1); rho(1) = rho(2)
     if (nsp == 2 .and. size(v, 2) >= 2) then
-      call xc_eval(xf, rho, e0, v0)
-      call xc_eval_pol(xf, 0.5_dp * (1.0_dp + inp%zeta0) * rho, 0.5_dp * (1.0_dp - inp%zeta0) * rho, eu, vu, vd)
+      call xc_eval(xf, rho, e0, v0, m%r)
+      call xc_eval_pol(xf, 0.5_dp * (1.0_dp + inp%zeta0) * rho, 0.5_dp * (1.0_dp - inp%zeta0) * rho, eu, vu, vd, m%r)
       v(:, 2) = v(:, 1) - v0 + vd
       v(:, 1) = v(:, 1) - v0 + vu
     else if (size(v, 2) >= 2) then

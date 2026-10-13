@@ -495,9 +495,9 @@ contains
         do k = 2, n; rho(k, :) = cr(s)%nrad(k, :) / (4.0_dp * pi * cr(s)%mesh%r(k)**2); end do
         rho(1, :) = rho(2, :)
         if (nsp == 1) then
-          call xc_eval(xf, rho(:, 1), exc, vxc(:, 1)); vxc(:, 2) = vxc(:, 1)
+          call xc_eval(xf, rho(:, 1), exc, vxc(:, 1), cr(s)%mesh%r); vxc(:, 2) = vxc(:, 1)
         else
-          call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2))
+          call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(s)%mesh%r)
         end if
         s_s = merge(inp%spec(s)%sws, avw, inp%spec(s)%sws > 0.0_dp)
         vm = inp%sim_beta * 2.0_dp * amad * cr(s)%qnet / s_s                        ! SIM

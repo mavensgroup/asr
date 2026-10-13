@@ -22,5 +22,14 @@ program test_atom
   print '(a,l1,a,i0,a,f14.6,a,3f12.6)', '    Ne converged=', r%converged, ' iters=', r%iter, '  Etot(Ha)=', r%etot / ha, '  eps(Ha)=', r%eps / ha
   call check(r%converged, 'Ne SCF converged')
   call check_close(r%etot / ha, -128.233481_dp, 5.0e-4_dp, 'Ne total energy vs NIST LDA')
+  ! PBE (GGA), non-relativistic: literature He -2.8929 Ha, Ne -128.866 Ha (Perdew, Burke, Ernzerhof, PRL 77, 3865 (1996), Table)
+  call solve_atom(2.0_dp, he, 'pbe', 40.0_dp, 0.01_dp, .false., r)
+  print '(a,l1,a,i0,a,f14.7,a,f12.6)', '    He PBE converged=', r%converged, ' iters=', r%iter, '  Etot(Ha)=', r%etot / ha, '  eps1s(Ha)=', r%eps(1) / ha
+  call check(r%converged, 'He PBE SCF converged')
+  call check_close(r%etot / ha, -2.8929_dp, 1.0e-3_dp, 'He PBE total energy vs literature')
+  call solve_atom(10.0_dp, ne, 'pbe', 30.0_dp, 0.01_dp, .false., r)
+  print '(a,l1,a,i0,a,f14.6,a,3f12.6)', '    Ne PBE converged=', r%converged, ' iters=', r%iter, '  Etot(Ha)=', r%etot / ha, '  eps(Ha)=', r%eps / ha
+  call check(r%converged, 'Ne PBE SCF converged')
+  call check_close(r%etot / ha, -128.866_dp, 2.0e-3_dp, 'Ne PBE total energy vs literature')
   call report()
 end program test_atom
