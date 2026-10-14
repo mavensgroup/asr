@@ -797,3 +797,22 @@ SPR-KKR (PBE): ordered 3.271 / 0.942, CPA 3.070 / 0.725.
 => PBE vs PBE: Rh +0.13 (ordered) / +0.18 (disordered) high in both: ASA (equal spheres) offset.  Fe: ordered +0.03, disordered -0.12; the
    ordered -> disordered Fe drop is 0.35 (ours, LDA and PBE alike) vs 0.20 (CPA).  Not depth, node set, SIM or functional: either ASR (local
    environments) vs single-site CPA, or ASA vs full potential.  Decisive check: SQS supercell with our own k-space ASA (same ASA and functional).
+
+## MnCr vs Banerjee & Mookerjee arXiv:0812.0216 Fig. 1 (2026-10-14, desktop trial/q14)
+Reference (data/reference/mncr/banerjee2009_fig1_50-50.dat, oracle only): disordered bcc Mn50Cr50, legacy TB-LMTO-ASR (VBH, a = 5.4802 Bohr = 2.900 A,
+12 recursion steps on the legacy bcc map); peaks (E - E_F, Ry): majority -0.360 / -0.227 / +0.022, minority -0.377 / -0.239 / +0.014, N(E_F) 15.6 / 18.4
+per spin; nearly non-magnetic.  Ours, same a and xc, asr_ed levels 4, bp:
+| run | moments Mn / Cr | E_F | peaks (E - E_F) | N(E_F) per spin |
+|---|---|---|---|---|
+| disordered, recursion_steps 12 | 0.003 / -0.001 | -0.0349 | -0.163, +0.072 | 8.5 |
+| disordered, recursion_steps 24 | -0.986 / +0.181 | -0.0340 | spin 1 -0.128, +0.074; spin 2 -0.161, +0.009, +0.087 | 6.0 / 13.7 |
+| ordered B2, k-space, non-magnetic | - | -0.0269 | -0.271, -0.178 / -0.146, +0.032 (0.02 Ry Gaussian) | 14.8 |
+| ordered B2, k-space, spin | 0.072 / 0.429 | -0.0267 | | |
+| pure bcc Cr, k-space | - | -0.0217 | -0.248, -0.158 / -0.111, +0.087 | 4.8 |
+| pure bcc Cr, asr_ed route (A = B), 12 / 24 / 48 steps | - | -0.023 / -0.017 / -0.015 | 48: -0.253, -0.183 / -0.113, +0.067 / +0.105 | 5.6 / 4.8 / 5.0 |
+Findings: (i) the recursion route reproduces the bcc d-band shape of pure Cr vs our k-space LMTO (all features at 48 steps, N(E_F) within 0.2-0.8);
+(ii) Fig. 1 is NOT reproduced: its bonding peaks (-0.36 / -0.23) are 0.08-0.09 Ry deeper than in both our ordered B2 MnCr k-space (-0.27 / -0.18) and
+pure Cr k-space (-0.25 / -0.16) at the same a and xc, so the 2009 band is wider than any of our independent calculations; candidate legacy causes: the bcc
+map-reading bug (15 of 17 columns: central site not frozen), legacy CTRL sphere radii (Mn R = 2.14 vs Cr 2.70 Bohr, not space filling), 14-neighbour S.
+(iii) Our disordered DOS has N(E_F) 8.5 (12 steps) vs 14.8 in ordered B2 and the top peak 40 mRy higher than B2; the disordered magnetic state is not
+converged in steps (non-magnetic at 12, Mn -0.99 / Cr +0.18 at 24): MnCr is a marginal magnet like FeV.  Open: 48-step disordered run, antiparallel seed.
