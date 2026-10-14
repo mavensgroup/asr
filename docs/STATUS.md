@@ -883,3 +883,25 @@ zeta0 0.1 -> weak state (Cr -0.54 VWN / -0.43 VBH); zeta0 0.4 -> RUNAWAY: E_F cl
 it 10) and ends at a fixed point Mn 4.9 / Cr 3.4 (parallel), E_F +0.21 Ry, which Questaal never reaches from the same start (it converges to the
 ferrimagnet).  => (i) the ground state of B2 MnCr is the ferrimagnet, missed by parallel starts (ours, the 2009 paper); (ii) our SCF has a spurious
 runaway mode at large initial polarisation -- the same E_F drift (+0.2 Ry) seen in the disordered MnCr / FeRh / FeV runs.  Next: find it.
+
+## SCF runaway found and fixed (2026-10-15; desktop trial/q17-q20b; commits 7bc52d2, 460f2f2, 4ba5ca0, ca48346)
+Diagnosed with the new `[scf] trace = true` (k-space ASA: E_nu, C, sqrt(Delta)_d, q0, V(S), Madelung per iteration/class/spin; V_in/V_out at S).
+1. Mixer (the cause of the early E_F excursions in every magnetic SCF, also pure Fe): unweighted Anderson on the log mesh, whose many points near
+   the nucleus dominate the least-squares fit; near S the step went against the residual every iteration (bcc Fe: V_out(S) = -0.71 fixed while
+   V_in(S) climbed by the 0.15 Ry clamp per iteration; E_F to +1.5 Ry by iteration 12, moment flipped, convergence only at iteration ~60-70).
+   Fix: Anderson inner products weighted by (r/(1+r))^2 (the dV measure; E_nu entries weight 1) + restart of the history when the step opposes the
+   residual or the residual doubles.  (A linear start while dV > 0.1 was tried and dropped: B2 MnCr charge-sloshed at +-1.4 e.)
+2. E_nu could leave its band: past phi_l(S) = 0 the parametrisation jumps to the next radial branch (Mn minority d: E_nu 1.06, C 4.86 Ry,
+   sqrt(Delta) -1.12) and the SCF converged to a spurious Mn 4.9 / Cr 3.4 muB state with E_F +0.21 Ry.  Fix: band_window / clamp_enu keep each E_nu in
+   [E(D_l = l), E(phi_l(S) = 0) - 5%] of the branch with n-l-1 nodes (Questaal's pnu floor / fixed principal quantum number); test_band_window.
+   (A first version with the floor at D_l = 0 pinned the p E_nu above the centre of gravity of the occupied p weight: no convergence.)
+Results (k-space, 24^3 unless stated; max E_F reached during the SCF in brackets):
+| run | before | after |
+|---|---|---|
+| bcc Fe VWN / VBH | 2.252 / 2.214, 58-72 its (E_F max +1.5) | 2.252 / 2.214, 48-49 its (E_F max +0.07) |
+| B2 MnCr VWN, Cr antiparallel, zeta0 0.4 | spurious Mn 4.9 / Cr 3.4, E_F +0.21 | ferrimagnet 1.944 / -1.057, 57 its (E_F max 0.17) |
+| B2 MnCr VWN, zeta0 0.2 antiparallel / parallel start | 1.944 / -1.057 (66 its) / weak state | 1.944 / -1.057 in 40 / 56 its (Questaal 1.985 / -1.080) |
+| B2 MnCr VBH, antiparallel (zeta0 0.2 or 0.4) | 1.662 / -0.823 (111-136 its) or spurious | 1.662 / -0.823 in 41-57 its |
+| B2 MnCr VBH, parallel start | weak state | not converged in 150 its (weak states, dV 1e-4 level) |
+Earlier magnetic alloy runs (q5-q16) used the old mixer; their wild early iterations and the E_F +0.2 Ry drifts are this bug.  Converged results
+are fixed points of the same equations and stand, but which solution was reached was decided by the broken mixer.
