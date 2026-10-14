@@ -15,7 +15,7 @@ module asr_alloy_scf
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree, shell_t
-  use asr_potpar, only: potpar_l_t, potpar_at_enu
+  use asr_potpar, only: potpar_l_t, potpar_at_enu, clamp_enu
   use asr_lmto_ham, only: potpar_t
   use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start, core_shells_for
   use asr_lmto_cell, only: alpha_from_sigma, cell_t, cluster_t, build_cluster, setup_cell, recip_vectors
@@ -534,6 +534,9 @@ contains
           cr(s)%v(1, sg) = cr(s)%v(2, sg)
           do l = 0, 2
             enu(l, sg, s) = xin(i + n + 1 + l) + max(-0.08_dp, min(0.08_dp, xnext(i + n + 1 + l) - xin(i + n + 1 + l)))
+            if (clamp_enu(cr(s)%mesh, cr(s)%v(:, sg), l, inp%spec(s)%nvl(l) - l - 1, inp%spec(s)%z, c, enu(l, sg, s))) then
+              if (vb) print '(a,i0,a,i0,a,i0,a,f9.5)', '    E_nu outside its band window: species ', s, ' spin ', sg, ' l ', l, ' -> ', enu(l, sg, s)
+            end if
           end do
         end do
       end do

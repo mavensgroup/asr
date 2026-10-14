@@ -8,7 +8,7 @@ module asr_asa
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree, shell_t, solve_atom, atom_result_t
-  use asr_potpar, only: potpar_l_t, potpar_at_enu
+  use asr_potpar, only: potpar_l_t, potpar_at_enu, clamp_enu
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_lmto_cell
   use asr_ewald, only: madelung_phi
@@ -270,6 +270,9 @@ contains
           do l = 0, 2
             ii = offx(ic) + n * nsp + 3 * (s - 1) + l + 1
             enu(l, s, ic) = xin(ii) + max(-inp%denumax, min(inp%denumax, xnext(ii) - xin(ii)))
+            if (clamp_enu(cr(ic)%mesh, cr(ic)%v(:, s), l, inp%cls(ic)%nvl(l) - l - 1, inp%cls(ic)%z, c, enu(l, s, ic))) then
+              if (vb) print '(a,i0,a,i0,a,i0,a,f9.5)', '    E_nu outside its band window: class ', ic, ' spin ', s, ' l ', l, ' -> ', enu(l, s, ic)
+            end if
           end do
         end do
       end do
