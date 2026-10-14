@@ -905,3 +905,16 @@ Results (k-space, 24^3 unless stated; max E_F reached during the SCF in brackets
 | B2 MnCr VBH, parallel start | weak state | not converged in 150 its (weak states, dV 1e-4 level) |
 Earlier magnetic alloy runs (q5-q16) used the old mixer; their wild early iterations and the E_F +0.2 Ry drifts are this bug.  Converged results
 are fixed points of the same equations and stand, but which solution was reached was decided by the broken mixer.
+
+## Adaptive depth and recursion depth at fixed potential; E_F search fix (2026-10-15; desktop trial/q16, commit f6ebe11)
+Disordered bcc Mn50Cr50 (VBH, a = 2.900, asr_ed levels 4, bp, SIM beta 1), non-magnetic SCF at 12 steps (44 its, qnet Mn +0.054; old SIM 0.018),
+potential saved; then ONE iteration from it at 12 / 24 / 48 steps with depth_tol 0 and 1e-5:
+| steps | E_F (tol 0) | E_F (tol 1e-5) | qnet Mn / Cr | dV vs input |
+|---|---|---|---|---|
+| 12 | -0.035031 | -0.035031 | +0.05396 / -0.05394 | 5.7e-5 (restart check) |
+| 24 | -0.029774 | -0.029774 | +0.10999 / -0.11000 | 3.8e-2 |
+| 48 | -0.029176 | -0.029176 | +0.10857 / -0.10911 | 3.9e-2 |
+=> the adaptive depth (depth_tol) changes nothing at any depth; charges balance.  An external review's claim that depth_tol breaks the contour
+integral (and caused the unbalanced species charges) is refuted.  MnCr needs 24 steps (12 -> 24: charge transfer x2, E_F 5 mRy; 24 -> 48: 0.6 mRy).
+The unbalanced charges (MnCr -0.14 e, CuZn +0.34 e in early iterations) came from the E_F search: 6 contour passes, then a first-order moment
+correction with a slope different from the DOS used in it.  Fix f6ebe11: 12 passes, correction with DOS(E_F), remaining N - N_elec reported.
