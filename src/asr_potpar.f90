@@ -72,7 +72,7 @@ contains
     real(dp), intent(out) :: ebot, etop
     real(dp) :: elo, ehi, emid, eprev
     integer :: it
-    elo = minval(v(2:m%n)) * 0.5_dp - 10.0_dp
+    elo = v(m%n) - 20.0_dp                      ! below the valence branches (semicore tops are above ~ -10 Ry)
     ehi = v(m%n) + 1.0_dp
     do while (count_nodes(ehi) <= nodes .and. ehi < 400.0_dp)
       ehi = v(m%n) + 2.0_dp * (ehi - v(m%n))
@@ -130,6 +130,8 @@ contains
     real(dp) :: eb, et, e0
     call band_window(m, v, l, nodes, z, c, eb, et)
     e0 = enu
+    moved = .false.
+    if (.not. (eb < et .and. abs(eb) < 1.0e3_dp .and. abs(et) < 1.0e3_dp)) return     ! window not found: leave E_nu
     enu = max(eb, min(et - 0.05_dp * (et - eb), enu))
     moved = (enu /= e0)
   end function clamp_enu
