@@ -188,7 +188,9 @@ contains
     integer :: nd, nnodes, flip1, nfe, jf
     type(ed_params_t) :: eda(2), edb(2)
     type(ed_work_t) :: edw
-    real(dp) :: alpha9(9), dosef(2, 2, 0:2), ef_old, nn_old, slope
+    real(dp) :: alpha9(9), dosef(2, 2, 0:2), elo, ehi, flo, fhi
+    logical :: hlo, hhi
+    integer :: side
     logical :: ed
     real(dp) :: md1, sflip
     type(anderson_t) :: mixer
@@ -387,20 +389,32 @@ contains
           stop 0
         end if
         if (exact_now) call choose_ebot()
-        nfe = 12                       ! contour passes; a converged SCF needs 1-2.  With 6, wild iterations ran out and the linear
-        ef_old = 0.0_dp; nn_old = 0.0_dp ! correction left N /= N_elec (species charges unbalanced by up to 0.3 e)
+        ! E_F: Newton steps (slope DOS(E_F), at most 0.15 Ry) until N - N_elec changes sign, then false position on the bracket
+        ! (Illinois: halve the retained end's residual when the same end is replaced twice), bisection if the estimate leaves
+        ! the bracket.  The plain secant oscillated across the steep d-peak step of N(E) (CuZn: 0.8 e in 35 mRy) and never
+        ! converged; the leftover was absorbed by a first-order moment correction (unbalanced species charges).
+        nfe = 16
+        hlo = .false.; hhi = .false.; side = 0
         do jf = 1, nfe
           call ed_moments(ef, mom, dosef, rhoex)
           nn = fs * (xs(1) * sum(mom(1, 1:nsp, 0, :)) + xs(2) * sum(mom(2, 1:nsp, 0, :)))
           dvc = fs * (xs(1) * sum(dosef(1, 1:nsp, :)) + xs(2) * sum(dosef(2, 1:nsp, :)))
           if (vb .and. it == 1) print '(a,i2,a,f10.6,a,f9.5,a,f9.4)', '    E_F search ', jf, ': E_F=', ef, '  N-nelec=', nn - nelec, '  DOS(E_F)=', dvc
           if (abs(nn - nelec) < 2.0e-4_dp) exit
-          slope = max(dvc, 1.0_dp)
-          if (jf > 1) then
-            if ((nn - nn_old) * (ef - ef_old) > 0.0_dp .and. abs(ef - ef_old) > 1.0e-9_dp) slope = (nn - nn_old) / (ef - ef_old)
+          if (nn < nelec) then
+            if (side == -1 .and. hhi) fhi = 0.5_dp * fhi
+            elo = ef; flo = nn - nelec; hlo = .true.; side = -1
+          else
+            if (side == 1 .and. hlo) flo = 0.5_dp * flo
+            ehi = ef; fhi = nn - nelec; hhi = .true.; side = 1
           end if
-          e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / slope))
-          ef_old = ef; nn_old = nn
+          if (hlo .and. hhi) then
+            e = (elo * fhi - ehi * flo) / (fhi - flo)
+            if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
+            e = e - ef
+          else
+            e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 1.0_dp)))
+          end if
           if (jf == nfe) then          ! out of evaluations: first-order correction of the moments with the DOS at E_F
             e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
             if (vb) print '(a,i0,a,es10.3,a,f9.5,a,es10.3)', '    warning: E_F search not converged after ', nfe, ' passes: N - N_elec =', &
