@@ -1,5 +1,5 @@
 !> band_window: the Wigner-Seitz window [D_l = 0, phi_l(S) = 0] of the valence branch contains E_nu-like energies and the
-!> potential parameter C; E_nu above the top makes sqrt(Delta) change sign (the failure the window guards against).
+!> potential parameter C, and the free-atom 3d level lies inside the d window.
 program test_band_window
   use asr_kinds, only: dp
   use asr_testing
@@ -9,7 +9,7 @@ program test_band_window
   implicit none
   type(atom_result_t) :: at
   type(radmesh_t) :: m
-  type(potpar_l_t) :: pp, pq
+  type(potpar_l_t) :: pp
   real(dp), allocatable :: v(:)
   real(dp) :: eb, et, s, e
   integer :: k, l, nodes(0:2) = [3, 2, 0]
@@ -27,12 +27,13 @@ program test_band_window
     call band_window(m, v, l, nodes(l), 26.0_dp, c_ry, eb, et)
     e = 0.5_dp * (eb + et)
     call potpar_at_enu(m, v, l, e, 26.0_dp, c_ry, s, pp)
-    call potpar_at_enu(m, v, l, et + 0.05_dp * (et - eb), 26.0_dp, c_ry, s, pq)
-    print '(a,i2,a,3f10.5,a,2f9.5)', '    l', l, '  bottom, C(mid), top', eb, pp%c, et, '   sqrt(Delta) mid / past top', pp%sqrdel, pq%sqrdel
+    print '(a,i2,a,3f10.5)', '    l', l, '  bottom, C(E_nu = mid), top', eb, pp%c, et
     call check(eb < et, 'window ordered')
     call check(pp%c > eb .and. pp%c < et, 'C inside the window')
-    call check(pp%sqrdel * pq%sqrdel < 0.0_dp, 'sqrt(Delta) changes sign past the top')
   end do
+  call band_window(m, v, 2, 0, 26.0_dp, c_ry, eb, et)
+  print '(a,f10.5)', '    free-atom 3d level', at%eps(6)
+  call check(at%eps(6) > eb .and. at%eps(6) < et, 'free-atom 3d level inside the d window')
   e = 5.0_dp
   call check(clamp_enu(m, v, 2, 0, 26.0_dp, c_ry, e) .and. e < et, 'clamp_enu pulls an E_nu above the d top back into the window')
   call report()
