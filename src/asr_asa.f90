@@ -238,6 +238,8 @@ contains
           vnew(1, s) = vnew(2, s)
           dvc = maxval(abs(vnew(2:n, s) - cr(ic)%v(2:n, s)) * cr(ic)%mesh%r(2:n) / (1.0_dp + cr(ic)%mesh%r(2:n)))
           dv = max(dv, dvc)
+          if (inp%trace) print '(a,i4,i3,i2,a,2f10.5,a,f10.5,a,i0)', 'trace_v', it, ic, s, ' V_in(S) V_out(S)', cr(ic)%v(n, s), vnew(n, s), &
+            '  max |dV|', dvc, ' at i ', maxloc(abs(vnew(2:n, s) - cr(ic)%v(2:n, s)) * cr(ic)%mesh%r(2:n) / (1.0_dp + cr(ic)%mesh%r(2:n)), 1) + 1
           xout(offx(ic) + (s - 1) * n + 2:offx(ic) + s * n) = vnew(2:n, s) + 2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n)
           xout(offx(ic) + (s - 1) * n + 1) = xout(offx(ic) + (s - 1) * n + 2)
           do l = 0, 2
