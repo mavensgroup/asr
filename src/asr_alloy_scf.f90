@@ -387,8 +387,8 @@ contains
           stop 0
         end if
         if (exact_now) call choose_ebot()
-        nfe = 6
-        ef_old = 0.0_dp; nn_old = 0.0_dp
+        nfe = 12                       ! contour passes; a converged SCF needs 1-2.  With 6, wild iterations ran out and the linear
+        ef_old = 0.0_dp; nn_old = 0.0_dp ! correction left N /= N_elec (species charges unbalanced by up to 0.3 e)
         do jf = 1, nfe
           call ed_moments(ef, mom, dosef, rhoex)
           nn = fs * (xs(1) * sum(mom(1, 1:nsp, 0, :)) + xs(2) * sum(mom(2, 1:nsp, 0, :)))
@@ -401,7 +401,10 @@ contains
           end if
           e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / slope))
           ef_old = ef; nn_old = nn
-          if (jf == nfe) then          ! out of evaluations: first-order correction of the moments
+          if (jf == nfe) then          ! out of evaluations: first-order correction of the moments with the DOS at E_F
+            e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
+            if (vb) print '(a,i0,a,es10.3,a,f9.5,a,es10.3)', '    warning: E_F search not converged after ', nfe, ' passes: N - N_elec =', &
+              nn - nelec, ';  first-order E_F shift', e, ', remaining', nn + e * dvc - nelec
             do s = 1, 2; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
               mom(s, sg, k, l) = mom(s, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, s))**k * dosef(s, sg, l)
             end do; end do; end do; end do
