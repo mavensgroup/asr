@@ -849,3 +849,20 @@ References: FeRh SPR-KKR-CPA 3.070 / 0.725, ordered B2 (ours) 3.229 / 1.064, qne
 FeRh passed through an antiparallel-Rh state (Rh -0.74 at it 26) before settling on the ferromagnetic solution: the start still decides the path.
 MnCr r24 (corrected SIM): not converging (it 74: dV 0.3, Mn 1.41 / Cr -0.57, E_F -0.090; at it 25 qnet(Mn) + qnet(Cr) = -0.14, i.e. species charges
 did not balance); same pathology as the stopped 48-step run.  Suspect: complex-symmetric chains beyond 12 steps with adaptive depth (12-24 per energy) on MnCr.
+
+## Our LMTO-ASA vs Questaal `lm` (2026-10-15; Questaal ASA built from ../questall, gcc+MKL, no libxc; scratch runs, oracle only)
+Same model in both: a = 5.48021 Bohr, equal spheres S = 2.6983, spd, hard-core 0.7 S screening, scalar relativistic, no combined correction,
+three-centre ASA (ours O = 1 + (o_i+o_j) h + h p h; Questaal TWOC=0), tetrahedra.  Energies relative to E_F (the codes' zeros differ).
+- B2 MnCr, non-magnetic (Questaal XCFUN=2): qnet Mn +0.113391 vs ours +0.11339; d parameters C-E_F within 0.3 mRy (Mn) / 0.1 mRy (Cr),
+  sqrt(Delta), gamma, p within 0.2%; s, p C within 1.4 mRy; q2 identical; DOS (both broadened 0.005 Ry) peaks within 2-6 mRy, N(E_F) 59 vs 64
+  states/Ry/cell (E_F on a steep peak).
+- bcc Cr (non-magnetic): C_d - E_F -0.0114 vs -0.0137, E_nu,d - E_F -0.161 vs -0.164, Delta and gamma identical to 0.1%.
+- XC: Questaal XCFUN=2 "Barth-Hedin" uses the ASW/Hedin-Lundqvist constants (c_P/c_F = 0.045/0.0225, r_P/r_F = 21/52.92); libxc VBH (ours) and
+  the legacy AMscf LMTO (lmto/ATOM/xcloc1.f, cp = -0.0504) use the original von Barth-Hedin ones (0.0504/0.0254, 30/75) -> compare moments with VWN.
+- bcc Fe (VWN, a = 2.8665 A, 16^3): ours 2.252, Questaal 2.275 muB (1%).
+- B2 MnCr spin-polarised (VWN): Questaal Mn 0.033 / Cr 0.612 (16^3), 0.033 / 0.585 (24^3), 0.027 / 0.566 (32^3) (non-magnetic state unstable: the
+  moment grows smoothly from 0.24); ours 0.035 / 0.531 (16^3, overall sign arbitrary), NON-magnetic at 24^3 and 32^3 (moment decays from 0.15).
+  Questaal's structure-constant range (default 2.7 avw, 15-site clusters) is not the cause: with our 4 avw (59 sites) Cr 0.610.
+=> Our LMTO-ASA reproduces Questaal for the band structure and charge transfer; magnetism is ~1% weaker (Fe), which tips the marginal B2 MnCr
+   (Cr ~0.6 muB in Questaal) to non-magnetic at converged k.  Open: source of the 1% (E_nu choice ~3 mRy lower in Questaal, k mesh shifted vs
+   Gamma-centred, Bloechl correction, core polarisation).
