@@ -114,7 +114,7 @@ contains
     call get_value(child, 'spin', inp%ai%nspin, 1)
     call get_value(child, 'xc', xcs, 'vbh'); inp%ai%xc = xcs
     call get_value(child, 'sigma', inp%ai%sigma, 0.7_dp)
-    call get_value(child, 'sim_beta', inp%ai%sim_beta, 0.7_dp)
+    call get_value(child, 'sim_beta', inp%ai%sim_beta, 1.0_dp)
     call get_value(child, 'mixing', inp%ai%beta, 0.3_dp)
     call get_value(child, 'tolerance', inp%ai%tol, 1.0e-5_dp)
     call get_value(child, 'max_iterations', inp%ai%maxit, 60)

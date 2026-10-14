@@ -54,7 +54,11 @@ module asr_alloy_scf
     integer :: nrec = 0                          !! Lanczos steps (0: = nlevels); > nlevels runs on the generated node set as a hard wall (AMscf: map
                                                  !! exact to 6 hops, 12 steps)
     integer :: ncont = 60                        !! contour points
-    real(dp) :: beta = 0.3_dp, sim_beta = 0.7_dp, tol = 1.0e-5_dp
+    real(dp) :: beta = 0.3_dp, tol = 1.0e-5_dp
+    !> Screened Impurity Model (Ruban & Skriver, PRB 66, 024201 (2002); thesis sec. 2.6.6): the net charge qnet = N - Z of a
+    !> sphere is screened by the first coordination shell (radius R1), V = -sim_beta 2 qnet / R1 (Ry), added to the
+    !> vacuum-boundary sphere Hartree potential (which already holds +2 qnet / S).  sim_beta = 1: full first-shell screening.
+    real(dp) :: sim_beta = 1.0_dp
     integer :: maxit = 60, mix_history = 6, nspin = 1
     real(dp) :: zeta0 = 0.1_dp                   !! initial spin polarisation of the atomic start (nspin = 2); 0.4 runs away for Fe
     logical :: relativistic = .true.
@@ -151,15 +155,16 @@ contains
     end do
   end subroutine alloy_ldos
 
-  function madelung_const(kind) result(a)
+  !> nearest-neighbour distance in units of alat
+  function nn_distance(kind) result(d)
     character(len=*), intent(in) :: kind
-    real(dp) :: a
+    real(dp) :: d
     select case (kind)
-    case ('fcc'); a = 1.79175_dp
-    case ('bcc'); a = 1.79186_dp
-    case default; a = 1.41865_dp
+    case ('fcc'); d = sqrt(0.5_dp)
+    case ('bcc'); d = 0.5_dp * sqrt(3.0_dp)
+    case default; d = 1.0_dp
     end select
-  end function madelung_const
+  end function nn_distance
 
   subroutine alloy_scf(inp, res, verbose)
     type(alloy_input_t), intent(in) :: inp
@@ -190,7 +195,7 @@ contains
     real(dp), allocatable :: ub(:, :), y(:, :, :, :, :, :), U(:, :, :, :), acoef(:, :, :), bcoef(:, :, :), ccoef(:, :, :), v0(:), vv(:)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:), tmp(:), cum(:)
     real(dp), allocatable :: yc(:, :, :), vtmp(:, :), etmp(:, :)
-    real(dp) :: alpha(0:2), c, avw, enu(0:2, 2, 2), xs(2), ef, nelec, amad, lo, hi, nn, vm, dvc, dv, e, fs, s_s
+    real(dp) :: alpha(0:2), c, avw, enu(0:2, 2, 2), xs(2), ef, nelec, r1, lo, hi, nn, vm, dvc, dv, e, fs, s_s
     real(dp) :: mom(2, 2, 0:2, 0:2)                  ! (species, spin, k, l)
     integer :: nlev, ngen, mm(4, 2), s, sg, nsp, l, oc, n, it, i, k, nx, nmax, is, nod
     logical :: vb, core_ok
@@ -217,7 +222,7 @@ contains
     if (ordered) xs = [0.5_dp, 0.5_dp]
     avw = avg_ws_radius(trim(inp%lattice)) * inp%alat
     alpha = alloy_alpha(inp)
-    amad = madelung_const(trim(inp%lattice))
+    r1 = nn_distance(trim(inp%lattice)) * inp%alat
     nelec = xs(1) * real(inp%spec(1)%nval, dp) + xs(2) * real(inp%spec(2)%nval, dp)
     ngen = inp%nlevels                               ! augmented-space generation depth
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec   ! recursion steps
@@ -499,8 +504,7 @@ contains
         else
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(s)%mesh%r)
         end if
-        s_s = merge(inp%spec(s)%sws, avw, inp%spec(s)%sws > 0.0_dp)
-        vm = inp%sim_beta * 2.0_dp * amad * cr(s)%qnet / s_s                        ! SIM
+        vm = -inp%sim_beta * 2.0_dp * cr(s)%qnet / r1                               ! SIM
         if (ordered) vm = vmo(s)
         do sg = 1, nsp
           i = offx(s) + (sg - 1) * (n + 3)

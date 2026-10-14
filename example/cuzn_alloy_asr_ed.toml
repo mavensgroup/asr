@@ -25,7 +25,7 @@ occupations = [2.0, 10.0]
 [scf]
 spin = 1
 xc = "vbh"
-sim_beta = 0.7
+sim_beta = 1.0
 max_iterations = 60
 mixing = 0.3
 
