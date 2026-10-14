@@ -61,8 +61,9 @@ contains
     if (present(y)) y = yy
   end subroutine potpar_at_enu
 
-  !> Wigner-Seitz window of the l band on the radial branch with `nodes` nodes inside the sphere:
-  !>   ebot: D_l(E) = 0 (band bottom);  etop: phi_l(S) = 0 (band top, the next node enters at S).
+  !> Window of the l channel on the radial branch with `nodes` nodes inside the sphere:
+  !>   ebot: D_l(E) = l (free-electron log derivative: Questaal's floor on the fractional part of pnu; below the Wigner-Seitz
+  !>   band bottom D_l = 0);  etop: phi_l(S) = 0 (band top, the next node enters at S).
   !> Past etop the parametrisation jumps to the next branch (sqrt(Delta) changes sign, C runs away); Questaal avoids this by
   !> floating pnu with a fixed principal quantum number.
   subroutine band_window(m, v, l, nodes, z, c, ebot, etop)
@@ -80,11 +81,11 @@ contains
     etop = bisect_nodes(elo, ehi, nodes)
     eprev = elo
     if (nodes > 0) eprev = bisect_nodes(elo, etop, nodes - 1)
-    ! on (eprev, etop) the branch has `nodes` nodes and D_l falls from +inf to -inf: bisect on its sign
+    ! on (eprev, etop) the branch has `nodes` nodes and D_l falls from +inf to -inf: bisect on the sign of D_l - l
     elo = eprev; ehi = etop
     do it = 1, 60
       emid = 0.5_dp * (elo + ehi)
-      if (log_deriv(emid) > 0.0_dp) then; elo = emid; else; ehi = emid; end if
+      if (log_deriv(emid) > real(l, dp)) then; elo = emid; else; ehi = emid; end if
     end do
     ebot = 0.5_dp * (elo + ehi)
   contains

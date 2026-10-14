@@ -1,4 +1,4 @@
-!> band_window: the Wigner-Seitz window [D_l = 0, phi_l(S) = 0] of the valence branch contains E_nu-like energies and the
+!> band_window: the window [D_l = l, phi_l(S) = 0] of the valence branch contains E_nu-like energies and the
 !> potential parameter C, and the free-atom 3d level lies inside the d window.
 program test_band_window
   use asr_kinds, only: dp

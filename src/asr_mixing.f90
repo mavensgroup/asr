@@ -1,6 +1,9 @@
 !> Anderson (Pulay/DIIS-type) mixing for fixed-point iterations x = F(x).
 !>   r_k = F(x_k) - x_k ;  x_{k+1} = x_k + beta r_k - sum_j gamma_j (dX_j + beta dR_j)
 !> with gamma from min | r_k - sum_j gamma_j dR_j |.  History length m.
+!> Safeguard: the history is dropped (plain linear step x_k + beta r_k) when the Anderson step points against the current
+!> residual, (x_{k+1} - x_k).r_k <= 0, or when |r_k| grew by more than a factor 2: in strongly non-linear early iterations
+!> (magnetic starts) the extrapolation otherwise marched the potential away from F(x) at the safety-clamp rate.
 module asr_mixing
   use asr_kinds, only: dp
   implicit none
@@ -26,10 +29,12 @@ contains
     type(anderson_t), intent(inout) :: a
     real(dp), intent(in) :: xin(:), xout(:), beta
     real(dp), intent(out) :: xnext(size(xin))
-    real(dp) :: r(size(xin)), amat(a%m, a%m), rhs(a%m), gam(a%m), piv(a%m)
+    real(dp) :: r(size(xin)), amat(a%m, a%m), rhs(a%m), gam(a%m), piv(a%m), rprev
     integer :: j, i, nh, info, slot, ipiv(a%m)
     external :: dgesv
     r = xout - xin
+    rprev = huge(1.0_dp); if (a%k > 0) rprev = norm2(a%rold)
+    if (a%k > 0 .and. norm2(r) > 2.0_dp * rprev) a%nh = 0                ! residual blew up: restart the history
     if (a%k > 0) then
       slot = mod(a%k - 1, a%m) + 1
       a%dx(:, slot) = xin - a%xold
@@ -55,6 +60,10 @@ contains
     do j = 1, nh
       xnext = xnext - gam(j) * (a%dx(:, j) + beta * a%dr(:, j))
     end do
+    if (dot_product(xnext - xin, r) <= 0.0_dp) then                      ! step against the residual: linear step, new history
+      xnext = xin + beta * r
+      a%nh = 0
+    end if
     piv = 0.0_dp
   end subroutine anderson_step
 end module asr_mixing
