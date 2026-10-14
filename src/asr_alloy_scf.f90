@@ -522,6 +522,7 @@ contains
         end do
         deallocate (ntot, vh, vxc, rho, exc)
       end do
+      if (dv > 0.1_dp) call anderson_init(mixer, nx, inp%mix_history)    ! linear mixing far from self-consistency (see asr_asa)
       call anderson_step(mixer, xin, xout, inp%beta, xnext)
       do s = 1, 2
         n = cr(s)%mesh%n

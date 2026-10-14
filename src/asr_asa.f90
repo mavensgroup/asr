@@ -259,6 +259,9 @@ contains
         end do
       end if
       ! (6) Anderson step on the full state (potentials and E_nu), with safety clamps
+      ! far from self-consistency (dV > 0.1 Ry) mix linearly: the Anderson extrapolation fitted to all radial points marched
+      ! the potential near S against its residual (bcc Fe: E_F to +1.5 Ry in the first iterations)
+      if (dv > 0.1_dp) call anderson_init(mixer, nx, inp%mix_history)
       call anderson_step(mixer, xin, xout, inp%beta, xnext)
       do ic = 1, ncl
         n = cr(ic)%mesh%n
