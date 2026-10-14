@@ -837,3 +837,15 @@ First q15 result, CuZn x = 0.5 (asr_ed levels 4 rank 1, same input as trial/amsc
 | old (+1.25 x 2q/S) | +0.044 | 0.0145 | -0.728 | -0.278 | 1.74 |
 | corrected (beta 1) | +0.118 | 0.0130 | -0.709 | -0.291 | 1.67 |
 Ordered B2 qnet 0.137; Banerjee-Mookerjee 2010 (50:50) Zn d -0.682, Cu d -0.309: both peaks move toward the reference (Zn 46 -> 27 mRy, Cu 31 -> 18 mRy off).
+Magnetic q15 reruns (corrected SIM, otherwise the q10/q11 inputs: asr_ed levels 4 rank 1, recursion_steps 12, bp):
+| system | SIM | Fe | Rh / V | qnet Fe | E_F | its |
+|---|---|---|---|---|---|---|
+| FeRh A2, a = 3.059 | old | 2.867 | +0.751 | +0.022 | -0.1272 | 70 |
+| FeRh A2 | corrected | 2.833 | +0.781 | +0.067 | -0.1267 | 63 |
+| FeV 50:50, a = 2.95 | old | 1.726 | -0.361 | +0.051 | -0.0668 | 51 |
+| FeV 50:50 | corrected | 1.647 | -0.351 | +0.157 | -0.0650 | 40 |
+References: FeRh SPR-KKR-CPA 3.070 / 0.725, ordered B2 (ours) 3.229 / 1.064, qnet 0.126; FeV ordered B2 k-space 1.353 / -0.434, qnet 0.332.
+=> transfers x3 toward the ordered values; moments change little (FeRh Fe -0.03: the ordered -> disordered Fe drop, 0.40 vs CPA 0.20, is NOT the SIM).
+FeRh passed through an antiparallel-Rh state (Rh -0.74 at it 26) before settling on the ferromagnetic solution: the start still decides the path.
+MnCr r24 (corrected SIM): not converging (it 74: dV 0.3, Mn 1.41 / Cr -0.57, E_F -0.090; at it 25 qnet(Mn) + qnet(Cr) = -0.14, i.e. species charges
+did not balance); same pathology as the stopped 48-step run.  Suspect: complex-symmetric chains beyond 12 steps with adaptive depth (12-24 per energy) on MnCr.
