@@ -831,3 +831,9 @@ ves by 0.1 x q/S) +0.05 q/S.  => every disordered result before 326759b had its 
 FeV 0.05 vs 0.33), and may have stiffened the early SCF swings.  Ordered-limit runs (exact Ewald, `vmo`) and all k-space results are unaffected.
 Reruns with beta 1 (desktop trial/q15): FeRh r12 bp, FeV r12 bp, CuZn x50 l4 r1, MnCr r24 bp.  The 48-step MnCr run (q14) was stopped at it 29
 (E_F drifted to +0.19 Ry, Cr 2.2 muB; adaptive depth 12-48 per energy).
+First q15 result, CuZn x = 0.5 (asr_ed levels 4 rank 1, same input as trial/amscf/x50_l4r1 except the SIM; 22 its vs 39):
+| SIM | qnet Cu | E_F | Zn d peak vs E_F | Cu d peak | DOS(E_F) |
+|---|---|---|---|---|---|
+| old (+1.25 x 2q/S) | +0.044 | 0.0145 | -0.728 | -0.278 | 1.74 |
+| corrected (beta 1) | +0.118 | 0.0130 | -0.709 | -0.291 | 1.67 |
+Ordered B2 qnet 0.137; Banerjee-Mookerjee 2010 (50:50) Zn d -0.682, Cu d -0.309: both peaks move toward the reference (Zn 46 -> 27 mRy, Cu 31 -> 18 mRy off).
