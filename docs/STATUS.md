@@ -866,3 +866,20 @@ three-centre ASA (ours O = 1 + (o_i+o_j) h + h p h; Questaal TWOC=0), tetrahedra
 => Our LMTO-ASA reproduces Questaal for the band structure and charge transfer; magnetism is ~1% weaker (Fe), which tips the marginal B2 MnCr
    (Cr ~0.6 muB in Questaal) to non-magnetic at converged k.  Open: source of the 1% (E_nu choice ~3 mRy lower in Questaal, k mesh shifted vs
    Gamma-centred, Bloechl correction, core polarisation).
+
+## MnCr structure and magnetic states (2026-10-15; Questaal built on the desktop ~/questaal_build, desktop trial/q17, q18)
+Materials Project 50:50 MnCr (Cmmm, a = b = 2.518, c = 3.936 A, gamma = 109.1 deg; PBE, hypothetical ordered cell): a bcc superstructure, 8 + 6
+neighbours at 2.45-2.52 / 2.84-2.92 A (ideal bcc at the same volume 2.483 / 2.868), 11.79 A^3/atom (a_bcc 2.868); its NN shell is 4 unlike + 4 like
+(B2: 8 unlike).  => the bcc parent of the disordered alloy is right; only the ordered B2 reference is not the PBE ground-state order.
+Questaal, a = 2.900 A, VWN, 24^3 (ASA equal spheres, same model as ours), energies per two-atom cell:
+| state | Mn | Cr | E - E(NM) (mRy) |
+|---|---|---|---|
+| bcc Cr AF (CsCl cell) | +0.571 | -0.571 | -0.085 (FM start collapses to NM) |
+| B2 MnCr NM | 0 | 0 | 0 |
+| B2 MnCr weak FM (parallel or high-spin start) | 0.033 | 0.585 | -0.26 |
+| B2 MnCr ferrimagnet (antiparallel start +-1.5 or +-3.8) | +1.985 | -1.080 | -2.12 |
+Ours (k-space, new [[species]] spin_sign = -1 for Cr, 24^3): VWN zeta0 0.2 -> Mn +1.944 / Cr -1.057 (Questaal 1.985 / -1.080); VBH zeta0 0.2 -> 1.662 / -0.823;
+zeta0 0.1 -> weak state (Cr -0.54 VWN / -0.43 VBH); zeta0 0.4 -> RUNAWAY: E_F climbs ~0.15 Ry per iteration with growing charge transfer (1.9 e at
+it 10) and ends at a fixed point Mn 4.9 / Cr 3.4 (parallel), E_F +0.21 Ry, which Questaal never reaches from the same start (it converges to the
+ferrimagnet).  => (i) the ground state of B2 MnCr is the ferrimagnet, missed by parallel starts (ours, the 2009 paper); (ii) our SCF has a spurious
+runaway mode at large initial polarisation -- the same E_F drift (+0.2 Ry) seen in the disordered MnCr / FeRh / FeV runs.  Next: find it.
