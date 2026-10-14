@@ -46,6 +46,7 @@ module asr_asa
     real(dp) :: dvmax = 0.15_dp             !! safety clamp: max change of the potential per iteration, per point (Ry)
     real(dp) :: denumax = 0.08_dp           !! safety clamp: max change of E_nu per iteration (Ry)
     logical :: second_order = .false.       !! diagnostic: orthogonal H = E_nu + h - h o h (the recursion Hamiltonian) instead of the generalised problem
+    logical :: trace = .false.              !! print per iteration, class and spin: E_nu, C, sqrt(Delta)_d, q0, V(S), Madelung shift
   end type asa_input_t
 
   type :: asa_class_result_t
@@ -246,6 +247,15 @@ contains
         end do
         deallocate (ntot, vh, exc, vxc, rho)
       end do
+      if (inp%trace) then
+        do ic = 1, ncl
+          do s = 1, nsp
+            print '(a,i4,i3,i2,a,f9.5,a,3f9.5,a,3f9.5,a,f8.5,a,3f8.4,a,f9.5,a,f9.5)', 'trace', it, ic, s, ' EF', ef, &
+              ' Enu', pps(ic, s)%enu, ' C', pps(ic, s)%c, ' sqD_d', pps(ic, s)%sqrdel(2), ' q0', cr(ic)%q(0, :, s), &
+              ' V(S)', cr(ic)%v(cr(ic)%mesh%n, s), ' vmad', vmad(ic)
+          end do
+        end do
+      end if
       ! (6) Anderson step on the full state (potentials and E_nu), with safety clamps
       call anderson_step(mixer, xin, xout, inp%beta, xnext)
       do ic = 1, ncl

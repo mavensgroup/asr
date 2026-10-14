@@ -36,7 +36,7 @@ contains
     ai%alat = inp%alat_angstrom * bohr_per_angstrom
     ai%xc = inp%xc; ai%sigma = inp%sigma; ai%nspin = inp%spin; ai%nk = inp%nk; ai%bz = inp%bz
     ai%smear = inp%smear; ai%beta = inp%mixing; ai%maxit = inp%maxit; ai%tol = inp%tolerance
-    ai%relativistic = inp%relativistic; ai%zeta0 = inp%zeta0
+    ai%relativistic = inp%relativistic; ai%zeta0 = inp%zeta0; ai%trace = inp%trace
     allocate (ai%cls(size(inp%species)))
     do ic = 1, size(inp%species)
       ai%cls(ic)%z = inp%species(ic)%z; ai%cls(ic)%nval = inp%species(ic)%nval; ai%cls(ic)%spin_sign = inp%species(ic)%spin_sign

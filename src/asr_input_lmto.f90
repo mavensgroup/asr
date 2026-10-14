@@ -34,6 +34,7 @@ module asr_input_lmto
     integer :: spin = 1, nk = 12, maxit = 100
     real(dp) :: smear = 0.01_dp, mixing = 0.3_dp, tolerance = 1.0e-6_dp, zeta0 = 0.4_dp, sigma = 0.7_dp
     logical :: relativistic = .true.
+    logical :: trace = .false.
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, dos_smear = 0.01_dp
     integer :: npoints = 801, dos_nk = 24
   end type lmto_input_t
@@ -115,7 +116,7 @@ contains
     call section(table, 'scf', child)
     call check_keys(child, ['spin           ', 'xc             ', 'nk             ', 'bz             ', 'smear          ', &
                             'mixing         ', 'tolerance      ', 'max_iterations ', 'zeta0          ', 'sigma          ', &
-                            'relativistic   '], '[scf]', msg)
+                            'relativistic   ', 'trace          '], '[scf]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'spin', inp%spin, 1)
     call get_value(child, 'xc', inp%xc, 'vbh')
@@ -128,6 +129,7 @@ contains
     call get_value(child, 'zeta0', inp%zeta0, 0.4_dp)
     call get_value(child, 'sigma', inp%sigma, 0.7_dp)
     call get_value(child, 'relativistic', inp%relativistic, .true.)
+    call get_value(child, 'trace', inp%trace, .false.)
 
     call section(table, 'dos', child)
     call check_keys(child, ['emin   ', 'emax   ', 'npoints', 'smear  ', 'nk     '], '[dos]', msg); if (len(msg) > 0) return
