@@ -33,7 +33,8 @@ matches the ssh command; one process per run directory.
            space to k_ex hops, then continue the Lanczos to 12-24 levels with non-flippable (averaged) sites beyond; alternative: CPA medium beyond k_ex.
            Gate: ordered limits (B2 FeV real-space l24 / k-space) and SQS supercells with the k-space code.
        (b) ED tail default hull -> bp (bp halves the shallow-depth oscillation; avg2 ran away once).
-       (c) SIM coefficient: V = beta 2 alpha_M q/S over-screens (1.25 vs exact-B2 1.00 x 2q/S); calibrate vs SQS supercell charge transfer (changes CuZn too).
+       (c) SIM: FIXED 2026-10-14 (326759b): the old +beta 2 alpha_M q/S had the wrong sign and an extra alpha_M; now V = -beta 2 q/R1, beta = 1
+           (STATUS "SIM sign and magnitude error").  Still to do: calibrate beta vs SQS supercell charge transfer.
        (d) magnetic SCF start: early iterations swing E_F +-0.4 Ry and flip moments; start from converged pure-element potentials or damp the first iterations.
 4. [ ] D3 electrostatics (SIM beta), D4 magnetic disorder (FeCo, FeV: Chakrabarti & Mookerjee 2005 Fe 1.12, V -0.11 muB) on the AMscf ED route.
 5. [ ] SCF stall criterion (stop when dV, E_F and moments are stationary above tol).
@@ -78,7 +79,7 @@ matches the ssh command; one process per run directory.
 
 ## Next (set 2026-10-02)
 - [ ] CuZn depth 4/5 (desktop): check Cu d / Zn d separation vs Tarafder 2006 (~0.37 Ry) and vs ordered B2 ASA (0.32 Ry).
-- [ ] Validate the SIM (sign now screening) vs supercell / ordered-limit electrostatics; beta choice.
+- [ ] Validate the SIM (corrected 2026-10-14: V = -beta 2 qnet/R1) vs supercell / ordered-limit electrostatics; beta choice.
 - [ ] Depth/terminator: ordered Ni needs 25-30 levels for its moment -> terminator quality (Luchini-Nex, multiband tails) on real alloy
       coefficients is the limit for magnetic Ni alloys; consider block/orbital-resolved (instead of per-orbital) recursion and larger depth on desktop.
 - [ ] Heavy runs on the DESKTOP only (user instruction).

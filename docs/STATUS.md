@@ -281,7 +281,7 @@ coefficients converge differently. That needs M2.
   (`test_alloy_scf` 14/14, `test_alloy_scf_spin` 5/5: Fe 2.36 muB alloy route vs 2.22 ordered).
 - TOML `kind = "alloy"` driver (`asr_alloy_driver`, `example/cuzn_alloy.toml`, `test_alloy_input` 7/7): SCF + species/l DOS in one
   input; run end-to-end on the desktop (CuZn bcc, depth 3, 63k nodes, 32 SCF iterations).
-- BUG FIXED: SIM shift had the wrong sign (V = -beta 2 alpha_M qnet/S with qnet = N - Z gave positive feedback: charge transfer grew
+- [WRONG FIX, corrected 2026-10-14, see "SIM sign and magnitude error"] SIM shift had the wrong sign (V = -beta 2 alpha_M qnet/S with qnet = N - Z gave positive feedback: charge transfer grew
   with beta, 0.05 -> 0.19 e).  Now V = +beta 2 alpha_M qnet/S (screening): CuZn qnet 0.024 e at depth 3.  NOT yet validated against a
   supercell reference; the ordered B2 ASA (own Ewald) gives qnet 0.135 and C_d(Cu)-C_d(Zn) = 0.32 Ry.
 - Finding (ordered Ni, no disorder, alloy route): the Ni moment needs many Lanczos levels:
@@ -794,6 +794,8 @@ SIM strength and functional (2026-10-13/14, desktop trial/q12, q13; disordered A
 | ordered B2 k-space, PBE | 3.305 | 1.068 | 0.107 | -0.0397 |
 SPR-KKR (PBE): ordered 3.271 / 0.942, CPA 3.070 / 0.725.
 => The SIM does not matter (moments within 0.01 for beta 0.2-0.7; the transfer stays 0.02-0.03 e: small transfer is the disordered environment, not the SIM).
+   [WITHDRAWN 2026-10-14: these runs used the wrong-sign SIM (see "SIM sign and magnitude error"); with beta 0 the vacuum-boundary self term +2q/S alone
+   still over-screens, so the beta scan did not test physical screening.]
 => PBE vs PBE: Rh +0.13 (ordered) / +0.18 (disordered) high in both: ASA (equal spheres) offset.  Fe: ordered +0.03, disordered -0.12; the
    ordered -> disordered Fe drop is 0.35 (ours, LDA and PBE alike) vs 0.20 (CPA).  Not depth, node set, SIM or functional: either ASR (local
    environments) vs single-site CPA, or ASA vs full potential.  Decisive check: SQS supercell with our own k-space ASA (same ASA and functional).
@@ -816,3 +818,16 @@ pure Cr k-space (-0.25 / -0.16) at the same a and xc, so the 2009 band is wider 
 map-reading bug (15 of 17 columns: central site not frozen), legacy CTRL sphere radii (Mn R = 2.14 vs Cr 2.70 Bohr, not space filling), 14-neighbour S.
 (iii) Our disordered DOS has N(E_F) 8.5 (12 steps) vs 14.8 in ordered B2 and the top peak 40 mRy higher than B2; the disordered magnetic state is not
 converged in steps (non-magnetic at 12, Mn -0.99 / Cr +0.18 at 24): MnCr is a marginal magnet like FeV.  Open: 48-step disordered run, antiparallel seed.
+
+## SIM sign and magnitude error (found 2026-10-14 in the legacy/reference audit; fixed in 326759b)
+The sphere Hartree potential is solved with the vacuum boundary condition (asr_atom%poisson_hartree: v_H(S) = 2 N/S, nucleus -2Z/r), so at S the
+sphere already carries its own +2 qnet/S (qnet = N - Z), exactly as in the k-space ASA (asr_asa: v = vacuum Hartree + 2 sum_j Phi_ij qnet_j; for B2
+2 (Phi_AA - Phi_AB) = -2 x 1.00 / S, i.e. the external term is NEGATIVE on the electron-rich site).  The SIM (Ruban & Skriver PRB 66, 024201 (2002); thesis
+sec. 2.6.6: V_i = -e^2 Q_i / R_1, screening charge on the first shell) must therefore be V = -beta 2 qnet / R1 (bcc: R1 = S / 0.569).
+The code had V = +beta 2 alpha_M qnet / S (alpha_M = 1.79, beta 0.7 -> +2.5 q/S).  History: the first version had the minus sign but also the alpha_M factor,
+-2.5 q/S over-cancels the self term (net -0.5 q/S: runaway); on 2026-10-02 the sign was flipped instead of removing alpha_M.
+Net restoring term at S per unit transfer (bcc): old +4.5 q/S; corrected (beta 1) +0.86 q/S; ordered B2 exact Ewald ~0; AMscf (pardos.f90 replaces the whole
+ves by 0.1 x q/S) +0.05 q/S.  => every disordered result before 326759b had its charge transfer suppressed (CuZn 0.03 vs ordered 0.137, FeRh 0.02 vs 0.13,
+FeV 0.05 vs 0.33), and may have stiffened the early SCF swings.  Ordered-limit runs (exact Ewald, `vmo`) and all k-space results are unaffected.
+Reruns with beta 1 (desktop trial/q15): FeRh r12 bp, FeV r12 bp, CuZn x50 l4 r1, MnCr r24 bp.  The 48-step MnCr run (q14) was stopped at it 29
+(E_F drifted to +0.19 Ry, Cr 2.2 muB; adaptive depth 12-48 per energy).
