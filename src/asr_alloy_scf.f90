@@ -196,6 +196,7 @@ contains
     integer, allocatable :: coord(:, :), dist(:), offx(:)
     logical, allocatable :: flippable(:)
     real(dp), allocatable :: ub(:, :), y(:, :, :, :, :, :), U(:, :, :, :), acoef(:, :, :), bcoef(:, :, :), ccoef(:, :, :), v0(:), vv(:)
+    real(dp), allocatable :: wmix(:)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:), tmp(:), cum(:)
     real(dp), allocatable :: yc(:, :, :), vtmp(:, :), etmp(:, :)
     real(dp) :: alpha(0:2), c, avw, enu(0:2, 2, 2), xs(2), ef, nelec, r1, lo, hi, nn, vm, dvc, dv, e, fs, s_s
@@ -522,8 +523,17 @@ contains
         end do
         deallocate (ntot, vh, vxc, rho, exc)
       end do
-      if (dv > 0.1_dp) call anderson_init(mixer, nx, inp%mix_history)    ! linear mixing far from self-consistency (see asr_asa)
-      call anderson_step(mixer, xin, xout, inp%beta, xnext)
+      if (.not. allocated(wmix)) then           ! Anderson metric = the dV measure (r/(1+r))^2 on the potentials, 1 on E_nu (see asr_asa)
+        allocate (wmix(nx)); wmix = 1.0_dp
+        do s = 1, 2
+          n = cr(s)%mesh%n
+          do sg = 1, nsp
+            i = offx(s) + (sg - 1) * (n + 3)
+            wmix(i + 1:i + n) = (cr(s)%mesh%r(1:n) / (1.0_dp + cr(s)%mesh%r(1:n)))**2
+          end do
+        end do
+      end if
+      call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix)
       do s = 1, 2
         n = cr(s)%mesh%n
         do sg = 1, nsp

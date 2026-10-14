@@ -100,7 +100,7 @@ contains
     real(dp), allocatable :: y(:, :, :, :, :), yc(:, :, :), qat(:, :, :, :), qcl(:, :, :, :), enu(:, :, :), vmad(:)
     real(dp), allocatable :: nval(:, :, :), ncore(:, :, :), vold(:, :, :)
     integer, allocatable :: natc(:)
-    real(dp), allocatable :: phimad(:, :), qatom(:), vmad_at(:), xin(:), xout(:), xnext(:)
+    real(dp), allocatable :: phimad(:, :), qatom(:), vmad_at(:), xin(:), xout(:), xnext(:), wmix(:)
     integer, allocatable :: offx(:)
     integer :: nx, ii
     type(anderson_t) :: mixer
@@ -259,10 +259,18 @@ contains
         end do
       end if
       ! (6) Anderson step on the full state (potentials and E_nu), with safety clamps
-      ! far from self-consistency (dV > 0.1 Ry) mix linearly: the Anderson extrapolation fitted to all radial points marched
-      ! the potential near S against its residual (bcc Fe: E_F to +1.5 Ry in the first iterations)
-      if (dv > 0.1_dp) call anderson_init(mixer, nx, inp%mix_history)
-      call anderson_step(mixer, xin, xout, inp%beta, xnext)
+      ! Anderson metric = the dV measure (r/(1+r))^2 on the potentials, 1 on E_nu: unweighted, the log mesh's many points near the
+      ! nucleus dominated the fit and the step near S went against its residual (bcc Fe: E_F to +1.5 Ry in the first iterations)
+      if (.not. allocated(wmix)) then
+        allocate (wmix(nx)); wmix = 1.0_dp
+        do ic = 1, ncl
+          n = cr(ic)%mesh%n
+          do s = 1, nsp
+            wmix(offx(ic) + (s - 1) * n + 1:offx(ic) + s * n) = (cr(ic)%mesh%r(1:n) / (1.0_dp + cr(ic)%mesh%r(1:n)))**2
+          end do
+        end do
+      end if
+      call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix)
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         do s = 1, nsp

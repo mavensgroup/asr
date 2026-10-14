@@ -25,16 +25,19 @@ contains
   end subroutine anderson_init
 
   !> xin: the input of this iteration, xout = F(xin); returns xnext.
-  subroutine anderson_step(a, xin, xout, beta, xnext)
+  !> w (optional): weights of the inner products (the least-squares metric); default 1.
+  subroutine anderson_step(a, xin, xout, beta, xnext, w)
     type(anderson_t), intent(inout) :: a
     real(dp), intent(in) :: xin(:), xout(:), beta
     real(dp), intent(out) :: xnext(size(xin))
-    real(dp) :: r(size(xin)), amat(a%m, a%m), rhs(a%m), gam(a%m), piv(a%m), rprev
+    real(dp), intent(in), optional :: w(:)
+    real(dp) :: r(size(xin)), amat(a%m, a%m), rhs(a%m), gam(a%m), piv(a%m), rprev, wt(size(xin))
     integer :: j, i, nh, info, slot, ipiv(a%m)
     external :: dgesv
     r = xout - xin
-    rprev = huge(1.0_dp); if (a%k > 0) rprev = norm2(a%rold)
-    if (a%k > 0 .and. norm2(r) > 2.0_dp * rprev) a%nh = 0                ! residual blew up: restart the history
+    wt = 1.0_dp; if (present(w)) wt = w
+    rprev = huge(1.0_dp); if (a%k > 0) rprev = sqrt(sum(wt * a%rold**2))
+    if (a%k > 0 .and. sqrt(sum(wt * r**2)) > 2.0_dp * rprev) a%nh = 0     ! residual blew up: restart the history
     if (a%k > 0) then
       slot = mod(a%k - 1, a%m) + 1
       a%dx(:, slot) = xin - a%xold
@@ -48,9 +51,9 @@ contains
     ! least squares  min | r - dR gamma |   via normal equations (ridge-regularised)
     do j = 1, nh
       do i = 1, nh
-        amat(i, j) = dot_product(a%dr(:, i), a%dr(:, j))
+        amat(i, j) = sum(wt * a%dr(:, i) * a%dr(:, j))
       end do
-      rhs(j) = dot_product(a%dr(:, j), r)
+      rhs(j) = sum(wt * a%dr(:, j) * r)
     end do
     do j = 1, nh; amat(j, j) = amat(j, j) * (1.0_dp + 1.0e-8_dp) + 1.0e-30_dp; end do
     gam = 0.0_dp
@@ -60,7 +63,7 @@ contains
     do j = 1, nh
       xnext = xnext - gam(j) * (a%dx(:, j) + beta * a%dr(:, j))
     end do
-    if (dot_product(xnext - xin, r) <= 0.0_dp) then                      ! step against the residual: linear step, new history
+    if (sum(wt * (xnext - xin) * r) <= 0.0_dp) then                      ! step against the residual: linear step, new history
       xnext = xin + beta * r
       a%nh = 0
     end if
