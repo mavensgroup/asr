@@ -4,6 +4,7 @@
 !>   [structure]    lattice = "fcc"|"bcc"|"sc"|"b2", alat (Angstrom)  [, ratio = r_A/r_B for b2]
 !>   [[species]]    symbol, z, nval, konfig = [ns, np, nd, nf] (valence principal quantum numbers),
 !>                  occupations = [n_s, n_d]  (neutral-atom valence s and d occupation, starting potential)
+!>                  spin_sign = 1 | -1  (sign of this species' starting spin polarisation zeta0; -1: antiparallel start)
 !>   [scf]          spin = 1|2, xc = "vbh"|"pw"|"vwn", nk, bz = "tetra"|"gauss", smear, mixing,
 !>                  tolerance, max_iterations, zeta0, sigma, relativistic
 !>   [dos]          emin, emax, npoints, smear, nk
@@ -23,6 +24,7 @@ module asr_input_lmto
     integer :: nval = 0
     integer :: konfig(0:3) = [4, 4, 3, 4]
     real(dp) :: occ_s = 2.0_dp, occ_d = 0.0_dp
+    real(dp) :: spin_sign = 1.0_dp              !! sign of the starting spin polarisation (zeta0) of this species
   end type lmto_species_t
 
   type :: lmto_input_t
@@ -89,11 +91,12 @@ contains
     allocate (inp%species(nsp))
     do i = 1, nsp
       call get_value(arr, i, sp)
-      call check_keys(sp, ['symbol     ', 'z          ', 'nval       ', 'konfig     ', 'occupations'], '[[species]]', msg)
+      call check_keys(sp, ['symbol     ', 'z          ', 'nval       ', 'konfig     ', 'occupations', 'spin_sign  '], '[[species]]', msg)
       if (len(msg) > 0) return
       call get_value(sp, 'symbol', inp%species(i)%symbol, 'X')
       call get_value(sp, 'z', inp%species(i)%z, 0.0_dp)
       call get_value(sp, 'nval', inp%species(i)%nval, 0)
+      call get_value(sp, 'spin_sign', x, 1.0_dp); inp%species(i)%spin_sign = sign(1.0_dp, x)
       nullify (ka)
       call get_value(sp, 'konfig', ka, requested=.false.)
       if (associated(ka)) then

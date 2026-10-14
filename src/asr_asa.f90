@@ -25,6 +25,7 @@ module asr_asa
     integer :: nvl(0:2) = [4, 4, 3]         !! valence principal quantum numbers (s,p,d)
     type(shell_t), allocatable :: core(:)
     type(shell_t), allocatable :: atom_shells(:)   !! neutral free atom, all shells (starting potential)
+    real(dp) :: spin_sign = 1.0_dp          !! sign of the starting spin polarisation (zeta0) of this class
   end type asa_class_t
 
   type :: asa_input_t
@@ -327,7 +328,8 @@ contains
     v(1, 1) = v(2, 1); rho(1) = rho(2)
     if (nsp == 2 .and. size(v, 2) >= 2) then
       call xc_eval(xf, rho, e0, v0, m%r)
-      call xc_eval_pol(xf, 0.5_dp * (1.0_dp + inp%zeta0) * rho, 0.5_dp * (1.0_dp - inp%zeta0) * rho, eu, vu, vd, m%r)
+      call xc_eval_pol(xf, 0.5_dp * (1.0_dp + inp%cls(ic)%spin_sign * inp%zeta0) * rho, &
+                       0.5_dp * (1.0_dp - inp%cls(ic)%spin_sign * inp%zeta0) * rho, eu, vu, vd, m%r)
       v(:, 2) = v(:, 1) - v0 + vd
       v(:, 1) = v(:, 1) - v0 + vu
     else if (size(v, 2) >= 2) then

@@ -39,7 +39,7 @@ contains
     ai%relativistic = inp%relativistic; ai%zeta0 = inp%zeta0
     allocate (ai%cls(size(inp%species)))
     do ic = 1, size(inp%species)
-      ai%cls(ic)%z = inp%species(ic)%z; ai%cls(ic)%nval = inp%species(ic)%nval
+      ai%cls(ic)%z = inp%species(ic)%z; ai%cls(ic)%nval = inp%species(ic)%nval; ai%cls(ic)%spin_sign = inp%species(ic)%spin_sign
       ai%cls(ic)%nvl = inp%species(ic)%konfig(0:2)
       ai%cls(ic)%core = core_shells_for(inp%species(ic)%konfig)
       ai%cls(ic)%atom_shells = atom_shells(inp%species(ic))

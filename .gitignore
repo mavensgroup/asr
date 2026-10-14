@@ -2,3 +2,5 @@ build/
 trial/*
 !trial/README.md
 *.mod
+*.swp
+*~

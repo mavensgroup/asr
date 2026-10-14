@@ -3,7 +3,7 @@
 !>
 !>   [calculation]  name, kind = "alloy"
 !>   [structure]    lattice = "fcc"|"bcc" (random alloy) | "b2" (ordered CsCl, 50:50; no concentration), alat (Angstrom)
-!>   [[species]]    (two) symbol, z, nval, konfig, occupations, concentration (A only; B = 1 - x_A)
+!>   [[species]]    (two) symbol, z, nval, konfig, occupations, concentration (A only; B = 1 - x_A), spin_sign (+-1: start polarisation)
 !>   [scf]          spin = 1|2, xc, sigma, sim_beta, mixing, tolerance, max_iterations, zeta0, relativistic,
 !>                  save_potential / start_potential (file), flip_spin ("A"|"B"|"AB": swap that species' spins in the start)
 !>   [asr]          levels, rank, supercell, flip_radius, contour_points, cluster_radius, inversion_radius, screening, terminator,
@@ -79,11 +79,13 @@ contains
     xs = -1.0_dp
     do i = 1, 2
       call get_value(arr, i, sp)
-      call check_keys(sp, ['symbol       ', 'z            ', 'nval         ', 'konfig       ', 'occupations  ', 'concentration'], '[[species]]', msg)
+      call check_keys(sp, ['symbol       ', 'z            ', 'nval         ', 'konfig       ', 'occupations  ', 'concentration', &
+                            'spin_sign    '], '[[species]]', msg)
       if (len(msg) > 0) return
       call get_value(sp, 'symbol', inp%species(i)%symbol, 'X')
       call get_value(sp, 'z', inp%species(i)%z, 0.0_dp)
       call get_value(sp, 'nval', inp%species(i)%nval, 0)
+      call get_value(sp, 'spin_sign', x, 1.0_dp); inp%species(i)%spin_sign = sign(1.0_dp, x)
       call get_value(sp, 'concentration', xs(i), -1.0_dp)
       nullify (ka)
       call get_value(sp, 'konfig', ka, requested=.false.)
@@ -208,7 +210,7 @@ contains
     ok = .false.
     t0 = rep_wall()
     do i = 1, 2
-      inp%ai%spec(i)%z = inp%species(i)%z; inp%ai%spec(i)%nval = inp%species(i)%nval
+      inp%ai%spec(i)%z = inp%species(i)%z; inp%ai%spec(i)%nval = inp%species(i)%nval; inp%ai%spec(i)%spin_sign = inp%species(i)%spin_sign
       inp%ai%spec(i)%nvl = inp%species(i)%konfig(0:2)
       inp%ai%spec(i)%core = core_shells_for(inp%species(i)%konfig)
       inp%ai%spec(i)%atom_shells = atom_shells(inp%species(i))
