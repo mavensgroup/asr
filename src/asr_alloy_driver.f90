@@ -4,7 +4,8 @@
 !>   [calculation]  name, kind = "alloy"
 !>   [structure]    lattice = "fcc"|"bcc" (random alloy) | "b2" (ordered CsCl, 50:50; no concentration), alat (Angstrom)
 !>   [[species]]    (two) symbol, z, nval, konfig, occupations, concentration (A only; B = 1 - x_A)
-!>   [scf]          spin = 1|2, xc, sigma, sim_beta, mixing, tolerance, max_iterations, zeta0, relativistic
+!>   [scf]          spin = 1|2, xc, sigma, sim_beta, mixing, tolerance, max_iterations, zeta0, relativistic,
+!>                  save_potential / start_potential (file), flip_spin ("A"|"B"|"AB": swap that species' spins in the start)
 !>   [asr]          levels, rank, supercell, flip_radius, contour_points, cluster_radius, inversion_radius, screening, terminator,
 !>                  density, order (2|3: second/third-order H), symmetry, hamiltonian, ed_terminator (hull|bp|avg2),
 !>                  recursion_steps (Lanczos steps on the generated node set, hard wall; default = levels)
@@ -108,8 +109,9 @@ contains
     inp%ai%x = xs(1)
 
     call section(table, 'scf', child)
-    call check_keys(child, ['spin          ', 'xc            ', 'sigma         ', 'sim_beta      ', 'mixing        ', &
-                            'tolerance     ', 'max_iterations', 'zeta0         ', 'relativistic  '], '[scf]', msg)
+    call check_keys(child, ['spin           ', 'xc             ', 'sigma          ', 'sim_beta       ', 'mixing         ', &
+                            'tolerance      ', 'max_iterations ', 'zeta0          ', 'relativistic   ', &
+                            'start_potential', 'save_potential ', 'flip_spin      '], '[scf]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'spin', inp%ai%nspin, 1)
     call get_value(child, 'xc', xcs, 'vbh'); inp%ai%xc = xcs
@@ -120,6 +122,11 @@ contains
     call get_value(child, 'max_iterations', inp%ai%maxit, 60)
     call get_value(child, 'zeta0', inp%ai%zeta0, 0.1_dp)
     call get_value(child, 'relativistic', inp%ai%relativistic, .true.)
+    call get_value(child, 'start_potential', xcs, ''); inp%ai%pot_in = xcs
+    call get_value(child, 'save_potential', xcs, ''); inp%ai%pot_out = xcs
+    call get_value(child, 'flip_spin', xcs, '')             ! species whose spin channels are swapped in the start potential: "A", "B", "AB"
+    inp%ai%pot_flip = [index(xcs, 'A') > 0, index(xcs, 'B') > 0]
+    if (any(inp%ai%pot_flip) .and. len_trim(inp%ai%pot_in) == 0) then; msg = 'flip_spin needs start_potential'; return; end if
 
     call section(table, 'asr', child)
     call check_keys(child, ['levels            ', 'rank              ', 'supercell         ', 'flip_radius       ', 'contour_points    ', &

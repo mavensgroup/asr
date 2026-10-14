@@ -85,6 +85,9 @@ module asr_alloy_scf
                                                  !! ASA sphere charges; loses ~0.03 e per cell at this order -> E_F shifts ~10 mRy in CuZn)
     character(len=10) :: density = 'expand'      !! M2 term: 'expand' = M2 (phidot^2 + phi phiddot) | 'stuttgart' = M2 (phidot^2 - p phi^2) (LMTO47 newrho)
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
+    character(len=256) :: pot_in = ''            !! start from the species potentials and E_nu of this file (written by pot_out) instead of atoms
+    character(len=256) :: pot_out = ''           !! write the final species potentials and E_nu (restart / fixed-potential diagnostics)
+    logical :: pot_flip(2) = .false.             !! with pot_in, nspin = 2: swap the spin channels of species s (antiparallel starts)
   end type alloy_input_t
 
   type :: alloy_result_t
@@ -249,6 +252,7 @@ contains
       do sg = 1, nsp; enu(:, sg, s) = etmp(:, sg); end do
       deallocate (vtmp, etmp)
     end do
+    if (len_trim(inp%pot_in) > 0) call read_potentials()
     allocate (y(2, 0:2, nmax, 0:2, 2, 2)); y = 0.0_dp
     ! ---- first parameters, structure (graph, blocks), operator
     call all_params()
@@ -544,6 +548,7 @@ contains
       if (dv < inp%tol .and. it > 3 .and. order_now == inp%order) then; res%converged = .true.; exit; end if
     end do
     call xc_finalize(xf)
+    if (len_trim(inp%pot_out) > 0) call write_potentials()
     do s = 1, 2
       do sg = 1, nsp
         do l = 0, 2
@@ -568,6 +573,49 @@ contains
     res%moment_cell = xs(1) * cr(1)%moment + xs(2) * cr(2)%moment
     if (ordered) res%moment_cell = cr(1)%moment + cr(2)%moment      ! per two-atom cell
   contains
+    !> species potentials (with the nucleus) and E_nu, both spins: file format of read_potentials
+    subroutine write_potentials()
+      integer :: u, ss, gg, kk
+      open (newunit=u, file=trim(inp%pot_out), status='replace', action='write')
+      write (u, '(a)') '# asr alloy species potentials (Ry): nspin; per species: z n r(n); E_nu(0:2) per spin; v(r_k, spin), k = 1..n'
+      write (u, '(i3)') nsp
+      do ss = 1, 2
+        write (u, '(f8.2,i8,es25.16)') inp%spec(ss)%z, cr(ss)%mesh%n, cr(ss)%mesh%r(cr(ss)%mesh%n)
+        do gg = 1, nsp; write (u, '(3es25.16)') enu(:, gg, ss); end do
+        do kk = 1, cr(ss)%mesh%n; write (u, '(2es25.16)') cr(ss)%v(kk, :); end do
+      end do
+      close (u)
+    end subroutine write_potentials
+
+    !> replace the atomic starts by a written potential; nspin 1 -> 2 copies the potential to both spins (no splitting);
+    !> pot_flip(s) swaps the spin channels of species s
+    subroutine read_potentials()
+      integer :: u, ss, gg, kk, nf, nspf, ios
+      real(dp) :: zf, rf, vv2(2), ee(0:2, 2)
+      open (newunit=u, file=trim(inp%pot_in), status='old', action='read', iostat=ios)
+      if (ios /= 0) error stop 'alloy_scf: cannot open pot_in'
+      read (u, *); read (u, *) nspf
+      if (nspf > nsp) error stop 'alloy_scf: pot_in is spin polarised, the run is not'
+      do ss = 1, 2
+        read (u, *) zf, nf, rf
+        if (nf /= cr(ss)%mesh%n .or. abs(zf - inp%spec(ss)%z) > 1.0e-6_dp .or. abs(rf - cr(ss)%mesh%r(nf)) > 1.0e-8_dp * rf) &
+          error stop 'alloy_scf: pot_in species / radial mesh differ from this input'
+        do gg = 1, nspf; read (u, *) ee(:, gg); end do
+        if (nspf == 1) ee(:, 2) = ee(:, 1)
+        do kk = 1, nf
+          read (u, *) vv2(1:nspf)
+          if (nspf == 1) vv2(2) = vv2(1)
+          cr(ss)%v(kk, :) = vv2(1:nsp)
+        end do
+        enu(:, 1:nsp, ss) = ee(:, 1:nsp)
+        if (nsp == 2 .and. inp%pot_flip(ss)) then
+          cr(ss)%v(:, [1, 2]) = cr(ss)%v(:, [2, 1]); enu(:, [1, 2], ss) = enu(:, [2, 1], ss)
+        end if
+      end do
+      close (u)
+      if (vb) print '(3a,i0,a,2l2)', '  start potentials from ', trim(inp%pot_in), ' (nspin ', nspf, ')  spin flip(A,B):', inp%pot_flip
+    end subroutine read_potentials
+
     !> electrons per cell from the occupied moments: sum of m0 (+ p m2 for sphere-charge moments, order 3)
     real(dp) function electrons(mo)
       real(dp), intent(in) :: mo(2, 2, 0:2, 0:2)
