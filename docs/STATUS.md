@@ -918,3 +918,16 @@ potential saved; then ONE iteration from it at 12 / 24 / 48 steps with depth_tol
 integral (and caused the unbalanced species charges) is refuted.  MnCr needs 24 steps (12 -> 24: charge transfer x2, E_F 5 mRy; 24 -> 48: 0.6 mRy).
 The unbalanced charges (MnCr -0.14 e, CuZn +0.34 e in early iterations) came from the E_F search: 6 contour passes, then a first-order moment
 correction with a slope different from the DOS used in it.  Fix f6ebe11: 12 passes, correction with DOS(E_F), remaining N - N_elec reported.
+
+## Disordered MnCr with all fixes, ferrimagnetic start (2026-10-15; desktop trial/q23; code 17416b2)
+bcc Mn50Cr50, VBH, a = 2.900 A, asr_ed levels 4 rank 1, bp, SIM beta 1, weighted Anderson, E_nu window, bracketed E_F search; start Cr spin_sign -1,
+zeta0 0.2; potentials saved (pot.dat).
+| steps | its | Mn | Cr | qnet Mn | E_F | N(E_F) spin 1 / 2 | peaks vs E_F, spin 1 ; spin 2 |
+|---|---|---|---|---|---|---|---|
+| 12 | 66 | 0.000 | 0.000 | +0.054 | -0.0350 | 8.5 / 8.5 | -0.162, +0.075 |
+| 24 | 58 | +0.969 | -0.178 | +0.055 | -0.0341 | 13.6 / 6.0 | -0.163, +0.009, +0.087 ; -0.131, +0.074 |
+Both converged cleanly (one E_F-search warning each, in the first iterations; DOS positive everywhere).  24 steps is the converged depth (q16).
+The 24-step state is the same as the old q14 r24 run (Mn -0.986 / Cr +0.181, reached through wild iterations): disordered MnCr is a weak
+ferrimagnet, ~0.40 muB per atom net, far below ordered B2 (VBH 1.66 / -0.82).  12 steps loses the moment even from an antiparallel start.
+vs Banerjee & Mookerjee 2009 Fig. 1 (nearly non-magnetic, N(E_F) 15.6 / 18.4, bonding peaks -0.36 / -0.23): still not reproduced; the legacy band
+is 0.1-0.2 Ry wider than ours, which agrees with Questaal for the ordered cell (see "Our LMTO-ASA vs Questaal").
