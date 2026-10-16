@@ -6,7 +6,7 @@ module asr_contour
   use asr_kinds, only: dp, pi
   implicit none
   private
-  public :: contour_nodes, contour_nodes_closed, contour_moment
+  public :: contour_nodes, contour_nodes_closed, contour_moment, contour_nodes_fermi, fermi_npole, fermi_nodes_count
 
 contains
 
@@ -53,6 +53,64 @@ contains
       w(n_arc + j) = cmplx(0.0_dp, -0.5_dp * eta * wv(j), dp)
     end do
   end subroutine contour_nodes_closed
+
+  !> Matsubara poles below the Fermi contour: Gamma = 2 npole pi kT ~ 0.1 Ry (G is smooth there), 2 <= npole <= 40.
+  pure integer function fermi_npole(kt)
+    real(dp), intent(in) :: kt
+    fermi_npole = max(2, min(40, nint(0.1_dp / (2.0_dp * pi * kt))))
+  end function fermi_npole
+
+  pure integer function fermi_nodes_count(npole, n_main, n_step)
+    integer, intent(in) :: npole, n_main, n_step
+    fermi_nodes_count = 4 + n_main + n_step + npole
+  end function fermi_nodes_count
+
+  !> Fermi-smeared contour (Wildberger, Lang, Zeller, Dederichs, PRB 52, 11502 (1995)):
+  !>   int f(E) [-(1/pi) Im h(E + i0)] dE  =  -(1/pi) Im sum_j w(j) h(z(j))      (h analytic in the upper half plane)
+  !> f(E) = 1 / (exp((E - mu)/kT) + 1).  Path: E_bot -> E_bot + i Gamma (4 nodes) -> mu - 10 kT + i Gamma (n_main) -> mu + 40 kT + i Gamma
+  !> (n_step, where the occupation falls); Gamma = 2 npole pi kT, on which f(x + i Gamma) = f(x) is real.  The weights carry f; the
+  !> leg back to the real axis beyond mu + 40 kT is dropped (f < 5e-18).  The npole Matsubara poles mu + i (2n+1) pi kT enclosed
+  !> between path and real axis enter as nodes with w = -2 pi i kT.  N(mu) is smooth and monotone (no discrete steps at E_F).
+  subroutine contour_nodes_fermi(ebot, mu, kt, npole, n_main, n_step, z, w)
+    real(dp), intent(in) :: ebot, mu, kt
+    integer, intent(in) :: npole, n_main, n_step
+    complex(dp), intent(out) :: z(:), w(:)
+    real(dp) :: xv(4), wv(4), xm(n_main), wm(n_main), xs(n_step), ws(n_step), gam, lo, hi, x
+    integer :: j, k
+    gam = 2.0_dp * npole * pi * kt
+    call gauss_legendre(4, xv, wv); call gauss_legendre(n_main, xm, wm); call gauss_legendre(n_step, xs, ws)
+    k = 0
+    do j = 1, 4                                        ! vertical leg at E_bot (far below mu: f = 1)
+      k = k + 1; z(k) = cmplx(ebot, 0.5_dp * gam * (1.0_dp + xv(j)), dp)
+      w(k) = cmplx(0.0_dp, 0.5_dp * gam * wv(j), dp) * fermi_c(z(k))
+    end do
+    lo = ebot; hi = mu - 10.0_dp * kt
+    do j = 1, n_main
+      k = k + 1; x = 0.5_dp * (lo + hi) + 0.5_dp * (hi - lo) * xm(j); z(k) = cmplx(x, gam, dp)
+      w(k) = 0.5_dp * (hi - lo) * wm(j) * fermi_r(x)
+    end do
+    lo = mu - 10.0_dp * kt; hi = mu + 40.0_dp * kt
+    do j = 1, n_step
+      k = k + 1; x = 0.5_dp * (lo + hi) + 0.5_dp * (hi - lo) * xs(j); z(k) = cmplx(x, gam, dp)
+      w(k) = 0.5_dp * (hi - lo) * ws(j) * fermi_r(x)
+    end do
+    do j = 0, npole - 1
+      k = k + 1; z(k) = cmplx(mu, (2 * j + 1) * pi * kt, dp); w(k) = cmplx(0.0_dp, -2.0_dp * pi * kt, dp)
+    end do
+  contains
+    real(dp) function fermi_r(e)
+      real(dp), intent(in) :: e
+      real(dp) :: t
+      t = (e - mu) / kt
+      if (t > 0.0_dp) then; fermi_r = exp(-t) / (1.0_dp + exp(-t)); else; fermi_r = 1.0_dp / (1.0_dp + exp(t)); end if
+    end function fermi_r
+    complex(dp) function fermi_c(zz)                   ! complex Fermi function (only used far below mu, where it is ~1)
+      complex(dp), intent(in) :: zz
+      complex(dp) :: t
+      t = (zz - mu) / kt
+      if (real(t) < -600.0_dp) then; fermi_c = (1.0_dp, 0.0_dp); else; fermi_c = 1.0_dp / (exp(t) + 1.0_dp); end if
+    end function fermi_c
+  end subroutine contour_nodes_fermi
 
   !> M_k from G sampled on the contour nodes.
   pure function contour_moment(z, w, g, enu, k) result(m)

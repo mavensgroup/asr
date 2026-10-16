@@ -29,7 +29,7 @@ module asr_alloy_scf
   use asr_symmetry, only: d4h_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, set_alloy_params
   use asr_partial, only: lanczos_basis, transition_green
-  use asr_contour, only: contour_nodes, contour_nodes_closed
+  use asr_contour, only: contour_nodes, contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
   use asr_greens, only: cf_green, sqrt_tail, tail_params_avg2
   use asr_terminator, only: bp_asymptote
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
@@ -68,6 +68,8 @@ module asr_alloy_scf
     logical :: ed_asr = .false.               !! with energy_dependent: AMscf's literal form H(E) = E - T(E - E_nu - h)T - T hoh T (asr_ed), one
                                                  !! recursion per central species, start site frozen; default screening = standard
     real(dp) :: ed_eta = 0.01_dp                  !! energy-dependent route: the contour arc ends at Im z = ed_eta
+    real(dp) :: fermi_kt = 0.0_dp                 !! energy-dependent route: electronic temperature kT (Ry) of a Fermi-smeared contour
+                                                 !! (asr_contour%contour_nodes_fermi); 0 = sharp E_F (closed contour)
     logical :: ed_scan = .false.                !! diagnostic: print N(E_F) on a grid in iteration 1, then stop
     integer :: ndos = 0                          !! energy-dependent route: DOS grid computed inside the SCF (final iteration)
     character(len=8) :: terminator = 'avg2'      !! energy-independent route tail: 'avg2' (last two coefficients) | 'bp' (Beer-Pettifor)
@@ -686,11 +688,17 @@ contains
       real(dp) :: ebot
       integer :: j, o, gg, kk, ll, nq, pp, site, ss
       logical :: dens
-      nq = inp%ncont + nvert
-      allocate (zq(nq + 1), wq(nq + 1))
       ebot = minval(enu(:, 1:nsp, :)) - 1.2_dp
       if (exact_now) ebot = ebot_exact                    ! chosen once per iteration away from the poles of the exact P
-      call contour_nodes_closed(ebot, efv, inp%ed_eta, inp%ncont, nvert, zq(1:nq), wq(1:nq))   ! arc to E_F + i eta, closed by the vertical
+      if (inp%fermi_kt > 0.0_dp) then                     ! Fermi-smeared contour: smooth monotone N(mu)
+        nq = fermi_nodes_count(fermi_npole(inp%fermi_kt), inp%ncont, 16)
+        allocate (zq(nq + 1), wq(nq + 1))
+        call contour_nodes_fermi(ebot, efv, inp%fermi_kt, fermi_npole(inp%fermi_kt), inp%ncont, 16, zq(1:nq), wq(1:nq))
+      else
+        nq = inp%ncont + nvert
+        allocate (zq(nq + 1), wq(nq + 1))
+        call contour_nodes_closed(ebot, efv, inp%ed_eta, inp%ncont, nvert, zq(1:nq), wq(1:nq))   ! arc to E_F + i eta, closed by the vertical
+      end if
       zq(nq + 1) = cmplx(efv, inp%ed_eta, dp); wq(nq + 1) = (0.0_dp, 0.0_dp)                  ! last node: DOS at E_F only
       dens = present(rhov) .and. exact_now .and. inp%ed_exact_density
       if (dens) then; allocate (ph(nmax, 0:2, 2), ts(nmax, 0:2, 2)); rhov = 0.0_dp; end if
