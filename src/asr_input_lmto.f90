@@ -1,7 +1,10 @@
 !> TOML input for  [calculation] kind = "lmto":  structure + species -> SCF -> parameters -> DOS.
 !>
 !>   [calculation]  name, kind = "lmto"
-!>   [structure]    lattice = "fcc"|"bcc"|"sc"|"b2", alat (Angstrom)  [, ratio = r_A/r_B for b2]
+!>   [structure]    lattice = "fcc"|"bcc"|"sc"|"b2"|"cell", alat (Angstrom)  [, ratio = r_A/r_B for b2]
+!>                  lattice = "cell": vectors = [[a1], [a2], [a3]] (alat units), site_classes = true|false (one ASA class per site:
+!>                  local moments / charges, e.g. SQS supercells; default false = one class per species), sites in [[site]]
+!>   [[site]]       (lattice = "cell" only) position = [x, y, z] (Cartesian, alat units), species = "<symbol>" 
 !>   [[species]]    symbol, z, nval, konfig = [ns, np, nd, nf] (valence principal quantum numbers),
 !>                  occupations = [n_s, n_d]  (neutral-atom valence s and d occupation, starting potential)
 !>                  spin_sign = 1 | -1  (sign of this species' starting spin polarisation zeta0; -1: antiparallel start)
@@ -37,6 +40,10 @@ module asr_input_lmto
     logical :: trace = .false.
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, dos_smear = 0.01_dp
     integer :: npoints = 801, dos_nk = 24
+    real(dp) :: cell_vec(3, 3) = 0.0_dp                !! lattice = "cell": columns a1, a2, a3 (alat units)
+    real(dp), allocatable :: site_pos(:, :)            !! (3, nsite), Cartesian, alat units
+    integer, allocatable :: site_sp(:)                 !! species index of each site
+    logical :: site_classes = .false.
   end type lmto_input_t
 
 contains
@@ -72,7 +79,7 @@ contains
     inp%infile = filename
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
-    call check_keys(table, ['calculation', 'structure  ', 'species    ', 'scf        ', 'dos        ', 'output     '], 'top level', msg)
+    call check_keys(table, ['calculation', 'structure  ', 'species    ', 'site       ', 'scf        ', 'dos        ', 'output     '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -80,10 +87,24 @@ contains
     call get_value(child, 'name', inp%name, 'asr-lmto')
 
     call section(table, 'structure', child)
-    call check_keys(child, ['lattice', 'alat   ', 'ratio  '], '[structure]', msg); if (len(msg) > 0) return
+    call check_keys(child, ['lattice     ', 'alat        ', 'ratio       ', 'vectors     ', 'site_classes'], '[structure]', msg)
+    if (len(msg) > 0) return
     call get_value(child, 'lattice', inp%lattice, 'fcc')
     call get_value(child, 'alat', inp%alat_angstrom, 0.0_dp)
     call get_value(child, 'ratio', inp%ratio, 1.0_dp)
+    call get_value(child, 'site_classes', inp%site_classes, .false.)
+    if (inp%lattice == 'cell') then
+      nullify (arr)
+      call get_value(child, 'vectors', arr, requested=.false.)
+      if (.not. associated(arr)) then; msg = 'lattice "cell" needs [structure] vectors = [[a1], [a2], [a3]]'; return; end if
+      if (len(arr) /= 3) then; msg = '[structure] vectors needs three vectors'; return; end if
+      do i = 1, 3
+        nullify (ka); call get_value(arr, i, ka)
+        if (.not. associated(ka)) then; msg = '[structure] vectors: each vector is an array of 3 numbers'; return; end if
+        if (len(ka) /= 3) then; msg = '[structure] vectors: each vector is an array of 3 numbers'; return; end if
+        do j = 1, 3; call get_value(ka, j, x); inp%cell_vec(j, i) = x; end do
+      end do
+    end if
 
     nullify (arr)
     call get_value(table, 'species', arr, requested=.false.)
@@ -112,6 +133,31 @@ contains
         call get_value(ka, 2, x); inp%species(i)%occ_d = x
       end if
     end do
+
+    if (inp%lattice == 'cell') then
+      nullify (arr)
+      call get_value(table, 'site', arr, requested=.false.)
+      if (.not. associated(arr)) then; msg = 'lattice "cell" needs [[site]] entries'; return; end if
+      allocate (inp%site_pos(3, len(arr)), inp%site_sp(len(arr)))
+      do i = 1, len(arr)
+        call get_value(arr, i, sp)
+        call check_keys(sp, ['position', 'species '], '[[site]]', msg); if (len(msg) > 0) return
+        nullify (ka); call get_value(sp, 'position', ka, requested=.false.)
+        if (.not. associated(ka)) then; msg = '[[site]] needs position = [x, y, z]'; return; end if
+        if (len(ka) /= 3) then; msg = '[[site]] position needs 3 numbers'; return; end if
+        do j = 1, 3; call get_value(ka, j, x); inp%site_pos(j, i) = x; end do
+        block
+          character(len=:), allocatable :: sym
+          integer :: k
+          call get_value(sp, 'species', sym, '')
+          inp%site_sp(i) = 0
+          do k = 1, nsp
+            if (inp%species(k)%symbol == sym) inp%site_sp(i) = k
+          end do
+          if (inp%site_sp(i) == 0) then; msg = '[[site]] species "'//sym//'" is not a [[species]] symbol'; return; end if
+        end block
+      end do
+    end if
 
     call section(table, 'scf', child)
     call check_keys(child, ['spin           ', 'xc             ', 'nk             ', 'bz             ', 'smear          ', &
@@ -146,11 +192,12 @@ contains
     call get_value(child, 'out_file', inp%out_file, 'asr.out')
 
     ! ---- validation
-    if (inp%lattice /= 'fcc' .and. inp%lattice /= 'bcc' .and. inp%lattice /= 'sc' .and. inp%lattice /= 'b2') &
-      msg = '[structure] lattice must be fcc|bcc|sc|b2'
+    if (inp%lattice /= 'fcc' .and. inp%lattice /= 'bcc' .and. inp%lattice /= 'sc' .and. inp%lattice /= 'b2' .and. inp%lattice /= 'cell') &
+      msg = '[structure] lattice must be fcc|bcc|sc|b2|cell'
     if (inp%alat_angstrom <= 0.0_dp) msg = '[structure] alat (Angstrom) must be > 0'
     if (inp%lattice == 'b2' .and. nsp /= 2) msg = 'lattice b2 needs exactly two [[species]]'
-    if (inp%lattice /= 'b2' .and. nsp /= 1) msg = 'lattice '//inp%lattice//' needs exactly one [[species]]'
+    if (inp%lattice /= 'b2' .and. inp%lattice /= 'cell' .and. nsp /= 1) msg = 'lattice '//inp%lattice//' needs exactly one [[species]]'
+    if (inp%site_classes .and. inp%lattice /= 'cell') msg = 'site_classes needs lattice = "cell"'
     do i = 1, nsp
       if (inp%species(i)%z <= 0.0_dp .or. inp%species(i)%nval <= 0) msg = '[[species]] needs z and nval'
     end do
