@@ -931,3 +931,22 @@ The 24-step state is the same as the old q14 r24 run (Mn -0.986 / Cr +0.181, rea
 ferrimagnet, ~0.40 muB per atom net, far below ordered B2 (VBH 1.66 / -0.82).  12 steps loses the moment even from an antiparallel start.
 vs Banerjee & Mookerjee 2009 Fig. 1 (nearly non-magnetic, N(E_F) 15.6 / 18.4, bonding peaks -0.36 / -0.23): still not reproduced; the legacy band
 is 0.1-0.2 Ry wider than ours, which agrees with Questaal for the ordered cell (see "Our LMTO-ASA vs Questaal").
+
+## Clean reruns of all disordered binaries, VBH and PBE (2026-10-15/16; desktop trial/q24, code a28a0d1)
+All fixes in (corrected SIM beta 1, weighted Anderson, E_nu window, bracketed E_F search); asr_ed levels 4 rank 1, 24 recursion steps, bp tail;
+starts: FeRh / FeCo parallel (zeta0 0.1), FeV / MnCr antiparallel (spin_sign -1 on V / Cr, zeta0 0.2).  Moments A / B (muB), qnet of A.
+| system (a, A) | VBH | PBE | reference |
+|---|---|---|---|
+| FeCo (2.857) | 2.578 / 1.746, qnet -0.040, 45 its | 2.665 / 1.793, -0.041, 53 its | ordered B2 (ours) 2.76 / 1.77 |
+| FeV (2.95) | 1.848 / -0.469, +0.157, 43 its | 2.08 / -0.65, +0.15 (stationary from it ~18; dV floor 1e-3, stopped at 101) | ordered B2 k-space (VBH) 1.353 / -0.434; Chakrabarti-Mookerjee 2005 1.12 / -0.11 |
+| FeRh (3.059) | 2.867 / 0.742, +0.063 (stationary from it ~30; dV floor 1e-4, stopped at 103) | 2.956 / 0.991, +0.058, 39 its | SPR-KKR-CPA (PBE) 3.070 / 0.725 |
+| CuZn x = 0.5 (2.85) | NM, qnet Cu +0.110; Zn d -0.652, Cu d -0.222 vs E_F | +0.110; -0.650 / -0.220 | Banerjee-Mookerjee 2010: -0.682 / -0.309 |
+| MnCr (2.900), 24 steps | 0.969 / -0.178, +0.055 (q23) | 1.395 / -0.382, +0.054, 58 its | 2009 Fig. 1 nearly non-magnetic |
+| MnCr, 48 steps (restart) | 1.132 / -0.205, 34 its | 1.497 / -0.400, 21 its | |
+Findings: (i) every run converged or became stationary; max E_F during the SCF stayed physical (FeCo overshot to +0.31 Ry at it 7 from the
+atomic start, then converged).  (ii) Depth: FeV 12 -> 24 steps raises Fe 1.65 -> 1.85 and V -0.35 -> -0.47; MnCr moments are NOT converged at 24
+steps (24 -> 48: +17% VBH, +7% PBE) although its non-magnetic E_F / charges are (q16); FeRh 12 -> 24 changes < 0.04.  (iii) CuZn at 24 steps: Cu d
+moves 70 mRy towards E_F vs the depth-4 runs (-0.291 -> -0.222), close to ordered B2 (-0.26), away from the 2010 figure; VBH vs PBE identical.
+(iv) PBE vs VBH: moments +0.05..0.4 muB; FeRh PBE Fe 2.96 (CPA 3.07), Rh 0.99 (CPA 0.73; ordered PBE ours 1.07 vs SPR-KKR 0.94: equal-sphere ASA).
+(v) Two runs (FeRh VBH, FeV PBE) stalled at a dV noise floor: N(E) steps by ~0.01 e at E_F and the sharp-E_F search cannot resolve it ->
+Fermi-smeared contour ([asr] fermi_kt, cc2d513/b2367c2); test reruns with kT = 3 mRy in trial/q25.
