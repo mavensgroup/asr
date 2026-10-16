@@ -62,23 +62,23 @@ contains
 
   pure integer function fermi_nodes_count(npole, n_main, n_step)
     integer, intent(in) :: npole, n_main, n_step
-    fermi_nodes_count = 4 + n_main + n_step + npole
+    fermi_nodes_count = 4 + n_main + n_step + 8 + npole
   end function fermi_nodes_count
 
   !> Fermi-smeared contour (Wildberger, Lang, Zeller, Dederichs, PRB 52, 11502 (1995)):
   !>   int f(E) [-(1/pi) Im h(E + i0)] dE  =  -(1/pi) Im sum_j w(j) h(z(j))      (h analytic in the upper half plane)
-  !> f(E) = 1 / (exp((E - mu)/kT) + 1).  Path: E_bot -> E_bot + i Gamma (4 nodes) -> mu - 10 kT + i Gamma (n_main) -> mu + 40 kT + i Gamma
-  !> (n_step, where the occupation falls); Gamma = 2 npole pi kT, on which f(x + i Gamma) = f(x) is real.  The weights carry f; the
+  !> f(E) = 1 / (exp((E - mu)/kT) + 1).  Path: E_bot -> E_bot + i Gamma (4 nodes) -> mu - 10 kT + i Gamma (n_main) -> mu + 10 kT + i Gamma
+  !> (n_step, where the occupation falls) -> mu + 40 kT + i Gamma (8); Gamma = 2 npole pi kT, on which f(x + i Gamma) = f(x) is real.  The weights carry f; the
   !> leg back to the real axis beyond mu + 40 kT is dropped (f < 5e-18).  The npole Matsubara poles mu + i (2n+1) pi kT enclosed
   !> between path and real axis enter as nodes with w = -2 pi i kT.  N(mu) is smooth and monotone (no discrete steps at E_F).
   subroutine contour_nodes_fermi(ebot, mu, kt, npole, n_main, n_step, z, w)
     real(dp), intent(in) :: ebot, mu, kt
     integer, intent(in) :: npole, n_main, n_step
     complex(dp), intent(out) :: z(:), w(:)
-    real(dp) :: xv(4), wv(4), xm(n_main), wm(n_main), xs(n_step), ws(n_step), gam, lo, hi, x
+    real(dp) :: xv(4), wv(4), xm(n_main), wm(n_main), xs(n_step), ws(n_step), xt(8), wt(8), gam, lo, hi, x
     integer :: j, k
     gam = 2.0_dp * npole * pi * kt
-    call gauss_legendre(4, xv, wv); call gauss_legendre(n_main, xm, wm); call gauss_legendre(n_step, xs, ws)
+    call gauss_legendre(4, xv, wv); call gauss_legendre(n_main, xm, wm); call gauss_legendre(n_step, xs, ws); call gauss_legendre(8, xt, wt)
     k = 0
     do j = 1, 4                                        ! vertical leg at E_bot (far below mu: f = 1)
       k = k + 1; z(k) = cmplx(ebot, 0.5_dp * gam * (1.0_dp + xv(j)), dp)
@@ -89,10 +89,15 @@ contains
       k = k + 1; x = 0.5_dp * (lo + hi) + 0.5_dp * (hi - lo) * xm(j); z(k) = cmplx(x, gam, dp)
       w(k) = 0.5_dp * (hi - lo) * wm(j) * fermi_r(x)
     end do
-    lo = mu - 10.0_dp * kt; hi = mu + 40.0_dp * kt
+    lo = mu - 10.0_dp * kt; hi = mu + 10.0_dp * kt
     do j = 1, n_step
       k = k + 1; x = 0.5_dp * (lo + hi) + 0.5_dp * (hi - lo) * xs(j); z(k) = cmplx(x, gam, dp)
       w(k) = 0.5_dp * (hi - lo) * ws(j) * fermi_r(x)
+    end do
+    lo = mu + 10.0_dp * kt; hi = mu + 40.0_dp * kt
+    do j = 1, 8
+      k = k + 1; x = 0.5_dp * (lo + hi) + 0.5_dp * (hi - lo) * xt(j); z(k) = cmplx(x, gam, dp)
+      w(k) = 0.5_dp * (hi - lo) * wt(j) * fermi_r(x)
     end do
     do j = 0, npole - 1
       k = k + 1; z(k) = cmplx(mu, (2 * j + 1) * pi * kt, dp); w(k) = cmplx(0.0_dp, -2.0_dp * pi * kt, dp)
