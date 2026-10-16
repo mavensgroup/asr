@@ -81,7 +81,8 @@ def shells_and_pairs(sup, pos, nshell):
 
 
 def triplet_list(sup, pos, radii):
-    """Smallest triplet: triangles with sides (R1, R1, R2) (bcc) or (R1, R1, R1) (fcc) -> list of (i, j, k) with images."""
+    """Smallest triplet: the triangles of least perimeter with all sides in the first two shells, (R1, R1, R2) on bcc,
+    (R1, R1, R1) on fcc -> list of (i, j, k) with images."""
     n = len(pos)
     imgs = [a * sup[0] + b * sup[1] + c * sup[2] for a, b, c in itertools.product(range(-2, 3), repeat=3)]
     nb = []
@@ -93,13 +94,13 @@ def triplet_list(sup, pos, radii):
                 r = np.linalg.norm(v)
                 if abs(r - radii[0]) < 1e-5 or abs(r - radii[1]) < 1e-5: lst.append((j, v, r))
         nb.append(lst)
-    tri = []
-    sides = sorted([radii[0], radii[0], radii[1]])
+    cand = []
     for i in range(n):
         for (j, vj, rj), (k, vk, rk) in itertools.combinations(nb[i], 2):
-            s = sorted([rj, rk, np.linalg.norm(vk - vj)])
-            if np.allclose(s, sides, atol=1e-5): tri.append((i, j, k))
-    return np.array(tri)
+            rjk = np.linalg.norm(vk - vj)
+            if min(abs(rjk - radii[0]), abs(rjk - radii[1])) < 1e-5: cand.append((rj + rk + rjk, (i, j, k)))
+    pmin = min(p for p, _ in cand)
+    return np.array([t for p, t in cand if p < pmin + 1e-5])
 
 
 def correlations(sig, shells, tri):
