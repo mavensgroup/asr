@@ -16,7 +16,7 @@ module asr_asa
   use asr_tetra, only: tetra_weights, tetra_fermi
   implicit none
   private
-  public :: asa_class_t, asa_input_t, asa_class_result_t, asa_result_t, asa_scf, core_shells_for, asa_dos, atomic_start
+  public :: asa_class_t, asa_input_t, asa_class_result_t, asa_result_t, asa_scf, core_shells_for, asa_dos, atomic_start, bands_moments
 
   type :: asa_class_t
     real(dp) :: z = 0.0_dp

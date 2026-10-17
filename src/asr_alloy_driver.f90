@@ -9,7 +9,8 @@
 !>   [asr]          levels, rank, supercell, flip_radius, contour_points, cluster_radius, inversion_radius, screening, terminator,
 !>                  density, order (2|3: second/third-order H), symmetry, hamiltonian, ed_terminator (hull|bp|avg2),
 !>                  recursion_steps (Lanczos steps on the generated node set, hard wall; default = levels),
-!>                  fermi_kt (Ry; > 0: Fermi-smeared contour, smooth N(E_F); default 0 = sharp E_F)
+!>                  fermi_kt (Ry; > 0: Fermi-smeared contour, smooth N(E_F); default 0 = sharp E_F),
+!>                  tail_scan (diagnostic, asr_ed: moments vs termination depth 8..tail_scan and tail at the start potential, then stop)
 !>   [dos]          emin, emax, npoints, eta
 !>   [output]       dos_file, out_file
 !> Unknown sections/keys are errors.
@@ -133,11 +134,12 @@ contains
 
     call section(table, 'asr', child)
     call check_keys(child, ['levels            ', 'rank              ', 'supercell         ', 'flip_radius       ', 'contour_points    ', &
-                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     ', 'recursion_steps   ', 'fermi_kt          '], '[asr]', msg)
+                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     ', 'recursion_steps   ', 'fermi_kt          ', 'tail_scan         '], '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ai%nlevels, 4)
     call get_value(child, 'recursion_steps', inp%ai%nrec, 0)
     call get_value(child, 'fermi_kt', inp%ai%fermi_kt, 0.0_dp)
+    call get_value(child, 'tail_scan', inp%ai%tail_scan, 0)
     call get_value(child, 'rank', inp%ai%maxrank, 2)
     call get_value(child, 'supercell', inp%ai%lsuper, 8)
     call get_value(child, 'flip_radius', inp%ai%flip_radius, 99)

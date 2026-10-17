@@ -17,7 +17,7 @@ module asr_alloy_scf
   use asr_atom, only: cumint, poisson_hartree, shell_t
   use asr_potpar, only: potpar_l_t, potpar_at_enu, clamp_enu
   use asr_lmto_ham, only: potpar_t
-  use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start, core_shells_for
+  use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start, core_shells_for, bands_moments
   use asr_lmto_cell, only: alpha_from_sigma, cell_t, cluster_t, build_cluster, setup_cell, recip_vectors
   use asr_strconst, only: avg_ws_radius, standard_alpha
   use asr_augspace, only: graph_t, graph_distances
@@ -90,6 +90,9 @@ module asr_alloy_scf
     character(len=256) :: pot_in = ''            !! start from the species potentials and E_nu of this file (written by pot_out) instead of atoms
     character(len=256) :: pot_out = ''           !! write the final species potentials and E_nu (restart / fixed-potential diagnostics)
     logical :: pot_flip(2) = .false.             !! with pot_in, nspin = 2: swap the spin channels of species s (antiparallel starts)
+    integer :: tail_scan = 0                     !! diagnostic (asr_ed): in iteration 1 build every chain once to tail_scan steps and print
+                                                 !! the moments for every termination depth m = 8..tail_scan and tail (hull, bp, avg2), each
+                                                 !! at its own E_F; then stop.  A = B: also the k-space E_nu + h - h o h reference
   end type alloy_input_t
 
   type :: alloy_result_t
@@ -115,6 +118,7 @@ module asr_alloy_scf
   integer, parameter :: nvert = 8                     ! vertical-segment nodes of the closed ED contour
   integer, parameter :: lorb9(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
   real(dp), parameter :: worb(4) = [1.0_dp, 3.0_dp, 3.0_dp, 2.0_dp]
+  integer, parameter :: nkref = 40                    ! tail scan, A = B: k mesh of the k-space reference
 
 contains
 
@@ -220,6 +224,11 @@ contains
     real(dp), allocatable :: oa(:, :, :, :), ob(:, :, :, :), ta(:), tb(:), v0o(:), phimad(:, :)
     real(dp) :: vmo(2), qat2(2), bvec3(3, 3), tau2(3, 2)
     integer :: omm(4, 2, 2), isite_b, ip
+    real(dp), allocatable :: tsr(:, :, :)              ! tail scan: (E_F, m_A, m_B, q_A, q_B valence; m; tail)
+    logical, allocatable :: tsx(:, :)                  ! tail scan: E_F extrapolated beyond the E_F grid
+    real(dp) :: kref(3)                                ! tail scan, A = B: k-space E_F, valence moment, electrons
+    logical :: haskref
+    character(len=4), parameter :: tails(3) = ['hull', 'bp  ', 'avg2']
 
     vb = .false.; if (present(verbose)) vb = verbose
     nsp = inp%nspin
@@ -239,6 +248,7 @@ contains
     omm = 0
     if (ed .and. .not. ordered .and. .not. inp%symmetry) error stop 'alloy_scf: energy_dependent requires symmetry = .true.'
     if (asr_ed .and. (ordered .or. inp%ed_exact)) error stop 'alloy_scf: the AMscf form is for the disordered alloy with parametrised potential functions'
+    if (inp%tail_scan > 0 .and. (.not. asr_ed .or. inp%tail_scan < 8)) error stop 'alloy_scf: tail_scan needs hamiltonian = asr_ed and >= 8 steps'
     do i = 1, 9; alpha9(i) = alpha(lorb9(i)); end do
     call xc_init(xf, inp%xc)
     ! ---- meshes and atomic starts
@@ -428,6 +438,7 @@ contains
           ef = ef + e
         end do
         if (inp%ed_exact .and. jf > nfe) call ed_moments(ef, mom, dosef, rhoex)   ! density at the final E_F
+        if (inp%tail_scan > 0) call tail_scan_run(ef)
       else
       ! recursions: four start orbitals per spin
       do sg = 1, nsp
@@ -578,6 +589,10 @@ contains
       res%hist_moment(it, :) = [cr(1)%moment, cr(2)%moment]; res%hist_qnet(it, :) = [cr(1)%qnet, cr(2)%qnet]
       if (vb) print '(a,i3,a,es10.3,a,f10.6,a,2f9.5,a,2f8.4)', 'it', it, '  dV=', dv, '  EF=', ef, '  qnet(A,B)=', cr(1)%qnet, cr(2)%qnet, '  m(A,B)=', cr(1)%moment, cr(2)%moment
       if (vb .and. ed .and. ed_nchain > 0) print '(a,f6.1,a,i0,a)', '      mean recursion depth used ', real(ed_nlev, dp) / real(ed_nchain, dp), ' of ', nlev, ' levels'
+      if (inp%tail_scan > 0) then
+        call tail_scan_print()
+        stop 0
+      end if
       if (dv < inp%tol .and. it > 3 .and. order_now == inp%order) then; res%converged = .true.; exit; end if
     end do
     call xc_finalize(xf)
@@ -685,21 +700,9 @@ contains
       real(dp), intent(out), optional :: rhov(:, :, :)
       complex(dp), allocatable :: zq(:), wq(:), ph(:, :, :), ts(:, :, :)
       complex(dp) :: gs(2), z
-      real(dp) :: ebot
       integer :: j, o, gg, kk, ll, nq, pp, site, ss
       logical :: dens
-      ebot = minval(enu(:, 1:nsp, :)) - 1.2_dp
-      if (exact_now) ebot = ebot_exact                    ! chosen once per iteration away from the poles of the exact P
-      if (inp%fermi_kt > 0.0_dp) then                     ! Fermi-smeared contour: smooth monotone N(mu)
-        nq = fermi_nodes_count(fermi_npole(inp%fermi_kt), inp%ncont, 16)
-        allocate (zq(nq + 1), wq(nq + 1))
-        call contour_nodes_fermi(ebot, efv, inp%fermi_kt, fermi_npole(inp%fermi_kt), inp%ncont, 16, zq(1:nq), wq(1:nq))
-      else
-        nq = inp%ncont + nvert
-        allocate (zq(nq + 1), wq(nq + 1))
-        call contour_nodes_closed(ebot, efv, inp%ed_eta, inp%ncont, nvert, zq(1:nq), wq(1:nq))   ! arc to E_F + i eta, closed by the vertical
-      end if
-      zq(nq + 1) = cmplx(efv, inp%ed_eta, dp); wq(nq + 1) = (0.0_dp, 0.0_dp)                  ! last node: DOS at E_F only
+      call ed_contour(efv, zq, wq, nq)
       dens = present(rhov) .and. exact_now .and. inp%ed_exact_density
       if (dens) then; allocate (ph(nmax, 0:2, 2), ts(nmax, 0:2, 2)); rhov = 0.0_dp; end if
       mo = 0.0_dp; dosv = 0.0_dp
@@ -739,6 +742,153 @@ contains
         end do
       end do
     end subroutine ed_moments
+
+    !> contour nodes 1..nq to efv (Fermi-smeared, or the arc to E_F + i eta closed by the vertical) and node nq + 1 = E_F + i eta
+    !> with weight 0 (the DOS at E_F only)
+    subroutine ed_contour(efv, zq, wq, nq)
+      real(dp), intent(in) :: efv
+      complex(dp), allocatable, intent(out) :: zq(:), wq(:)
+      integer, intent(out) :: nq
+      real(dp) :: ebot
+      ebot = minval(enu(:, 1:nsp, :)) - 1.2_dp
+      if (exact_now) ebot = ebot_exact                    ! chosen once per iteration away from the poles of the exact P
+      if (inp%fermi_kt > 0.0_dp) then                     ! Fermi-smeared contour: smooth monotone N(mu)
+        nq = fermi_nodes_count(fermi_npole(inp%fermi_kt), inp%ncont, 16)
+        allocate (zq(nq + 1), wq(nq + 1))
+        call contour_nodes_fermi(ebot, efv, inp%fermi_kt, fermi_npole(inp%fermi_kt), inp%ncont, 16, zq(1:nq), wq(1:nq))
+      else
+        nq = inp%ncont + nvert
+        allocate (zq(nq + 1), wq(nq + 1))
+        call contour_nodes_closed(ebot, efv, inp%ed_eta, inp%ncont, nvert, zq(1:nq), wq(1:nq))
+      end if
+      zq(nq + 1) = cmplx(efv, inp%ed_eta, dp); wq(nq + 1) = (0.0_dp, 0.0_dp)
+    end subroutine ed_contour
+
+    !> Tail scan at the current (input) potential, asr_ed route.  On the contours of nef Fermi levels around efv every chain is
+    !> built once to m_max = inp%tail_scan steps and terminated at every depth m = 8..m_max with every tail (one chain holds
+    !> all its shorter truncations).  Per (m, tail): E_F from the electron count (cubic interpolation on the E_F grid), the
+    !> valence moments and electrons there -> tsr.  Prints a_n, b_n of the d chains (t2g, eg) at real energies around efv and
+    !> the tail edges per m at efv.  A = B (same Z): the same-model k-space reference (E_nu + h - h o h, same alpha and S
+    !> cluster, tetrahedra) -> kref.
+    subroutine tail_scan_run(efv)
+      real(dp), intent(in) :: efv
+      integer, parameter :: nef = 5
+      real(dp), parameter :: def = 0.0075_dp, eta_r = 1.0e-3_dp
+      real(dp), allocatable :: occ(:, :, :, :, :)          ! (E_F grid, m, tail, species, spin): valence electrons per spin
+      complex(dp), allocatable :: zq(:), wq(:), ac(:), bc(:), c0(:)
+      complex(dp) :: gm, fm, edg(2)
+      real(dp) :: efg(nef), tol_save, nv(nef), ed3(6), e, als(0:2, 1), qk(0:2, 0:2, 1, 2), efk
+      integer :: mmax, j, jq, nq, gg, o, pp, mu, m, t, ss, k0, jb
+      type(cell_t) :: kc
+      type(cluster_t) :: kcl(1)
+      mmax = inp%tail_scan
+      allocate (occ(nef, 8:mmax, 3, 2, 2), ac(mmax), bc(mmax), c0(mmax), tsr(5, 8:mmax, 3), tsx(8:mmax, 3))
+      occ = 0.0_dp; c0 = (0.0_dp, 0.0_dp); ac = (0.0_dp, 0.0_dp); bc = (0.0_dp, 0.0_dp)
+      tol_save = ed_depth_tol; ed_depth_tol = 0.0_dp
+      if (vb) print '(a,i0,a,i0,a,f7.4,a)', '  tail scan: chains to ', mmax, ' steps, ', nef, ' Fermi levels spaced ', def, ' Ry'
+      ! chain coefficients near E_F (d orbitals) and the tail edges per m
+      do gg = 1, nsp
+        call asr_ed_prepare(gg)
+        do pp = 1, 2
+          do o = 3, 4
+            call augsym_set_start(sopc(pp), iorb(o), dmat)
+            do jb = -2, 2
+              e = efv + 0.05_dp * jb
+              call asr_ed_green(sopc(pp), edw, edp_c(pp), cmplx(e, eta_r, dp), iorb(o), mmax, gm, acoef=ac, bcoef=bc, mused=mu)
+              print '(a,i1,a,i1,a,i1,a,f9.5,a,*(f8.4))', ' tail_scan a_n  species ', pp, ' spin ', gg, ' orb ', iorb(o), ' E ', e, ' :', real(ac(1:mu))
+              print '(a,i1,a,i1,a,i1,a,f9.5,a,*(f8.4))', ' tail_scan b_n  species ', pp, ' spin ', gg, ' orb ', iorb(o), ' E ', e, ' :', real(bc(1:mu - 1))
+              if (jb /= 0) cycle
+              do m = 8, mu
+                do t = 1, 3
+                  call cf_species(ac, bc, c0, m, cmplx(e, eta_r, dp), gm, fm, tail_in=trim(tails(t)), edges=edg)
+                  ed3(2 * t - 1:2 * t) = [real(edg(1) - 2.0_dp * edg(2)), real(edg(1) + 2.0_dp * edg(2))]
+                end do
+                print '(a,i1,a,i1,a,i1,a,i3,a,6f9.4)', ' tail_scan edges species ', pp, ' spin ', gg, ' orb ', iorb(o), ' m ', m, &
+                  '  hull/bp/avg2 (lo hi):', ed3
+              end do
+            end do
+          end do
+        end do
+      end do
+      ! occupations for every (E_F, m, tail) from one chain per contour node
+      do j = 1, nef
+        efg(j) = efv + def * (j - (nef + 1) / 2)
+        call ed_contour(efg(j), zq, wq, nq)
+        do gg = 1, nsp
+          call asr_ed_prepare(gg)
+          do jq = 1, nq
+            do o = 1, 4
+              do pp = 1, 2
+                call augsym_set_start(sopc(pp), iorb(o), dmat)
+                call asr_ed_green(sopc(pp), edw, edp_c(pp), zq(jq), iorb(o), mmax, gm, acoef=ac, bcoef=bc, mused=mu)
+                !$omp parallel do collapse(2) private(gm, fm)
+                do m = 8, mmax
+                  do t = 1, 3
+                    call cf_species(ac, bc, c0, min(m, mu), zq(jq), gm, fm, tail_in=trim(tails(t)))
+                    occ(j, m, t, pp, gg) = occ(j, m, t, pp, gg) - worb(o) * aimag(wq(jq) * gm) / pi
+                  end do
+                end do
+                !$omp end parallel do
+              end do
+            end do
+          end do
+        end do
+        if (vb) print '(a,i0,a,f10.6,a,f10.5)', '  tail scan: E_F grid ', j, ' = ', efg(j), '   N - N_elec (m_max, bp) =', &
+          fs * (xs(1) * sum(occ(j, mmax, 2, 1, 1:nsp)) + xs(2) * sum(occ(j, mmax, 2, 2, 1:nsp))) - nelec
+      end do
+      ed_depth_tol = tol_save
+      ! per (m, tail): E_F where N = N_elec, moments and electrons there
+      do t = 1, 3
+        do m = 8, mmax
+          do j = 1, nef
+            nv(j) = fs * (xs(1) * sum(occ(j, m, t, 1, 1:nsp)) + xs(2) * sum(occ(j, m, t, 2, 1:nsp)))
+          end do
+          call ef_root(efg, nv, nelec, def, k0, tsr(1, m, t), tsx(m, t))
+          do ss = 1, 2
+            tsr(1 + ss, m, t) = lag4(efg(k0:k0 + 3), occ(k0:k0 + 3, m, t, ss, 1) - occ(k0:k0 + 3, m, t, ss, nsp), tsr(1, m, t))
+            tsr(3 + ss, m, t) = lag4(efg(k0:k0 + 3), fs * sum(occ(k0:k0 + 3, m, t, ss, 1:nsp), dim=2), tsr(1, m, t))
+          end do
+        end do
+      end do
+      ! A = B: the ordered crystal, same Hamiltonian in k-space
+      haskref = abs(inp%spec(1)%z - inp%spec(2)%z) < 1.0e-6_dp .and. (trim(inp%lattice) == 'fcc' .or. trim(inp%lattice) == 'bcc')
+      if (haskref) then
+        kc%nat = 1; allocate (kc%tau(3, 1), kc%isp(1)); kc%tau = 0.0_dp; kc%isp = 1
+        if (trim(inp%lattice) == 'fcc') then
+          kc%avec = reshape([0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp], [3, 3])
+        else
+          kc%avec = reshape([-0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp], [3, 3])
+        end if
+        call setup_cell(kc)
+        als(:, 1) = alpha
+        call build_cluster(kc, 1, inp%rcl, als, kcl(1))
+        qk = 0.0_dp
+        call bands_moments(kc, kcl, pps(1:1, 1:nsp), als, nkref, nsp, real(inp%spec(1)%nval, dp), 0.01_dp, 'tetra', efk, &
+                           qk(:, :, :, 1:nsp), h2=.true.)
+        kref = [efk, sum(qk(0, :, 1, 1)) - sum(qk(0, :, 1, nsp)), sum(qk(0, :, 1, 1:nsp))]
+      end if
+    end subroutine tail_scan_run
+
+    !> tail scan table; moments = valence + the core polarisation of the production run (cr%moment - valence moment)
+    subroutine tail_scan_print()
+      real(dp) :: off(2)
+      integer :: ss, t, m
+      do ss = 1, 2
+        off(ss) = cr(ss)%moment - (sum(mom(ss, 1, 0, :)) - sum(mom(ss, nsp, 0, :)))
+      end do
+      print '(a)', ' tail_scan: moments incl. core polarisation (production run), q = valence electrons per atom; * = E_F extrapolated'
+      print '(a,i0,3a,2f9.4,a,2f8.4)', ' tail_scan production (', nlev, ' steps, ', trim(inp%ed_tail), '): m(A,B) =', cr(1)%moment, &
+        cr(2)%moment, '   core offsets', off
+      if (haskref) print '(a,i0,a,f11.6,a,f9.4,a,f9.4)', ' tail_scan k-space reference (E_nu + h - h o h, nk ', nkref, ', tetrahedra): E_F', &
+        kref(1), '  m', kref(2) + off(1), '  q', kref(3)
+      print '(a)', ' tail_scan tail    m        E_F      m_A      m_B      q_A      q_B'
+      do t = 1, 3
+        do m = 8, inp%tail_scan
+          print '(a,a5,i5,f11.6,4f9.4,a)', ' tail_scan ', tails(t), m, tsr(1, m, t), tsr(2, m, t) + off(1), tsr(3, m, t) + off(2), &
+            tsr(4:5, m, t), merge(' *', '  ', tsx(m, t))
+        end do
+      end do
+    end subroutine tail_scan_print
 
     !> Same-model reference for the ordered ED route at the final potentials: k-space KKR-ASA, G_L(z) = lambda + mu^2
     !> <[P(z) - S(k)]^-1>_k with the same exact P, S^alpha (clusters of radius rcl, same alpha) and contour.  Prints E_F and the
@@ -1045,4 +1195,41 @@ contains
     end if
     call tail_params_avg2(a, b, n, ainf, binf)
   end subroutine tail_params
+
+  !> E_F where the cubic interpolant of N(E_F) through four consecutive grid points (from k0) equals target (bisection, at most
+  !> one spacing de beyond the window); outside: the root lies beyond the grid
+  subroutine ef_root(eg, nv, target, de, k0, ef, outside)
+    real(dp), intent(in) :: eg(:), nv(:), target, de
+    integer, intent(out) :: k0
+    real(dp), intent(out) :: ef
+    logical, intent(out) :: outside
+    real(dp) :: lo, hi, flo
+    integer :: n, jr, it
+    n = size(eg)
+    jr = findloc(nv >= target, .true., 1)
+    outside = (jr <= 1)
+    if (jr == 0) jr = n + 1
+    k0 = max(1, min(jr - 2, n - 3))
+    lo = eg(k0) - de; hi = eg(k0 + 3) + de
+    flo = lag4(eg(k0:k0 + 3), nv(k0:k0 + 3), lo) - target
+    do it = 1, 60
+      ef = 0.5_dp * (lo + hi)
+      if ((lag4(eg(k0:k0 + 3), nv(k0:k0 + 3), ef) - target) * flo > 0.0_dp) then; lo = ef; else; hi = ef; end if
+    end do
+  end subroutine ef_root
+
+  !> cubic Lagrange interpolation through (x(1:4), y(1:4)) at x0
+  pure real(dp) function lag4(x, y, x0)
+    real(dp), intent(in) :: x(4), y(4), x0
+    real(dp) :: w
+    integer :: i, k
+    lag4 = 0.0_dp
+    do i = 1, 4
+      w = 1.0_dp
+      do k = 1, 4
+        if (k /= i) w = w * (x0 - x(k)) / (x(i) - x(k))
+      end do
+      lag4 = lag4 + w * y(i)
+    end do
+  end function lag4
 end module asr_alloy_scf

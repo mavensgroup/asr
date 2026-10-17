@@ -195,16 +195,20 @@ contains
   !> g_11 and sum_k c_k [g]_{k1} of the complex-symmetric tridiagonal chain (a, b) with spectral variable z, terminated by a
   !> square-root tail whose band edges are the extreme eigenvalues (real parts) of the finite chain (Beer-Pettifor type): the
   !> tail band then contains the spectral variable wherever the energy lies inside the band, giving a continuum instead of
-  !> m isolated poles.
-  subroutine cf_species(a, b, c, m, z, g11, f)
+  !> m isolated poles.  tail_in overrides ed_tail (thread-safe tail scans); edges returns the tail's (centre, quarter width).
+  subroutine cf_species(a, b, c, m, z, g11, f, tail_in, edges)
     complex(dp), intent(in) :: a(:), b(:), c(:), z
     integer, intent(in) :: m
     complex(dp), intent(out) :: g11, f
+    character(len=*), intent(in), optional :: tail_in
+    complex(dp), intent(out), optional :: edges(2)
     complex(dp) :: gt(m + 1), prod, tail, bb, d, s, g1, g2, aa
     complex(dp) :: tm(m, m), ev(m), vl(1, 1), vr(1, 1), wrk(8 * m + 8)
     real(dp) :: rw(2 * m)
     integer :: j, k, info, ilo, ihi
+    character(len=8) :: tl
     external :: zgeev
+    tl = ed_tail; if (present(tail_in)) tl = tail_in
     if (m >= 2) then
       tm = (0.0_dp, 0.0_dp)
       do j = 1, m
@@ -218,13 +222,14 @@ contains
     if (info == 0) then
       ilo = minloc(real(ev), 1); ihi = maxloc(real(ev), 1)
       aa = 0.5_dp * (ev(ilo) + ev(ihi)); bb = 0.25_dp * (ev(ihi) - ev(ilo))
-      if (trim(ed_tail) == 'bp') call bp_fixed_point()
+      if (trim(tl) == 'bp') call bp_fixed_point()
     else
       aa = a(m); bb = (0.0_dp, 0.0_dp); if (m > 1) bb = b(m - 1)
     end if
-    if (trim(ed_tail) == 'avg2' .and. m >= 3) then
+    if (trim(tl) == 'avg2' .and. m >= 3) then
       aa = 0.5_dp * (a(m) + a(m - 1)); bb = sqrt(0.5_dp * (b(m - 1)**2 + b(m - 2)**2))
     end if
+    if (present(edges)) edges = [aa, bb]
     d = z - aa
     if (abs(bb) < 1.0e-14_dp) then
       tail = (0.0_dp, 0.0_dp)
