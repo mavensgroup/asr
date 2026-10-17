@@ -1,7 +1,40 @@
-# Disordered magnetism: what is left (2026-10-16)
+# Disordered magnetism: what is left (updated 2026-10-17)
 
-Production route: asr_ed (AMscf form), levels 4, recursion_steps 24, bp tail, SIM beta 1, VBH or PBE.
-Clean results so far: docs/STATUS.md "Clean reruns of all disordered binaries, VBH and PBE" (desktop trial/q24, q23).
+Production route: asr_ed (AMscf form), levels 4, rank 1, recursion_steps 24, bp tail, SIM beta 1, VBH or PBE, fermi_kt 0.001 Ry.
+Results: docs/STATUS.md, sections "Clean reruns of all disordered binaries" (q24) and "Fermi smearing, depth 48, SQS references, first fcc
+alloys" (q25-q28).  Desktop: ~/asr_remote4/trial/q2x/SUMMARY.txt.
+
+## HANDOFF (next thread): weak magnets + tail scan
+State: ASR agrees with our own SQS supercells for strong moments (FeCo; Fe in FeNi) but is wrong for weak / environment-sensitive ones:
+| alloy | ASR r24 | SQS | error |
+|---|---|---|---|
+| fcc Ni0.75Cu0.25 | Ni 0.319 | 0.51 | -38% |
+| fcc Fe0.5Ni0.5 | Ni 0.593 | 0.655 | -9% |
+| bcc FeRh | Fe 2.866 (r48 2.877) | 2.99 | -0.11, not a depth effect |
+| bcc FeV | Fe 1.848 (r48 1.890) / V -0.469 | 1.74 / -0.36 | ~0.1 too magnetic |
+| pure fcc Ni (A = B) | 0.554 (r24), 0.609 (r36) | k-space 0.632 | chain resolution |
+Three error sources (STATUS): (a) augmented-space truncation (levels, rank 1); (b) energy resolution of the chain (asymptotic width = whole spd
+band ~2 Ry -> 24 steps resolve ~50-100 mRy; estimate, verify from the chain); (c) termination artefacts past the exactly generated region (hard
+wall -> finite-cluster oscillation of a_n, b_n; the sqrt tail sits wherever step m lands).  A tail can only fix (c).
+
+Plan, in order (probe first, no SCF changes until the probe says so; production stays asr_ed):
+1. [ ] **Tail scan at fixed potential.**  Probe program: read a saved potential (pot.dat), build the asr_ed chain once to m_max = 48 per contour
+       point, and evaluate the moments / occupations for every termination depth m = 8..48 and each tail (hull, bp, avg2) from the same chain
+       (one chain contains every shorter truncation; cost = one chain per energy).  Also print b_n(E) at a few real energies near E_F and the tail
+       edges per m.  Cases: pure fcc Ni (A = B; exact = k-space with the same parameters), NiCu r24 (q27/nicu_r24/pot.dat), FeRh r24 kT3
+       (q25/ferh_vbh_r24_kt3/pot.dat), MnCr r24 (q23).  Output: moment vs m per tail -> how much is (b) vs (c).
+2. [ ] **Path independence of the contour integral** at fixed potential: contour_points 32 vs 64, closed contour vs Fermi line (kT -> 0).  The
+       tail edges are chosen per z by maxloc(real(eigenvalue)) of the complex chain (asr_endep cf_species) -> not guaranteed holomorphic in z.
+       If the moments differ by > 1e-3: freeze the tail edges once per SCF iteration per species / orbital / spin.
+3. [ ] **Termination averaging** (if 1 shows oscillation about a stable mean): G(z) averaged over m in a window (e.g. 24..40), KPM-kernel analogue;
+       analytic and sum-rule preserving, no extra Lanczos cost.  Gate: pure fcc Ni within 2% of k-space; NiCu / FeNi Ni towards SQS.
+4. [ ] **Two-band (period-2) terminator** only if 1 shows persistent period-2 oscillation of b_n (bcc d pseudogap).
+5. [ ] **Rank 2** (FeRh, the cleanest case: Fe does not move with steps): first a node-count / memory probe on the desktop, then FeRh r24 rank 2
+       vs SQS Fe 2.99.  Tests source (a).
+6. [ ] If (b) dominates: more exact steps (levels 5 with the symmetry reduction, or a soft wall embedding the boundary in the average medium).
+
+Pending on the desktop when this was written (2026-10-17 23:30): q27 nicu_r36, feni_r36 (restarts from r24), feni_sqs32_1; q28 (after q27)
+FeCo / FeV 32-atom SQS reruns with mixing 0.1.
 
 ## Done (do not redo)
 - [x] SIM sign and magnitude (326759b): V = -beta 2 qnet / R1.
@@ -9,28 +42,25 @@ Clean results so far: docs/STATUS.md "Clean reruns of all disordered binaries, V
 - [x] E_F search: bracketed false position (17416b2); species charges balance.
 - [x] Antiparallel starts: [[species]] spin_sign (da1a24b); restarts: save_potential / start_potential / flip_spin (6692e95).
 - [x] depth_tol (adaptive chain length) shown harmless at 12 / 24 / 48 steps (q16).
-- [x] Our LMTO-ASA vs Questaal lm: band structure and charge transfer agree; Fe moment 1% low (STATUS "Our LMTO-ASA vs Questaal").
+- [x] Our LMTO-ASA vs Questaal lm: band structure and charge transfer agree; Fe moment 1% low.
+- [x] E_F noise floor: Fermi-smeared contour (cc2d513, b2367c2); kT 1 mRy is within ~0.003 muB of sharp, kT 3 mRy too coarse (q25, q27).
+- [x] Independent disordered reference: SQS + lattice = "cell" / site_classes (faf2c78), sqs.py fcc triplet fix (cbd4250); results in STATUS.
+- [x] External audit suggestion.md checked (STATUS "External audit"): no ASR bug in it; only gfac is real (tiny).
 
-## Open, in order
-1. [ ] E_F noise floor (dV stalls at 1e-4..1e-3 in FeRh VBH, FeV PBE): Fermi-smeared contour implemented ([asr] fermi_kt, cc2d513);
-       test running (trial/q25, kT = 3 mRy).  Gate: dV < 1e-5 with moments within 0.01 muB of the stalled runs.  Then decide the default kT.
-2. [ ] Independent disordered reference: SQS supercells with our own k-space LMTO-ASA (same spheres, functional, parameters; no recursion).
-       FeCo, FeV, FeRh at x = 0.5 (16 and 32 atoms, two SQS each; per-site classes -> local-environment moments).  Gate: ASR species moments
-       within the SQS spread.  Settles whether the FeRh Fe deficit vs CPA (0.20 muB) is ASR truncation or the ASA model.
-3. [ ] Recursion depth protocol for moments: MnCr changes 7-17% from 24 to 48 steps, FeV changed a lot from 12 to 24.  Options: always
-       report 24 / 48; extrapolate in steps; better tail (bp vs hull vs multi-band).  Gate: moments stable to 0.02 muB in steps, matching SQS (2).
-4. [ ] Generated depth (levels) at fixed steps: the hard-wall node set is levels 4; test levels 5 at 24 / 48 steps for FeV and MnCr.
-5. [ ] The 1% weaker magnetism vs Questaal (bcc Fe 2.252 vs 2.275, VWN): trace E_nu choice (~3 mRy lower in Questaal), core polarisation,
-       Bloechl correction.  Matters only for marginal magnets (B2 MnCr flips to non-magnetic at converged k).
-6. [ ] SCF start: FeCo still overshoots E_F to +0.31 Ry from the atomic start; dV sat at the 0.15 Ry clamp for several iterations in the alloy
-       SCF.  Add the k-space `trace` diagnostics to the alloy SCF and check V_in / V_out there.  Option: start alloys from converged ordered
-       or pure-element potentials (start_potential).
-7. [ ] Magnetic state selection: always run parallel and antiparallel starts for systems with antiferromagnetic tendencies (Mn, Cr, V);
-       compare total energies (needs the alloy total energy, not implemented) instead of picking by start.
-8. [ ] Model limits (document, do not fix here): one collinear moment per species cannot describe sublattice AF, local-environment moment
-       flips (Mn in FeMn), or non-collinear order (Kaphle 2012, Ganguly 2011).  Non-collinear ASR is a separate project.
-9. [ ] References to re-check with clean runs: FeV vs Chakrabarti-Mookerjee 2005 (theirs 1.12 / -0.11; ours 1.85 / -0.47 VBH);
-       MnCr vs Banerjee-Mookerjee 2009 Fig. 1 (not reproduced; legacy band 0.1-0.2 Ry wider than ours and Questaal).
+## Open, other
+- [ ] Make fermi_kt = 0.001 the default for spin-polarised alloy runs (code default is still 0).
+- [ ] k-space SCF with many classes: 3 of 4 32-atom SQS cells burst after reaching dV 1e-2..1e-3 (mixing 0.2).  If q28 (mixing 0.1) does not fix it,
+      look at the Anderson history / restart with 32 classes and the E_F search in large cells.
+- [ ] Generated depth (levels 5) at fixed steps for FeV and MnCr (covered by plan item 6).
+- [ ] The 1% weaker magnetism vs Questaal (bcc Fe 2.252 vs 2.275, VWN): E_nu choice (~3 mRy lower in Questaal), core polarisation, Bloechl
+      correction, scalar-relativistic density factor gfac (Questaal rhocor.f:298 / atomsr.f:2012; expected ~1e-4 muB).
+- [ ] SCF start: FeCo overshoots E_F to +0.31 Ry and NiCu to +0.45 Ry (Cu moment 2.5 in it 1) from the atomic start; trace V_in / V_out in the
+      alloy SCF, or start from pure-element potentials (start_potential).
+- [ ] Magnetic state selection: parallel and antiparallel starts for Mn, Cr, V alloys; needs the alloy total energy (not implemented).
+- [ ] Model limits (document, do not fix here): one collinear moment per species cannot describe sublattice AF, local-environment moment flips,
+      or non-collinear order (Kaphle 2012, Ganguly 2011).
+- [ ] References to re-check: FeV vs Chakrabarti-Mookerjee 2005 (theirs 1.12 / -0.11; our own SQS gives 1.74 / -0.36 in the same model, so their
+      number does not fit this model); MnCr vs Banerjee-Mookerjee 2009 Fig. 1.
 
 ## After this (separate projects)
 - Partial (sublattice) disorder: general lattice + basis graph, per-site configuration spaces (ordered sites never enter the cardinality

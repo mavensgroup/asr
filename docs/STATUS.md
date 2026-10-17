@@ -950,3 +950,44 @@ moves 70 mRy towards E_F vs the depth-4 runs (-0.291 -> -0.222), close to ordere
 (iv) PBE vs VBH: moments +0.05..0.4 muB; FeRh PBE Fe 2.96 (CPA 3.07), Rh 0.99 (CPA 0.73; ordered PBE ours 1.07 vs SPR-KKR 0.94: equal-sphere ASA).
 (v) Two runs (FeRh VBH, FeV PBE) stalled at a dV noise floor: N(E) steps by ~0.01 e at E_F and the sharp-E_F search cannot resolve it ->
 Fermi-smeared contour ([asr] fermi_kt, cc2d513/b2367c2); test reruns with kT = 3 mRy in trial/q25.
+
+## Fermi smearing, depth 48, SQS references, first fcc alloys (2026-10-16/17; desktop trial/q25-q28, code faf2c78 / cbd4250)
+**Fermi-smeared contour** ([asr] fermi_kt): both runs that stalled with a sharp E_F now converge.
+| run | kT (mRy) | its | m A / m B | note |
+|---|---|---|---|---|
+| FeRh VBH r24 | 3 | 42 | 2.866 / 0.729 | sharp: 2.867 / 0.742, stalled dV 6e-5 |
+| FeV PBE r24 | 3 | 39 | 2.068 / -0.621 | sharp: 2.08 / -0.67, stalled dV 7e-3 |
+| FeV PBE r24 | 1 | 21 (restart) | 2.074 / -0.639 | dV 1.5e-6 |
+The shift scales ~kT^2: kT = 1 mRy is within ~0.003 muB of sharp, kT = 3 mRy pulls V in by ~0.02.  Use kT = 1 mRy (default still 0 in the code).
+**Depth 48** (restart from the 24-step potentials, kT 3 mRy): FeRh Fe 2.877 / Rh 0.632 (24: 2.866 / 0.729); FeV VBH Fe 1.890 / V -0.479 (24: 1.848 / -0.469).
+**SQS references** (tools/sqs.py, lattice = "cell" + site_classes, our own k-space LMTO-ASA, same spheres / functional, VBH, tetrahedra; species mean
+(spread over sites)).  Gate: B2 FeCo as a 2-site cell == lattice "b2" to all digits.  sqs.py fix cbd4250: smallest triplet = least-perimeter triangle
+(fcc equilateral R1).  bcc 16-atom cells exact through shell 4 (#1) / 5 (#2), 32-atom essentially random to shell 6; fcc 50:50 exact; fcc 75:25
+objective 0.045 / 0.054 (16) / 0.0035 (32).
+| alloy (a, A) | ASR r24 | ASR r36/48 | SQS 16 #1 | SQS 16 #2 | SQS 32 | verdict |
+|---|---|---|---|---|---|---|
+| bcc FeCo (2.857) | 2.578 / 1.746 | - | 2.592 (0.07) / 1.778 (0.01) | 2.594 / 1.785 | not converged (q28 rerun) | agree; Co 0.035 low |
+| bcc FeV (2.95) | 1.848 / -0.469 | r48 1.890 / -0.479 | 1.756 (0.47) / -0.364 (0.22) | 1.718 / -0.353 | not converged (q28 rerun) | ASR ~0.1 too magnetic, 48 steps worse |
+| bcc FeRh (3.059) | 2.866 / 0.729 | r48 2.877 / 0.632 | 2.977 (0.06) / 0.630 (0.18) | 2.997 / 0.744 | 2.991 (0.05) / 0.709 (0.15) | **Fe 0.11 low at 24 and 48**; Rh agrees |
+| fcc Fe0.5Ni0.5 (3.588) | 2.512 / 0.593 | r36 running (it 1: 2.546 / 0.619) | 2.535 (0.11) / 0.662 (0.01) | 2.530 / 0.647 | running | Fe agrees, Ni 9% low |
+| fcc Ni0.75Cu0.25 (3.547) | 0.319 / 0.004 | r36 running | 0.517 (0.04) / -0.003 | 0.507 / -0.000 | not converged | **Ni 38% low** |
+Charge transfer agrees everywhere (FeRh 0.063 vs 0.064; FeNi 0.086 vs 0.096 e; NiCu ~0).  E_F agrees (NiCu -0.1189 vs -0.1172).
+Local environment (SQS): FeCo almost none (Fe 2.50-2.68); FeRh smooth (Rh 0.92 -> 0.43 as like-neighbours go 2 -> 6); FeV strong (Fe 0.87 with 2
+Fe neighbours -> 2.27 with 6; V -0.74 -> -0.10).  The like-NN = 4 sites: FeCo 2.600 / 1.787, FeV 1.885 / -0.275, FeRh 3.006 / 0.742.
+Reading: the weak / environment-sensitive moments carry the ASR error (Ni in NiCu, Ni in FeNi, Fe in FeRh, FeV); strong Fe / Co moments agree.
+Three error sources, separable: (a) augmented-space truncation (levels 4, **rank 1** = at most one flipped site; FeRh Fe does not move with
+steps -> rank is the suspect); (b) energy resolution of a 24-step chain whose asymptotic width is the whole spd band (~2 Ry -> ~50-100 mRy,
+coarser than the Ni d peak at E_F; pure fcc Ni through ASR 0.554 / 0.609 at 24 / 36 vs 0.632); (c) termination artefacts beyond the exact
+region (hard wall -> finite-cluster oscillation of a_n, b_n; the sqrt tail is attached wherever step m lands: MnCr 0.97 -> 1.13, FeRh Rh 0.74 -> 0.63).
+**k-space SCF weakness**: 3 of 4 32-atom SQS cells (FeCo, FeV, NiCu; 32 classes, mixing 0.2) reach dV 1e-2..1e-3 and then burst (dV 1-5, E_F
+jumps); all 16-atom cells and FeRh 32 converge.  q28 reruns FeCo / FeV 32 with mixing 0.1, 600 its (after q27).
+
+## External audit `suggestion.md` (2026-10-17): checked against the source, mostly wrong
+- asr_ed "inconsistent scaling" (C - E_nu unscaled, random hops): false; the quoted code does not exist.  asr_ed has g_R = (Delta_c/Delta_R)(C_R - E_nu,R),
+  non-random hops sqrt(Delta_c) S sqrt(Delta_c), o -> o Delta_R/Delta_c: exactly T (E - H^(2)) T.  Its "Option A" (switch to EI H^(2)) is excluded.
+- "AMscf / Questaal use spin-averaged E_nu": false (AMscf enutcg loops over isp; Questaal idmod 0 per spin, idmod 4 is the averaged option).
+- Shift moments before rho / missing inner atomsc loop / mixpq: path only, same fixed point (rho uses moments about E_nu,in with phi(E_nu,in)).
+- levels 4 = "<= 3 flips", bp = "average of the last 4 steps": false (levels = generation depth, rank 1; bp = Beer-Pettifor fixed point).
+- 1% vs Questaal: its numbers are wrong (ours 2.252 < 2.275, VWN, no CCOR in either).  Questaal's "vBH" = ASW constants is true but known;
+  AMscf xcloc1 uses the original vBH = our libxc vbh.  keep_p exists as density = 'stuttgart' (0.005 muB).  **Real but tiny**: the scalar-
+  relativistic factor gfac = 1 + l(l+1)/(tmc r)^2 in Questaal's densities (rhocor.f:298, atomsr.f:2012), absent in ours (~1e-4 muB expected).
