@@ -18,7 +18,8 @@ band ~2 Ry -> 24 steps resolve ~50-100 mRy; estimate, verify from the chain); (c
 wall -> finite-cluster oscillation of a_n, b_n; the sqrt tail sits wherever step m lands).  A tail can only fix (c).
 
 Plan, in order (probe first, no SCF changes until the probe says so; production stays asr_ed):
-1. [ ] **Tail scan at fixed potential.**  Probe program: read a saved potential (pot.dat), build the asr_ed chain once to m_max = 48 per contour
+1. [x] **Tail scan at fixed potential** (2026-10-18, q29, STATUS "Tail scan at fixed potential"): tail irrelevant (c negligible); Ni limited by
+       energy resolution (b: ~1/m, exact needs m >= 64 and levels >= 5); FeRh Fe flat in m (not b, c) -> rank / levels.  Original spec:  Probe program: read a saved potential (pot.dat), build the asr_ed chain once to m_max = 48 per contour
        point, and evaluate the moments / occupations for every termination depth m = 8..48 and each tail (hull, bp, avg2) from the same chain
        (one chain contains every shorter truncation; cost = one chain per energy).  Also print b_n(E) at a few real energies near E_F and the tail
        edges per m.  Cases: pure fcc Ni (A = B; exact = k-space with the same parameters), NiCu r24 (q27/nicu_r24/pot.dat), FeRh r24 kT3
@@ -26,12 +27,13 @@ Plan, in order (probe first, no SCF changes until the probe says so; production 
 2. [ ] **Path independence of the contour integral** at fixed potential: contour_points 32 vs 64, closed contour vs Fermi line (kT -> 0).  The
        tail edges are chosen per z by maxloc(real(eigenvalue)) of the complex chain (asr_endep cf_species) -> not guaranteed holomorphic in z.
        If the moments differ by > 1e-3: freeze the tail edges once per SCF iteration per species / orbital / spin.
-3. [ ] **Termination averaging** (if 1 shows oscillation about a stable mean): G(z) averaged over m in a window (e.g. 24..40), KPM-kernel analogue;
+3. [-] (not needed: q29 shows no oscillation about a stable mean) **Termination averaging** (if 1 shows oscillation about a stable mean): G(z) averaged over m in a window (e.g. 24..40), KPM-kernel analogue;
        analytic and sum-rule preserving, no extra Lanczos cost.  Gate: pure fcc Ni within 2% of k-space; NiCu / FeNi Ni towards SQS.
-4. [ ] **Two-band (period-2) terminator** only if 1 shows persistent period-2 oscillation of b_n (bcc d pseudogap).
+4. [-] (not needed: q29) **Two-band (period-2) terminator** only if 1 shows persistent period-2 oscillation of b_n (bcc d pseudogap).
 5. [ ] **Rank 2** (FeRh, the cleanest case: Fe does not move with steps): first a node-count / memory probe on the desktop, then FeRh r24 rank 2
        vs SQS Fe 2.99.  Tests source (a).
-6. [ ] If (b) dominates: more exact steps (levels 5 with the symmetry reduction, or a soft wall embedding the boundary in the average medium).
+6. [ ] **(b) dominates for Ni (q29)**: cost / feasibility of levels 5 + 64 steps for NiCu / FeNi (fcc alloy node count at levels 5);
+       also a cheaper route to resolution (e.g. KPM-type moments or a narrower spectral window).  Original: more exact steps (levels 5 with the symmetry reduction, or a soft wall embedding the boundary in the average medium).
 
 Pending on the desktop when this was written (2026-10-17 23:30): q27 nicu_r36, feni_r36 (restarts from r24), feni_sqs32_1; q28 (after q27)
 FeCo / FeV 32-atom SQS reruns with mixing 0.1.

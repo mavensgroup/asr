@@ -991,3 +991,30 @@ jumps); all 16-atom cells and FeRh 32 converge.  q28 reruns FeCo / FeV 32 with m
 - 1% vs Questaal: its numbers are wrong (ours 2.252 < 2.275, VWN, no CCOR in either).  Questaal's "vBH" = ASW constants is true but known;
   AMscf xcloc1 uses the original vBH = our libxc vbh.  keep_p exists as density = 'stuttgart' (0.005 muB).  **Real but tiny**: the scalar-
   relativistic factor gfac = 1 + l(l+1)/(tmc r)^2 in Questaal's densities (rhocor.f:298, atomsr.f:2012), absent in ours (~1e-4 muB expected).
+
+## Tail scan at fixed potential (2026-10-18, desktop trial/q29; MAGNETISM_TODO item 1)
+`[asr] tail_scan = m_max` (66acbf1): start potential, production E_F search (24 steps, bp), then one chain per contour node to m_max on the contours
+of 5 Fermi levels (7.5 mRy apart); every truncation m = 8..m_max x tail (hull, bp, avg2) gets its own E_F (cubic interpolation of N) and moments.
+Self-check: (m = 24, bp) reproduces the production E_F and moments to all printed digits in every case.  A = B: same-model k-space reference
+(E_nu + h - h o h, same alpha, same S cluster, same potential, nk 40 tetrahedra) = the exact m -> infinity answer of the recursion.
+Pure fcc Ni (A = B) uses the Ni potential of q27 nicu_r24 (a = 3.547; not self-consistent for pure Ni, irrelevant for a fixed-potential test).
+Moments (bp; hull and avg2 within 0.005 of bp for m >= 26, within 0.01-0.03 below):
+| m | Ni A=B l4 | l5 | l6 | l8 | FeRh Fe / Rh (l4) | NiCu Ni (l4) | MnCr Mn / Cr (l4) |
+|---|---|---|---|---|---|---|---|
+| 12 | 0.291 | 0.291 | 0.291 | 0.291 | 2.825 / 0.760 | 0.259 | 0.804 / -0.191 |
+| 24 | 0.379 | 0.384 | 0.391 | 0.387 | 2.866 / 0.729 | 0.319 | 0.969 / -0.178 |
+| 32 | 0.436 | 0.427 | 0.431 | 0.425 | 2.896 / 0.704 | 0.350 | 1.025 / -0.159 |
+| 40 | 0.461 | 0.457 | 0.458 | 0.456 | 2.882 / 0.691 | 0.387 | 1.025 / -0.160 |
+| 48 | 0.447 | 0.473 | 0.471 | 0.476 | 2.876 / 0.685 | 0.395 | 1.013 / -0.168 |
+| 64 | - | 0.486 | 0.486 | 0.486 | - | - | - |
+| exact / SQS | k-space 0.511 | | | | SQS 2.99 / 0.71-0.74 | SQS 0.51 (SCF) | |
+Reading:
+- (c) the tail is irrelevant: hull / bp / avg2 agree, their edges converge to the same spd band (Ni: -0.748 .. 1.767 Ry, width 2.5 Ry).  No
+  oscillation about a stable mean (only +-0.01 jitter from m to m) -> termination averaging (item 3) and a period-2 terminator (item 4) cannot
+  remove the error.  b_n (Ni d) noisy about 0.62 = width / 4; eg alternates only for n < 10.
+- (b) energy resolution dominates for Ni: the moment rises with m like m_inf - c/m (Ni l8: 48 -> 0.476, 64 -> 0.486 gives m_inf ~ 0.516 vs exact
+  0.511).  24 steps give 74% of the exact Ni moment at fixed potential (SCF amplifies, cf. 0.554 vs 0.632).  NiCu Ni: 0.319 -> 0.395 (24 -> 48).
+- levels: identical to m ~ 24; levels 4 (175 nodes for A = B) saturates at m ~ 36 (0.46) and drifts down, levels 5 (506) = 8 (1675) to 0.003
+  up to m = 64.  Production for Ni-type moments needs levels 5 and m >= 64.
+- FeRh Fe is NOT resolution: flat 2.88 +- 0.01 from m = 26 to 48 (SQS 2.99); Rh drifts 0.73 -> 0.69.  Remaining suspects: rank 1 (item 5) and the
+  levels-4 node set.  MnCr: Mn +5% from 24 to 32, then flat 1.01-1.03.
