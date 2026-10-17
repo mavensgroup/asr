@@ -70,6 +70,7 @@ module asr_alloy_scf
     real(dp) :: ed_eta = 0.01_dp                  !! energy-dependent route: the contour arc ends at Im z = ed_eta
     real(dp) :: fermi_kt = 0.0_dp                 !! energy-dependent route: electronic temperature kT (Ry) of a Fermi-smeared contour
                                                  !! (asr_contour%contour_nodes_fermi); 0 = sharp E_F (closed contour)
+    integer :: fermi_poles = 0                    !! Matsubara poles enclosed by the Fermi contour (path height 2 n pi kT); 0 = fermi_npole(kT)
     logical :: ed_scan = .false.                !! diagnostic: print N(E_F) on a grid in iteration 1, then stop
     integer :: ndos = 0                          !! energy-dependent route: DOS grid computed inside the SCF (final iteration)
     character(len=8) :: terminator = 'avg2'      !! energy-independent route tail: 'avg2' (last two coefficients) | 'bp' (Beer-Pettifor)
@@ -750,12 +751,14 @@ contains
       complex(dp), allocatable, intent(out) :: zq(:), wq(:)
       integer, intent(out) :: nq
       real(dp) :: ebot
+      integer :: npl
       ebot = minval(enu(:, 1:nsp, :)) - 1.2_dp
       if (exact_now) ebot = ebot_exact                    ! chosen once per iteration away from the poles of the exact P
       if (inp%fermi_kt > 0.0_dp) then                     ! Fermi-smeared contour: smooth monotone N(mu)
-        nq = fermi_nodes_count(fermi_npole(inp%fermi_kt), inp%ncont, 16)
+        npl = fermi_npole(inp%fermi_kt); if (inp%fermi_poles > 0) npl = inp%fermi_poles
+        nq = fermi_nodes_count(npl, inp%ncont, 16)
         allocate (zq(nq + 1), wq(nq + 1))
-        call contour_nodes_fermi(ebot, efv, inp%fermi_kt, fermi_npole(inp%fermi_kt), inp%ncont, 16, zq(1:nq), wq(1:nq))
+        call contour_nodes_fermi(ebot, efv, inp%fermi_kt, npl, inp%ncont, 16, zq(1:nq), wq(1:nq))
       else
         nq = inp%ncont + nvert
         allocate (zq(nq + 1), wq(nq + 1))
