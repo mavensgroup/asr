@@ -11,10 +11,12 @@ program asr_main
   use asr_input_lmto, only: lmto_input_t, read_lmto_input, peek_kind
   use asr_lmto_driver, only: run_lmto
   use asr_alloy_driver, only: alloy_run_input_t, read_alloy_input, run_alloy
+  use asr_class_driver, only: class_run_input_t, read_class_input, run_class
   implicit none
   type(input_t) :: inp
   type(lmto_input_t) :: linp
   type(alloy_run_input_t) :: ainp
+  type(class_run_input_t) :: cinp
   logical :: lok
   character(len=:), allocatable :: msg, infile, outfile
   character(len=512) :: arg
@@ -39,6 +41,13 @@ program asr_main
     call read_alloy_input(infile, ainp, msg)
     if (len(msg) > 0) then; print '(a)', 'asr: input error: '//msg; stop 1; end if
     call run_alloy(ainp, lok)
+    if (.not. lok) stop 3
+    stop 0
+  end if
+  if (peek_kind(infile) == 'sublattice') then
+    call read_class_input(infile, cinp, msg)
+    if (len(msg) > 0) then; print '(a)', 'asr: input error: '//msg; stop 1; end if
+    call run_class(cinp, lok)
     if (.not. lok) stop 3
     stop 0
   end if

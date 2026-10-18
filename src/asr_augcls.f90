@@ -23,7 +23,8 @@ module asr_augcls
   use asr_augn, only: augn_basis
   implicit none
   private
-  public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_freeze_site, augcls_rand, augcls_rand_c
+  public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
+            augcls_rand_c
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -69,6 +70,14 @@ contains
       if (abs(abs(op%chi(g)) - 1.0_dp) > 1.0e-9_dp) error stop 'augcls_set_start: start orbital is not one-dimensional under the group'
     end do
   end subroutine augcls_set_start
+
+  !> new species parameters (same classes, species and node set)
+  subroutine augcls_set_params(op, mdl)
+    type(augcls_op), intent(inout) :: op
+    type(class_alloy_t), intent(in) :: mdl
+    if (mdl%nsp /= op%nsp) error stop 'augcls_set_params: number of species changed'
+    op%c = mdl%c; op%d = mdl%d; op%o = mdl%o; op%e = mdl%e
+  end subroutine augcls_set_params
 
   !> Freeze `site` to the global species `sp` (W -> X_sp).  The site must have been non-flippable when the node set was built.
   subroutine augcls_freeze_site(op, site, sp)
