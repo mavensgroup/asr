@@ -17,6 +17,18 @@ Three error sources (STATUS): (a) augmented-space truncation (levels, rank 1); (
 band ~2 Ry -> 24 steps resolve ~50-100 mRy; estimate, verify from the chain); (c) termination artefacts past the exactly generated region (hard
 wall -> finite-cluster oscillation of a_n, b_n; the sqrt tail sits wherever step m lands).  A tail can only fix (c).
 
+**Physics learned (2026-10-18, q29 / q30, STATUS "Tail scan" and "Contour path"):** the weak-moment error is the chain's energy resolution.
+A d start orbital hybridises with s, p, so the chain's asymptotic width is the whole spd band (Ni: b_1 = 0.22, b_n ~ 0.62, edges -0.75 .. 1.77 Ry);
+m steps resolve ~2.5 Ry / m.  A weak moment sits on a d-band edge at E_F (Ni minority d top); a coarse chain smears it across E_F -> moment
+systematically LOW; strong moments (both d edges away from E_F) are immune.  The tail type and the contour path are irrelevant; more steps
+help only ~1/m (A = B Ni at fixed potential: 12 steps 57%, 24 steps 74%, 64 steps 95% of the exact moment).  AMscf (12 steps, real-axis seeds,
+BP) has no remedy and the published ASR moments (Ganguly 2011: Mn 0.6 muB below CPA) carry this error.  => the far environment must supply
+the energy resolution: average-medium correction (item 7).  FeRh Fe (flat in m) and FeV (too magnetic) are NOT this effect.
+
+7. [ ] **Average-medium correction** (75e5732, `[asr] medium = "vca"`): G_c += G_med - CF_m(medium chain), medium = VCA of the scaled asr_ed
+       operator, G_med from k space (exact).  Gate passed: A = B Ni identical at every m = 8..32, 0.5126 (kT 1 mRy, nk 60) vs tetrahedra 0.5106.
+       q31: SCF NiCu, FeNi, FeCo, FeV, FeRh from the r24 potentials (kT 1 mRy) vs SQS.  Next: if VCA is too crude for strong scatterers, a CPA medium.
+
 Plan, in order (probe first, no SCF changes until the probe says so; production stays asr_ed):
 1. [x] **Tail scan at fixed potential** (2026-10-18, q29, STATUS "Tail scan at fixed potential"): tail irrelevant (c negligible); Ni limited by
        energy resolution (b: ~1/m, exact needs m >= 64 and levels >= 5); FeRh Fe flat in m (not b, c) -> rank / levels.  Original spec:  Probe program: read a saved potential (pot.dat), build the asr_ed chain once to m_max = 48 per contour
