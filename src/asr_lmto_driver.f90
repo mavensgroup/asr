@@ -188,11 +188,13 @@ contains
     integer :: n
     core = core_shells_for(sp%konfig)
     occp = real(sp%nval, dp) - sp%occ_s - sp%occ_d
-    n = size(core) + 2; if (occp > 0.5_dp) n = n + 1
-    allocate (sh(n))
+    allocate (sh(size(core) + 3))
     sh(1:size(core)) = core
-    sh(size(core) + 1) = shell_t(sp%konfig(0), 0, sp%occ_s)
-    sh(size(core) + 2) = shell_t(sp%konfig(2), 2, sp%occ_d)
-    if (occp > 0.5_dp) sh(size(core) + 3) = shell_t(sp%konfig(1), 1, occp)
+    n = size(core)
+    ! empty shells are left out: they carry no charge, and an empty 3d of an sp element (Al) is not bound in the free atom
+    if (sp%occ_s > 0.0_dp) then; n = n + 1; sh(n) = shell_t(sp%konfig(0), 0, sp%occ_s); end if
+    if (sp%occ_d > 0.0_dp) then; n = n + 1; sh(n) = shell_t(sp%konfig(2), 2, sp%occ_d); end if
+    if (occp > 0.5_dp) then; n = n + 1; sh(n) = shell_t(sp%konfig(1), 1, occp); end if
+    sh = sh(1:n)
   end function atom_shells
 end module asr_lmto_driver
