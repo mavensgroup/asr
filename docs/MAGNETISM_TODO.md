@@ -24,7 +24,7 @@ Plan, in order (probe first, no SCF changes until the probe says so; production 
        (one chain contains every shorter truncation; cost = one chain per energy).  Also print b_n(E) at a few real energies near E_F and the tail
        edges per m.  Cases: pure fcc Ni (A = B; exact = k-space with the same parameters), NiCu r24 (q27/nicu_r24/pot.dat), FeRh r24 kT3
        (q25/ferh_vbh_r24_kt3/pot.dat), MnCr r24 (q23).  Output: moment vs m per tail -> how much is (b) vs (c).
-2. [ ] **Path independence of the contour integral** at fixed potential: contour_points 32 vs 64, closed contour vs Fermi line (kT -> 0).  The
+2. [x] (q30: path independent to 1e-3 for Gamma >= 0.09 Ry; edges not a cause) **Path independence of the contour integral** at fixed potential: contour_points 32 vs 64, closed contour vs Fermi line (kT -> 0).  The
        tail edges are chosen per z by maxloc(real(eigenvalue)) of the complex chain (asr_endep cf_species) -> not guaranteed holomorphic in z.
        If the moments differ by > 1e-3: freeze the tail edges once per SCF iteration per species / orbital / spin.
 3. [-] (not needed: q29 shows no oscillation about a stable mean) **Termination averaging** (if 1 shows oscillation about a stable mean): G(z) averaged over m in a window (e.g. 24..40), KPM-kernel analogue;

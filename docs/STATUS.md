@@ -1018,3 +1018,29 @@ Reading:
   up to m = 64.  Production for Ni-type moments needs levels 5 and m >= 64.
 - FeRh Fe is NOT resolution: flat 2.88 +- 0.01 from m = 26 to 48 (SQS 2.99); Rh drifts 0.73 -> 0.69.  Remaining suspects: rank 1 (item 5) and the
   levels-4 node set.  MnCr: Mn +5% from 24 to 32, then flat 1.01-1.03.
+
+## Contour path independence (2026-10-18, desktop trial/q30; MAGNETISM_TODO item 2) and q27 r36 / q28 SQS 32 results
+Iteration-1 output moments at the q29 fixed potentials (24 steps, kT 3 mRy, depth_tol 0); `[asr] fermi_poles` (7343afb) moves the Fermi
+contour (Gamma = 2 n pi kT; auto n = 5 -> 0.094 Ry):
+| case | auto, 32 pts | auto, 64 | n = 2 (0.038 Ry), 64 | n = 10, 64 | n = 20, 64 |
+|---|---|---|---|---|---|
+| Ni A=B (bp) | 0.3790 | 0.3790 | 0.3790 | 0.3790 | 0.3790 (hull 0.3802 / 0.3801 at n = 2 / 10) |
+| FeRh Fe / Rh, qnet | 2.8657 / 0.7291, 0.0635 | 2.8658 / 0.7302, 0.0632 | 2.8615 / 0.7015, 0.0707 | 2.8658 / 0.7301, 0.0632 | - |
+| NiCu Ni | 0.3187 | - | 0.3187 | running | - |
+Path independent to 1e-4 (Ni, NiCu) and 1e-3 (FeRh, = the 32/64-point quadrature difference) for Gamma >= 0.09 Ry.  Only the lowest path
+(FeRh, Gamma 0.038 Ry) deviates (Rh -0.03, qnet +0.007): quadrature of the near-axis leg or the per-z edge choice; production paths are not
+affected.  => the per-z tail edges are not a source of the weak-moment errors; no edge freezing needed.
+SCF results that finished meanwhile (q27 r36, q28 32-atom SQS with mixing 0.1):
+| alloy | ASR r24 | ASR r36 | SQS (16 / 32) |
+|---|---|---|---|
+| fcc Ni0.75Cu0.25, Ni | 0.319 | **0.493** | 0.517 / 0.507 (16) |
+| fcc Fe0.5Ni0.5, Fe / Ni | 2.512 / 0.593 | 2.555 / **0.641** | 2.535 / 0.662 (16) |
+| bcc FeCo, Fe / Co | 2.578 / 1.746 | - | 32: 2.583 (sd 0.06) / 1.780 (sd 0.01) |
+| bcc FeV, Fe / V | 1.848 / -0.469 (r48 1.890 / -0.479) | - | 32: 1.808 (sd 0.32) / -0.382 (sd 0.19) |
+The Ni moments close most of the gap to SQS between 24 and 36 steps (NiCu -38% -> -4%, FeNi -9% -> -3%): energy resolution of the chain
+(item 1) is the cause for Ni; the SCF amplifies the fixed-potential deficit.  FeV stays too magnetic (and gets worse with steps), FeRh Fe flat.
+Physics of the resolution limit (see MAGNETISM_TODO): a d start orbital hybridises with s, p, so the chain's asymptotic width is the whole spd
+band (Ni: b_1 = 0.22, b_n ~ 0.62 for n >= 2, edges -0.75 .. 1.77 Ry); m steps resolve ~2.5 Ry / m.  A weak moment is set by a d-band edge at E_F
+(Ni minority d top); smearing it across E_F moves holes below E_F -> moment systematically low.  Strong moments (both d edges away from E_F) are
+immune.  AMscf (12 steps, NN map, real-axis seed energies + spline, BP tail) has no remedy; Ganguly et al. PRB 83, 094407 (2011, 11 steps)
+report Mn moments 0.57-0.67 muB below CPA - consistent with this limit (A = B Ni at 12 steps: 57% of the exact moment).
