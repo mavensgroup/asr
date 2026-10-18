@@ -3,7 +3,7 @@
 module asr_symmetry
   implicit none
   private
-  public :: cubic_site_perms, d4h_ops, orbital_rep
+  public :: cubic_site_perms, d4h_ops, orbital_rep, class_ops
 
 contains
 
@@ -58,6 +58,37 @@ contains
     end do
     if (kk /= 16) error stop 'd4h_ops: expected 16 operations'
   end subroutine d4h_ops
+
+  !> The operations of D4h about the origin that map every site onto a site of the same class (cls(site)): the group of
+  !> asr_augcls for a start site at the origin on a decorated lattice (sublattices).  Operation 1 is the identity.
+  !> cubic (optional): the class-preserving subset of the 48 cubic operations contains the threefold axis [111], i.e. the
+  !> origin site has cubic (O_h or T_d) site symmetry, so that p_x = p_y = p_z and the t2g / e_g partners are equivalent.
+  subroutine class_ops(coord, m, cls, perm, mats, cubic)
+    integer, intent(in) :: coord(:, :), m, cls(:)
+    integer, allocatable, intent(out) :: perm(:, :), mats(:, :, :)
+    logical, intent(out), optional :: cubic
+    integer, allocatable :: p48(:, :), m48(:, :, :)
+    integer, parameter :: c3(3, 3) = reshape([0, 0, 1, 1, 0, 0, 0, 1, 0], [3, 3])     ! (x, y, z) -> (y, z, x)
+    logical :: keep(48)
+    integer :: k, kk
+    call cubic_site_perms(coord, m, p48, m48)
+    do k = 1, 48; keep(k) = all(cls(p48(:, k)) == cls); end do
+    if (present(cubic)) then
+      cubic = .false.
+      do k = 1, 48
+        if (keep(k) .and. all(m48(:, :, k) == c3)) cubic = .true.
+      end do
+    end if
+    do k = 1, 48; keep(k) = keep(k) .and. abs(m48(3, 3, k)) == 1; end do
+    if (.not. keep(1)) error stop 'class_ops: the identity does not preserve the classes'
+    allocate (perm(size(coord, 2), count(keep)), mats(3, 3, count(keep)))
+    kk = 0
+    do k = 1, 48
+      if (keep(k)) then
+        kk = kk + 1; perm(:, kk) = p48(:, k); mats(:, :, kk) = m48(:, :, k)
+      end if
+    end do
+  end subroutine class_ops
 
   !> Orbital representation of each operation on the 9 real harmonics (s | y z x | xy yz 3z2-r2 xz x2-y2):
   !>   Y_k(M p) = sum_j d(k,j,iop) Y_j(p).   Fitted by least squares on generic points; entries are 0, +-1
