@@ -1,0 +1,84 @@
+# Partially disordered L2_1 Heusler Co2Fe0.4Cr0.6Al (cond-mat/0606737): Co on 8c, Al on 4a, Fe/Cr random on 4b.
+# The L2_1 cell (a = 5.727 A) is a decoration of the bcc graph with a_bcc = a/2: period = 2, centering = "F".
+# Same machinery for ordered compounds (one species per sublattice) and multicomponent alloys (N species on a sublattice).
+[calculation]
+name = "co2fe04cr06al L2_1, kind sublattice"
+kind = "sublattice"
+
+[structure]
+lattice = "bcc"
+alat = 2.8635
+period = 2
+centering = "F"
+
+[[sublattice]]
+name = "8c"
+positions = [[0.25, 0.25, 0.25], [0.75, 0.75, 0.75]]
+species = ["Co"]
+
+[[sublattice]]
+name = "4a"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Al"]
+
+[[sublattice]]
+name = "4b"
+positions = [[0.5, 0.5, 0.5]]
+species = ["Fe", "Cr"]
+concentrations = [0.4, 0.6]
+
+[[species]]
+symbol = "Co"
+z = 27
+nval = 9
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 7.0]
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Cr"
+z = 24
+nval = 6
+konfig = [4, 4, 3, 4]
+occupations = [1.0, 5.0]
+
+[[species]]
+symbol = "Al"
+z = 13
+nval = 3
+konfig = [3, 3, 3, 4]
+occupations = [2.0, 0.0]
+
+[scf]
+save_potential = "co2fe04cr06al_pot.dat"
+spin = 2
+zeta0 = 0.1
+xc = "vbh"
+sim_beta = 1.0
+mixing = 0.2
+max_iterations = 150
+tolerance = 1e-05
+
+[asr]
+levels = 4
+recursion_steps = 24
+rank = 1
+contour_points = 32
+supercell = 8
+ed_terminator = "bp"
+fermi_kt = 0.001
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 321
+eta = 0.02
+
+[output]
+dos_file = "co2fe04cr06al_dos.dat"

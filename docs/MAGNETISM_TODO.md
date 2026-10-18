@@ -17,6 +17,8 @@ Order (each with its paper gate, energy-dependent AMscf operator throughout, ed-
    Co2CrAl (Co 0.760, Cr 1.548, Al -0.071) and Co2FeAl (Co 1.119, Fe 2.709, Al -0.101) as ordered end points; our own k-space LMTO for the
    ordered compounds and an SQS for the 4b disorder as the same-model references.  Existing pieces: ordered B2 mode (two sublattices,
    moments_ord), lattice = "cell" in the LMTO driver.
+   PROGRESS 2026-10-19 (branch pd): general machinery done and gated (asr_augcls / asr_edc / asr_class_scf, `kind = "sublattice"`, STATUS
+   "Sublattices"); k-space Co2FeAl / Co2CrAl done (Slater-Pauling 5 / 3); ASR runs + 80-atom SQS running in desktop ~/asr_pd/trial/q33.
 2. **Multicomponent (N >= 3)**: occupation operator per site with N states (N-1 flips).  Gate: Alam & Mookerjee JPCM 21, 195503 (2009),
    Fe-Ni-Cr.  Node count grows fast: orbital-aware symmetry reduction + rank 1 are essential.
 3. **SRO (Warren-Cowley alpha)**: gates Tarafder 2006 CuZn (alpha != 0; note the Banerjee 2010 disagreement in STATUS), then Alam 2009 ternary.

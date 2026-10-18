@@ -1074,3 +1074,35 @@ Reading (user's bar: 3-4% between formalisms is agreement, do not chase exact nu
   (rank 1 = 2 = 3 to 3 digits in CuZn, "Queue 2 results"); not pursued further for now.
 - Ni-type moments need 36 steps (r24: NiCu -38%, FeNi Ni -12%); r36 within ~4-5%.  FeCo agrees at 24.
 Production recommendation: asr_ed, levels 4, rank 1, bp, kT 1 mRy; 24 steps for strong moments, 36 for weak (Ni-type) moments.
+
+## Sublattices: one site-class operator for ordered / partially disordered / multicomponent alloys (2026-10-19, branch pd, desktop ~/asr_pd/trial/q33)
+Goal (user): partial disorder -> multicomponent -> HEA with ONE machinery, no binary or Heusler shortcuts.
+New code (binary route untouched, kept as regression reference):
+- `asr_augcls`: augmented space where every site class (sublattice) has its own species list and concentrations (1 = ordered, 2, ..., N);
+  local basis per class as asr_augn (W_lk = sum_k' X_k' x_k' phi_l phi_k), canonical-representative reduction as asr_augsym, the group
+  supplied by the caller (class-preserving subset of D4h; identity = unreduced); order 2 (all asr_ed needs).
+- `asr_edc`: asr_ed (AMscf form) on it, one recursion per (sublattice, species) component; `class_ops` (asr_symmetry): class-preserving
+  D4h subset + cubic-site check; `asr_sublattice`: decoration of the sc/bcc/fcc graph by Wyckoff positions + centering (P/I/F),
+  per-sublattice origin shift, site fractions, Madelung matrix of sublattice-average charges (Ewald over the decoration cell).
+- `asr_class_scf` + `asr_class_driver` (`kind = "sublattice"`, `[[sublattice]] positions / species / concentrations`): one potential per
+  component, V_p = sum Phi(k,k') (qbar_k' - qbar_cell) - sim_beta 2 (q_p - qbar_k)/R1 (Madelung of the sublattice averages + SIM of the
+  deviation; = the binary SIM for one sublattice, = exact Madelung for ordered sublattices).
+- `tools/sqs.py --decorate`: SQS on the disordered sublattice, ordered atoms at fixed offsets (L2_1 4b disorder).
+- `atom_shells` leaves out empty valence shells (Al: an empty 3d is unbound in the free atom and stopped the start).
+Gates (verified):
+| gate | result |
+|---|---|
+| ring of 4, three classes (ordered {1} / binary {2,3} / ternary {1,3,4}, shared species), frozen start, vs exact configuration average | 2.7e-15 |
+| decorated bcc (L2_1 pattern, ternary 4b), class-reduced vs unreduced, origin on 4a / 4b (D4h) and 8c (T_d -> D2d) | 4e-13; nodes 7288 -> 704, 8000 -> 1135 |
+| one binary class vs asr_augsym / asr_ed | 3.4e-15, same node count |
+| one ternary class (reduced) vs unreduced asr_augn / asr_edn | 1.8e-12; nodes 188625 -> 13600 (14x) |
+| SCF binary limit: `kind = "sublattice"` (one sublattice, I-centred) vs `kind = "alloy"` asr_ed, CuZn and FeCo, levels 3 / 12 steps | iteration 1 identical to all printed digits (sum rules, E_F search, E_F, q, m); from it 2 ~1e-6 drift = neutral-Madelung convention (E_F-search residual charge) |
+Same-model k-space references (VBH, equal spheres, nk 16):
+| system | Co | Y | Al | total / f.u. | paper ASR (cond-mat/0606737 Table 3) |
+|---|---|---|---|---|---|
+| Co2FeAl a = 5.727 | 1.161 | Fe 2.758 | -0.102 | 4.98 (Slater-Pauling 5) | Co 1.119, Fe 2.709, Al -0.101 |
+| Co2CrAl a = 5.727 | 0.902 | Cr 1.269 | -0.072 | 3.00 (Slater-Pauling 3) | Co 0.760, Cr 1.548, Al -0.071 |
+| B2 FeCo a = 2.857 | Co 1.768 | Fe 2.760 | | | |
+The Co/Cr split of Co2CrAl differs from the paper (total equal): sphere partition; our gate is the same-model k-space / SQS.
+Running (q33): ASR (levels 4, 24 steps, rank 1, bp, kT 1 mRy) for Co2FeAl, Co2CrAl, Co2Fe0.4Cr0.6Al, B2 FeCo; 80-atom SQS (20-site fcc 4b
+SQS, objective 0.040, one potential per species) x 2 for Co2Fe0.4Cr0.6Al.

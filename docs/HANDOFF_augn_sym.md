@@ -1,3 +1,5 @@
+> SUPERSEDED (2026-10-19): done in general form by `asr_augcls` (site classes, any number of species per class, reduced) -- see STATUS "Sublattices".
+
 # Handoff: D4h point-group reduction of the n-component augmented space (written 2026-10-10)
 
 Start a NEW Claude Code session for this (Opus): `cd ~/Devel/ASR/asr_new && claude --model opus`, then tell it:
