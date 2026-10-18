@@ -1,10 +1,28 @@
-# Disordered magnetism: what is left (updated 2026-10-17)
+# Disordered magnetism: what is left (updated 2026-10-18)
 
 Production route: asr_ed (AMscf form), levels 4, rank 1, recursion_steps 24, bp tail, SIM beta 1, VBH or PBE, fermi_kt 0.001 Ry.
 Results: docs/STATUS.md, sections "Clean reruns of all disordered binaries" (q24) and "Fermi smearing, depth 48, SQS references, first fcc
 alloys" (q25-q28).  Desktop: ~/asr_remote4/trial/q2x/SUMMARY.txt.
 
-## HANDOFF (next thread): weak magnets + tail scan
+## CLOSED (2026-10-18): disordered binaries meet the 3-4% bar vs SQS
+ASR (energy-dependent) vs our SQS with one potential per species (q32, STATUS "One potential per species SQS"): FeCo, FeNi (36 steps), NiCu
+(36 steps), FeV Fe agree within ~0.2-5%; FeV V 0.07 muB off (small induced moment); FeRh Fe -4.8% (flat in steps) is the only open item.
+Use 24 steps for strong moments, 36 for Ni-type.  Next project: partial (sublattice) disorder -> multicomponent -> SRO (HANDOFF below).
+
+## HANDOFF (next thread): partial disorder, then multicomponent, then SRO (toward HEA)
+Order (each with its paper gate, energy-dependent AMscf operator throughout, ed-is-target-route):
+1. **Sublattice (partial) disorder**: concentrations per sublattice, some sublattices fully ordered.  Gate: Chakraborty, Chakrabarti, Mookerjee,
+   cond-mat/0606737 (references/0606737v2.pdf): L2_1 Co2Fe0.4Cr0.6Al, a = 5.727 A, Co 8c, Al 4a, Fe/Cr random on 4b; Table 3 moments Co 1.075,
+   Cr 0.972, Fe 2.617, Al -0.117 (their H is energy-independent second order + BP, 11-12 steps: expect ~3-4% agreement, not exact).  Also
+   Co2CrAl (Co 0.760, Cr 1.548, Al -0.071) and Co2FeAl (Co 1.119, Fe 2.709, Al -0.101) as ordered end points; our own k-space LMTO for the
+   ordered compounds and an SQS for the 4b disorder as the same-model references.  Existing pieces: ordered B2 mode (two sublattices,
+   moments_ord), lattice = "cell" in the LMTO driver.
+2. **Multicomponent (N >= 3)**: occupation operator per site with N states (N-1 flips).  Gate: Alam & Mookerjee JPCM 21, 195503 (2009),
+   Fe-Ni-Cr.  Node count grows fast: orbital-aware symmetry reduction + rank 1 are essential.
+3. **SRO (Warren-Cowley alpha)**: gates Tarafder 2006 CuZn (alpha != 0; note the Banerjee 2010 disagreement in STATUS), then Alam 2009 ternary.
+Earlier handoff (weak magnets + tail scan) is finished; its notes follow for the record.
+
+## (finished) HANDOFF: weak magnets + tail scan
 State: ASR agrees with our own SQS supercells for strong moments (FeCo; Fe in FeNi) but is wrong for weak / environment-sensitive ones:
 | alloy | ASR r24 | SQS | error |
 |---|---|---|---|

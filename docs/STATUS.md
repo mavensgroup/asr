@@ -1055,3 +1055,22 @@ SCF from the r24 potentials, `medium = "vca"`, medium_nk 60, kT 1 mRy, 24 steps.
 Exact for A = B (gate), useless for alloys: the VCA medium averages the d levels and exchange splittings, so its d edge (and its truncation
 error near E_F) is not where an alloy site has it; it adds nothing to the Ni moment and puts spurious spin on Cu.  FeCo / FeV q31 runs still
 going (for the record).  Plain 36 steps (q27) already reach NiCu -4%, FeNi -3% vs SQS.
+
+## One potential per species SQS (2026-10-18, desktop trial/q32): how much of ASR - SQS is intrinsic
+Same SQS cells as q26 / q27 / q28 with `site_classes = false` (one ASA class = one self-consistent potential per species, the single-site
+constraint ASR / CPA have) instead of one class per site.  All ASR numbers are energy-dependent (asr_ed, levels 4, rank 1).
+Moments A / B (muB); SQS per-site = species mean of the site-resolved run; 2c = one class per species (16 #1 / #2; 32 #1).
+| alloy | ASR | SQS per-site | SQS 2c | ASR vs 2c |
+|---|---|---|---|---|
+| bcc FeCo | r24 2.578 / 1.746 | 2.592 / 1.778 (16), 2.583 / 1.780 (32) | 2.582 / 1.793, 2.587 / 1.796 | -0.2% / -2.7% |
+| fcc Fe0.5Ni0.5 | r36 2.555 / 0.641 (r24 2.512 / 0.593) | 2.535 / 0.662 | 2.516 / 0.680, 2.509 / 0.664 | +1.7% / -4.6% |
+| fcc Ni0.75Cu0.25 | r36 Ni 0.493 (r24 0.319) | 0.517 / 0.507 | 0.517, 0.508 | -3.9% |
+| bcc FeV | r24 1.848 / -0.469 | 1.756 / -0.364 (16), 1.808 / -0.382 (32) | 1.842 / -0.414, 1.795 / -0.393; 32: 1.852 / -0.399 | Fe -0.2%; V 0.07 muB |
+| bcc FeRh | r24 2.866 / 0.729 (r48 2.877 / 0.632) | 2.977 / 0.630, 2.997 / 0.744; 32: 2.991 / 0.709 | 3.006 / 0.646, 3.016 / 0.741; 32: 3.009 / 0.715 | **Fe -4.8%**; Rh +2% |
+Reading (user's bar: 3-4% between formalisms is agreement, do not chase exact numbers):
+- FeV: the single-potential constraint raises SQS Fe by ~0.08 and V by ~0.03; ASR Fe then agrees (-0.2% vs 2c 32).  The "too magnetic" Fe was
+  intrinsic (one potential per species), not a recursion error.  V stays 0.07 muB more negative (small induced moment).
+- FeRh: the constraint changes nothing (Fe 3.01); ASR Fe -0.14 (-4.8%), flat in steps (24 -> 48).  The one genuine outlier.  Rank is unlikely
+  (rank 1 = 2 = 3 to 3 digits in CuZn, "Queue 2 results"); not pursued further for now.
+- Ni-type moments need 36 steps (r24: NiCu -38%, FeNi Ni -12%); r36 within ~4-5%.  FeCo agrees at 24.
+Production recommendation: asr_ed, levels 4, rank 1, bp, kT 1 mRy; 24 steps for strong moments, 36 for weak (Ni-type) moments.
