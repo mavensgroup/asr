@@ -8,6 +8,10 @@ for the first `npair` pair shells and the smallest triplet (Pi_3 = (2x - 1)^3). 
 [structure] lattice = "cell" (vectors in units of the cubic lattice constant) and the [[site]] list for `asr` kind = "lmto".
 
   python3 -I tools/sqs.py --lattice bcc --n 16 --x 0.5 --species Fe Co --nsqs 2 --out sqs_dir
+
+Partial (sublattice) disorder: the SQS is built on the disordered sublattice only and every site is decorated with the ordered
+atoms at fixed offsets (cubic lattice-constant units), e.g. L2_1 Co2(Fe,Cr)Al with the Fe/Cr 4b sublattice as the fcc SQS lattice:
+  python3 -I tools/sqs.py --lattice fcc --n 10 --x 0.4 --species Fe Cr --decorate Al:0.5,0.5,0.5 Co:0.25,0.25,0.25 Co:-0.25,-0.25,-0.25 --out d
 """
 import argparse, itertools, os, sys
 import numpy as np
@@ -136,7 +140,11 @@ def main():
     ap.add_argument('--npair', type=int, default=6); ap.add_argument('--ncells', type=int, default=40)
     ap.add_argument('--nsqs', type=int, default=2); ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--out', required=True)
+    ap.add_argument('--decorate', nargs='*', default=[], help='symbol:dx,dy,dz atoms added at every SQS site (cubic units)')
     a = ap.parse_args()
+    deco = []
+    for d in a.decorate:
+        sym, off = d.split(':'); deco.append((sym, np.array([float(c) for c in off.split(',')])))
     prim = PRIM[a.lattice]; rng = np.random.default_rng(a.seed)
     n_a = int(round(a.x * a.n))
     if abs(n_a - a.x * a.n) > 1e-9: sys.exit('x * n must be an integer')
@@ -168,10 +176,14 @@ def main():
         with open(fn, 'w') as f:
             f.write(f'# SQS {a.lattice} N = {a.n}, x({a.species[0]}) = {a.x}: objective {best:.4f}, pair correlations (shells 1..{a.npair}) '
                     f'{np.round(p, 4).tolist()}, triplet {t:+.4f} (random: {t2:.3f} / {t3:+.3f})\n')
+            if deco: f.write('# decorated: ' + ' '.join(a.decorate) + '\n')
             f.write('[structure]\nlattice = "cell"\nsite_classes = true\nvectors = [' +
                     ', '.join('[' + ', '.join(f'{c:.6f}' for c in v) + ']' for v in sup) + ']\n\n')
             for r, s in zip(pos, sig):
                 f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r) + f']\nspecies = "{a.species[0] if s > 0 else a.species[1]}"\n\n')
+            for sym, off in deco:
+                for r in pos:
+                    f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r + off) + f']\nspecies = "{sym}"\n\n')
         print('wrote', fn, f'objective {best:.4f}')
 
 
