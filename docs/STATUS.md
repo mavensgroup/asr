@@ -1044,3 +1044,14 @@ band (Ni: b_1 = 0.22, b_n ~ 0.62 for n >= 2, edges -0.75 .. 1.77 Ry); m steps re
 (Ni minority d top); smearing it across E_F moves holes below E_F -> moment systematically low.  Strong moments (both d edges away from E_F) are
 immune.  AMscf (12 steps, NN map, real-axis seed energies + spline, BP tail) has no remedy; Ganguly et al. PRB 83, 094407 (2011, 11 steps)
 report Mn moments 0.57-0.67 muB below CPA - consistent with this limit (A = B Ni at 12 steps: 57% of the exact moment).
+
+## Average-medium (VCA) correction in alloys (2026-10-18, desktop trial/q31, code 75e5732): negative
+SCF from the r24 potentials, `medium = "vca"`, medium_nk 60, kT 1 mRy, 24 steps.  Iteration 1 = fixed-potential effect of the correction alone.
+| alloy | r24 plain | it 1 (fixed pot.) | converged | r36 plain | SQS |
+|---|---|---|---|---|---|
+| NiCu Ni / Cu | 0.319 / 0.004 | 0.3185 / -0.051 | killed it 6: 0.311 / -0.076 (Cu growing) | 0.493 | 0.51 / 0.00 |
+| FeNi Fe / Ni | 2.512 / 0.593 | 2.538 / 0.594 | 2.531 / 0.616 (12 its) | 2.555 / 0.641 | 2.535 / 0.662 |
+| FeRh Fe / Rh | 2.866 / 0.729 | - | 2.879 / 0.737 (21 its) | - | 2.99 / 0.71-0.74 |
+Exact for A = B (gate), useless for alloys: the VCA medium averages the d levels and exchange splittings, so its d edge (and its truncation
+error near E_F) is not where an alloy site has it; it adds nothing to the Ni moment and puts spurious spin on Cu.  FeCo / FeV q31 runs still
+going (for the record).  Plain 36 steps (q27) already reach NiCu -4%, FeNi -3% vs SQS.

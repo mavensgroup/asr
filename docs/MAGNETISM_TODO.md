@@ -25,9 +25,14 @@ help only ~1/m (A = B Ni at fixed potential: 12 steps 57%, 24 steps 74%, 64 step
 BP) has no remedy and the published ASR moments (Ganguly 2011: Mn 0.6 muB below CPA) carry this error.  => the far environment must supply
 the energy resolution: average-medium correction (item 7).  FeRh Fe (flat in m) and FeV (too magnetic) are NOT this effect.
 
-7. [ ] **Average-medium correction** (75e5732, `[asr] medium = "vca"`): G_c += G_med - CF_m(medium chain), medium = VCA of the scaled asr_ed
-       operator, G_med from k space (exact).  Gate passed: A = B Ni identical at every m = 8..32, 0.5126 (kT 1 mRy, nk 60) vs tetrahedra 0.5106.
-       q31: SCF NiCu, FeNi, FeCo, FeV, FeRh from the r24 potentials (kT 1 mRy) vs SQS.  Next: if VCA is too crude for strong scatterers, a CPA medium.
+7. [x] FAILED **Average-medium correction** (75e5732, `[asr] medium = "vca"`): G_c += G_med - CF_m(medium chain), medium = VCA of the scaled
+       asr_ed operator, G_med from k space (exact).  Gate passed: A = B Ni identical at every m = 8..32, 0.5126 (kT 1 mRy, nk 60) vs tetrahedra
+       0.5106.  q31 alloys (SCF from r24, kT 1 mRy): NiCu Ni unchanged at fixed potential (0.3185 vs 0.319), Cu a spurious -0.05 -> -0.08
+       (killed at it 6, Ni 0.311); FeNi 2.531 / 0.616 (r36 plain: 2.555 / 0.641, SQS 2.535 / 0.662); FeRh 2.879 / 0.737 (unchanged).  The VCA
+       medium has its d edge / spin asymmetry in the wrong place for an alloy site, so its truncation error is not the alloy's.  Not pursued
+       further (a CPA medium would be the next step, but it is a lot of machinery for what 36 plain steps already do: NiCu -4%, FeNi -3%).
+       Old codes checked (ASR_CORRECT / AMscf main, cgreen, pardos; thesis; Chakrabarti-Mookerjee EPJB): plain recursion, 12 steps, NN map,
+       real-axis seeds + fit, chain-edge sqrt tail; no resolution remedy.  Their FeV 50-50: Fe 1.12 / V -0.11 (SQS 1.81 / -0.38).
 
 Plan, in order (probe first, no SCF changes until the probe says so; production stays asr_ed):
 1. [x] **Tail scan at fixed potential** (2026-10-18, q29, STATUS "Tail scan at fixed potential"): tail irrelevant (c negligible); Ni limited by
