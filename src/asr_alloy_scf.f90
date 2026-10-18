@@ -91,9 +91,6 @@ module asr_alloy_scf
     character(len=256) :: pot_in = ''            !! start from the species potentials and E_nu of this file (written by pot_out) instead of atoms
     character(len=256) :: pot_out = ''           !! write the final species potentials and E_nu (restart / fixed-potential diagnostics)
     logical :: pot_flip(2) = .false.             !! with pot_in, nspin = 2: swap the spin channels of species s (antiparallel starts)
-    character(len=8) :: ed_medium = 'none'       !! asr_ed: far-environment correction G_c += G_med - CF_m(medium chain), G_med of the average
-                                                 !! medium (VCA of the same operator) from a k-space sum: 'none' | 'vca'
-    integer :: medium_nk = 40                    !! k mesh (nk^3, full zone) of the medium Green function
     integer :: tail_scan = 0                     !! diagnostic (asr_ed): in iteration 1 build every chain once to tail_scan steps and print
                                                  !! the moments for every termination depth m = 8..tail_scan and tail (hull, bp, avg2), each
                                                  !! at its own E_F; then stop.  A = B: also the k-space E_nu + h - h o h reference
@@ -192,14 +189,6 @@ contains
     type(augorb_op) :: op
     type(augsym_op) :: sop, sopc(2)
     type(asr_ed_t) :: edp_c(2)
-    type(augsym_op) :: sopm(2)                         ! average-medium operators (no random parts: real-space nodes only)
-    type(orb_alloy_t) :: mdlm
-    type(asr_ed_t) :: edm(2)
-    type(ed_work_t) :: edwm
-    logical :: medium
-    real(dp), allocatable :: mlam(:, :, :, :), mwt(:, :, :, :, :)   ! medium: eigenvalues (9, k, central, spin), weights (4 start orbitals, 9, ...)
-    complex(dp), allocatable :: skm(:, :, :)           ! medium: S^alpha(k)
-    integer :: nkm3
     logical :: asr_ed
     integer, allocatable :: perm(:, :), mats(:, :, :)
     real(dp), allocatable :: dmat(:, :, :)
@@ -257,8 +246,6 @@ contains
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec   ! recursion steps
     ed = inp%energy_dependent
     asr_ed = ed .and. inp%ed_asr
-    medium = asr_ed .and. trim(inp%ed_medium) == 'vca'
-    if (trim(inp%ed_medium) /= 'none' .and. .not. medium) error stop 'alloy_scf: ed_medium = vca needs hamiltonian = asr_ed'
     omm = 0
     if (ed .and. .not. ordered .and. .not. inp%symmetry) error stop 'alloy_scf: energy_dependent requires symmetry = .true.'
     if (asr_ed .and. (ordered .or. inp%ed_exact)) error stop 'alloy_scf: the AMscf form is for the disordered alloy with parametrised potential functions'
@@ -316,15 +303,6 @@ contains
           call build_augsym_operator(g, mdl, perm, dmat, 1, ngen, sopc(i), inp%maxrank, flippable, order=2)
           call augsym_freeze_site(sopc(i), 1, merge(1.0_dp, 0.0_dp, i == 1))
         end do
-        if (medium) then
-          mdlm = mdl; mdlm%c1 = 0.0_dp; mdlm%d1 = 0.0_dp; mdlm%o1 = 0.0_dp; mdlm%e1 = 0.0_dp
-          do i = 1, 2
-            call build_augsym_operator(g, mdlm, perm, dmat, 1, ngen, sopm(i), inp%maxrank, flippable, order=2)
-          end do
-          call ed_work_init(edwm, sopm(1)%dim())
-          call medium_structure()
-          if (vb) print '(a,i0,a,i0,a)', '  average medium (VCA): ', sopm(1)%nn, ' nodes, k-space Green function on ', inp%medium_nk, '^3 points'
-        end if
         nd = sopc(1)%dim(); nnodes = sopc(1)%nn; flip1 = 0; md1 = 0.0_dp; sflip = 0.0_dp
       else
         call build_augsym_operator(g, mdl, perm, dmat, 1, ngen, sop, inp%maxrank, flippable, order=merge(inp%order, 2, .not. ed))
@@ -410,7 +388,6 @@ contains
         do sg = 1, nsp
           call ed_load(pps(1, sg), eda(sg)); call ed_load(pps(2, sg), edb(sg))
         end do
-        if (medium) call medium_prepare()
         if (vb .and. it == 1) then
           call ed_moments(6.0_dp, mom, dosef)
           print '(a,3f9.4,a,3f9.4)', '  sum rule (E_F=6 Ry)  A: M0(s,p,d)/(1,3,5) =', (mom(1, 1, 0, l) / real(2 * l + 1, dp), l=0, 2), '   B:', (mom(2, 1, 0, l) / real(2 * l + 1, dp), l=0, 2)
@@ -724,7 +701,7 @@ contains
       real(dp), intent(out), optional :: rhov(:, :, :)
       complex(dp), allocatable :: zq(:), wq(:), ph(:, :, :), ts(:, :, :)
       complex(dp) :: gs(2), z
-      integer :: j, o, gg, kk, ll, nq, pp, site, ss, mu
+      integer :: j, o, gg, kk, ll, nq, pp, site, ss
       logical :: dens
       call ed_contour(efv, zq, wq, nq)
       dens = present(rhov) .and. exact_now .and. inp%ed_exact_density
@@ -740,8 +717,7 @@ contains
             if (asr_ed) then
               do pp = 1, 2
                 call augsym_set_start(sopc(pp), iorb(o), dmat)
-                call asr_ed_green(sopc(pp), edw, edp_c(pp), z, iorb(o), nlev, gs(pp), mused=mu)
-                if (medium) gs(pp) = gs(pp) + medium_corr(z, o, pp, gg, mu)
+                call asr_ed_green(sopc(pp), edw, edp_c(pp), z, iorb(o), nlev, gs(pp))
               end do
             else if (ordered) then
               do pp = 1, 2
@@ -802,19 +778,17 @@ contains
       integer, parameter :: nef = 5
       real(dp), parameter :: def = 0.0075_dp, eta_r = 1.0e-3_dp
       real(dp), allocatable :: occ(:, :, :, :, :)          ! (E_F grid, m, tail, species, spin): valence electrons per spin
-      complex(dp), allocatable :: zq(:), wq(:), ac(:), bc(:), c0(:), acm(:), bcm(:)
-      complex(dp) :: gm, fm, edg(2), gmed, gmm
+      complex(dp), allocatable :: zq(:), wq(:), ac(:), bc(:), c0(:)
+      complex(dp) :: gm, fm, edg(2)
       real(dp) :: efg(nef), tol_save, nv(nef), ed3(6), e, als(0:2, 1), qk(0:2, 0:2, 1, 2), efk
-      integer :: mmax, j, jq, nq, gg, o, pp, mu, m, t, ss, k0, jb, mum
+      integer :: mmax, j, jq, nq, gg, o, pp, mu, m, t, ss, k0, jb
       type(cell_t) :: kc
       type(cluster_t) :: kcl(1)
       mmax = inp%tail_scan
-      allocate (occ(nef, 8:mmax, 3, 2, 2), ac(mmax), bc(mmax), c0(mmax), tsr(5, 8:mmax, 3), tsx(8:mmax, 3), acm(mmax), bcm(mmax))
-      occ = 0.0_dp; c0 = (0.0_dp, 0.0_dp); ac = (0.0_dp, 0.0_dp); bc = (0.0_dp, 0.0_dp); acm = ac; bcm = bc
-      gmed = (0.0_dp, 0.0_dp); mum = 1
+      allocate (occ(nef, 8:mmax, 3, 2, 2), ac(mmax), bc(mmax), c0(mmax), tsr(5, 8:mmax, 3), tsx(8:mmax, 3))
+      occ = 0.0_dp; c0 = (0.0_dp, 0.0_dp); ac = (0.0_dp, 0.0_dp); bc = (0.0_dp, 0.0_dp)
       tol_save = ed_depth_tol; ed_depth_tol = 0.0_dp
-      if (vb) print '(a,i0,a,i0,a,f7.4,a,a)', '  tail scan: chains to ', mmax, ' steps, ', nef, ' Fermi levels spaced ', def, ' Ry', &
-        trim(merge('  (with the average-medium correction)', '                                      ', medium))
+      if (vb) print '(a,i0,a,i0,a,f7.4,a)', '  tail scan: chains to ', mmax, ' steps, ', nef, ' Fermi levels spaced ', def, ' Ry'
       ! chain coefficients near E_F (d orbitals) and the tail edges per m
       do gg = 1, nsp
         call asr_ed_prepare(gg)
@@ -850,19 +824,10 @@ contains
               do pp = 1, 2
                 call augsym_set_start(sopc(pp), iorb(o), dmat)
                 call asr_ed_green(sopc(pp), edw, edp_c(pp), zq(jq), iorb(o), mmax, gm, acoef=ac, bcoef=bc, mused=mu)
-                if (medium) then                     ! medium chain to m_max and the medium Green function at this node
-                  call augsym_set_start(sopm(pp), iorb(o), dmat)
-                  call asr_ed_green(sopm(pp), edwm, edm(pp), zq(jq), iorb(o), mmax, gmm, acoef=acm, bcoef=bcm, mused=mum)
-                  gmed = medium_g(zq(jq), o, pp, gg)
-                end if
-                !$omp parallel do collapse(2) private(gm, fm, gmm)
+                !$omp parallel do collapse(2) private(gm, fm)
                 do m = 8, mmax
                   do t = 1, 3
                     call cf_species(ac, bc, c0, min(m, mu), zq(jq), gm, fm, tail_in=trim(tails(t)))
-                    if (medium) then
-                      call cf_species(acm, bcm, c0, min(m, mum), zq(jq), gmm, fm, tail_in=trim(tails(t)))
-                      gm = gm + gmed - gmm
-                    end if
                     occ(j, m, t, pp, gg) = occ(j, m, t, pp, gg) - worb(o) * aimag(wq(jq) * gm) / pi
                   end do
                 end do
@@ -891,7 +856,15 @@ contains
       ! A = B: the ordered crystal, same Hamiltonian in k-space
       haskref = abs(inp%spec(1)%z - inp%spec(2)%z) < 1.0e-6_dp .and. (trim(inp%lattice) == 'fcc' .or. trim(inp%lattice) == 'bcc')
       if (haskref) then
-        call one_atom_cell(kc, kcl(1), als)
+        kc%nat = 1; allocate (kc%tau(3, 1), kc%isp(1)); kc%tau = 0.0_dp; kc%isp = 1
+        if (trim(inp%lattice) == 'fcc') then
+          kc%avec = reshape([0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp], [3, 3])
+        else
+          kc%avec = reshape([-0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp], [3, 3])
+        end if
+        call setup_cell(kc)
+        als(:, 1) = alpha
+        call build_cluster(kc, 1, inp%rcl, als, kcl(1))
         qk = 0.0_dp
         call bands_moments(kc, kcl, pps(1:1, 1:nsp), als, nkref, nsp, real(inp%spec(1)%nval, dp), 0.01_dp, 'tetra', efk, &
                            qk(:, :, :, 1:nsp), h2=.true.)
@@ -1068,7 +1041,7 @@ contains
 
     subroutine ed_dos_final()
       complex(dp) :: ga1, gb1, phd(1, 0:2, 2)
-      integer :: ie, o, gg, ll, pp, mu
+      integer :: ie, o, gg, ll, pp
       allocate (res%edos_e(inp%ndos), res%edos(inp%ndos, 0:2, 2, nsp)); res%edos = 0.0_dp
       do ie = 1, inp%ndos
         res%edos_e(ie) = inp%dos_emin + (inp%dos_emax - inp%dos_emin) * (ie - 1) / real(max(inp%ndos - 1, 1), dp)
@@ -1097,8 +1070,7 @@ contains
             do ie = 1, inp%ndos
               do pp = 1, 2
                 call augsym_set_start(sopc(pp), iorb(o), dmat)
-                call asr_ed_green(sopc(pp), edw, edp_c(pp), cmplx(res%edos_e(ie), inp%dos_eta, dp), iorb(o), nlev, ga1, mused=mu)
-                if (medium) ga1 = ga1 + medium_corr(cmplx(res%edos_e(ie), inp%dos_eta, dp), o, pp, gg, mu)
+                call asr_ed_green(sopc(pp), edw, edp_c(pp), cmplx(res%edos_e(ie), inp%dos_eta, dp), iorb(o), nlev, ga1)
                 res%edos(ie, ll, pp, gg) = res%edos(ie, ll, pp, gg) - worb(o) * aimag(ga1) / pi
               end do
             end do
@@ -1115,92 +1087,6 @@ contains
       end do
     end subroutine ed_dos_final
 
-    !> one-atom fcc / bcc cell and its S^alpha cluster (radius rcl, screening alpha), as in the recursion
-    subroutine one_atom_cell(kc, kcl, als)
-      type(cell_t), intent(out) :: kc
-      type(cluster_t), intent(out) :: kcl
-      real(dp), intent(out) :: als(0:2, 1)
-      kc%nat = 1; allocate (kc%tau(3, 1), kc%isp(1)); kc%tau = 0.0_dp; kc%isp = 1
-      if (trim(inp%lattice) == 'fcc') then
-        kc%avec = reshape([0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp], [3, 3])
-      else if (trim(inp%lattice) == 'bcc') then
-        kc%avec = reshape([-0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, -0.5_dp], [3, 3])
-      else
-        error stop 'alloy_scf: k-space medium / reference only for fcc and bcc'
-      end if
-      call setup_cell(kc)
-      als(:, 1) = alpha
-      call build_cluster(kc, 1, inp%rcl, als, kcl)
-    end subroutine one_atom_cell
-
-    !> medium: S^alpha(k) on the nk^3 mesh (Bloch sums of the same cluster S as the recursion)
-    subroutine medium_structure()
-      type(cell_t) :: kc
-      type(cluster_t) :: kcl
-      real(dp) :: als(0:2, 1), bv(3, 3), kv(3)
-      integer :: nk, ix, iy, iz, ik, i
-      complex(dp), parameter :: ci = (0.0_dp, 1.0_dp)
-      call one_atom_cell(kc, kcl, als)
-      nk = inp%medium_nk; nkm3 = nk**3
-      bv = recip_vectors(kc%avec)
-      allocate (skm(9, 9, nkm3), mlam(9, nkm3, 2, nsp), mwt(4, 9, nkm3, 2, nsp))
-      !$omp parallel do collapse(3) private(ik, kv, i)
-      do iz = 0, nk - 1; do iy = 0, nk - 1; do ix = 0, nk - 1
-        ik = 1 + ix + nk * (iy + nk * iz)
-        kv = (ix + 0.5_dp) / nk * bv(:, 1) + (iy + 0.5_dp) / nk * bv(:, 2) + (iz + 0.5_dp) / nk * bv(:, 3)
-        skm(:, :, ik) = (0.0_dp, 0.0_dp)
-        do i = 1, kcl%n
-          skm(:, :, ik) = skm(:, :, ik) + transpose(kcl%s(:, :, i)) * exp(ci * 2.0_dp * pi * dot_product(kv, kcl%d(:, i)))
-        end do
-        skm(:, :, ik) = 0.5_dp * (skm(:, :, ik) + conjg(transpose(skm(:, :, ik))))
-      end do; end do; end do
-      !$omp end parallel do
-    end subroutine medium_structure
-
-    !> medium: eigen-decomposition of z - H_med(z, k) for both central species and spins at the current parameters
-    subroutine medium_prepare()
-      real(dp) :: lam(9), wt(9, 9)
-      integer :: gg, cc, ik
-      do gg = 1, nsp
-        do cc = 1, 2
-          call asr_ed_setup(mdl, pps(1, gg), pps(2, gg), alpha, cc == 1, edp_c(cc))
-          call asr_ed_medium(mdl, edp_c(cc), inp%x, mdlm, edm(cc))
-          !$omp parallel do private(lam, wt)
-          do ik = 1, nkm3
-            call asr_ed_medium_k(mdlm, edm(cc), skm(:, :, ik), lam, wt)
-            mlam(:, ik, cc, gg) = lam; mwt(:, :, ik, cc, gg) = wt(iorb, :)
-          end do
-          !$omp end parallel do
-        end do
-      end do
-    end subroutine medium_prepare
-
-    !> medium Green function [z - H_med(z)]^-1 at start orbital iorb(o) (k mean), central species cc, spin gg
-    complex(dp) function medium_g(z, o, cc, gg)
-      complex(dp), intent(in) :: z
-      integer, intent(in) :: o, cc, gg
-      complex(dp) :: sm
-      integer :: ik
-      sm = (0.0_dp, 0.0_dp)
-      !$omp parallel do reduction(+:sm)
-      do ik = 1, nkm3
-        sm = sm + sum(mwt(o, :, ik, cc, gg) / (z - mlam(:, ik, cc, gg)))
-      end do
-      !$omp end parallel do
-      medium_g = sm / real(nkm3, dp)
-    end function medium_g
-
-    !> average-medium correction for an alloy chain of mu steps: the medium's own truncation error G_med - CF_mu(medium chain)
-    !> (same steps, same tail, same node-set extent); exact for A = B.  asr_ed_prepare must have set sopm / edm for the spin.
-    complex(dp) function medium_corr(z, o, cc, gg, mu)
-      complex(dp), intent(in) :: z
-      integer, intent(in) :: o, cc, gg, mu
-      complex(dp) :: gmc
-      call augsym_set_start(sopm(cc), iorb(o), dmat)
-      call asr_ed_green(sopm(cc), edwm, edm(cc), z, iorb(o), mu, gmc)
-      medium_corr = medium_g(z, o, cc, gg) - gmc
-    end function medium_corr
-
     !> AMscf form: operator parameters (central species A, B) and the energy-dependent diagonals for spin gg
     subroutine asr_ed_prepare(gg)
       integer, intent(in) :: gg
@@ -1208,10 +1094,6 @@ contains
       do cc = 1, 2
         call asr_ed_setup(mdl, pps(1, gg), pps(2, gg), alpha, cc == 1, edp_c(cc))
         call augsym_set_params(sopc(cc), mdl)
-        if (medium) then
-          call asr_ed_medium(mdl, edp_c(cc), inp%x, mdlm, edm(cc))
-          call augsym_set_params(sopm(cc), mdlm)
-        end if
       end do
     end subroutine asr_ed_prepare
 

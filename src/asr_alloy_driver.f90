@@ -10,7 +10,6 @@
 !>                  density, order (2|3: second/third-order H), symmetry, hamiltonian, ed_terminator (hull|bp|avg2),
 !>                  recursion_steps (Lanczos steps on the generated node set, hard wall; default = levels),
 !>                  fermi_kt (Ry; > 0: Fermi-smeared contour, smooth N(E_F); default 0 = sharp E_F),
-!>                  medium ("none" | "vca": asr_ed far-environment correction from the average medium in k-space), medium_nk,
 !>                  fermi_poles (Matsubara poles inside the Fermi contour, path height 2 n pi kT; default 0 = automatic ~0.1 Ry),
 !>                  tail_scan (diagnostic, asr_ed: moments vs termination depth 8..tail_scan and tail at the start potential, then stop)
 !>   [dos]          emin, emax, npoints, eta
@@ -52,7 +51,7 @@ contains
     type(toml_error), allocatable :: perr
     integer :: i, j, slash, nsp
     real(dp) :: x, alat, xs(2)
-    character(len=:), allocatable :: lat, xcs, hamil, scr, trm, dns, chg, pfs, edt, med
+    character(len=:), allocatable :: lat, xcs, hamil, scr, trm, dns, chg, pfs, edt
 
     msg = ''
     call toml_load(table, filename, error=perr)
@@ -136,15 +135,13 @@ contains
 
     call section(table, 'asr', child)
     call check_keys(child, ['levels            ', 'rank              ', 'supercell         ', 'flip_radius       ', 'contour_points    ', &
-                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     ', 'recursion_steps   ', 'fermi_kt          ', 'tail_scan         ', 'fermi_poles       ', 'medium            ', 'medium_nk         '], '[asr]', msg)
+                            'cluster_radius    ', 'symmetry          ', 'hamiltonian       ', 'inversion_radius  ', 'screening         ', 'terminator        ', 'density           ', 'order             ', 'order_switch      ', 'charges           ', 'depth_tol         ', 'potential_function', 'exact_density     ', 'kkr_check         ', 'ed_terminator     ', 'recursion_steps   ', 'fermi_kt          ', 'tail_scan         ', 'fermi_poles       '], '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ai%nlevels, 4)
     call get_value(child, 'recursion_steps', inp%ai%nrec, 0)
     call get_value(child, 'fermi_kt', inp%ai%fermi_kt, 0.0_dp)
     call get_value(child, 'tail_scan', inp%ai%tail_scan, 0)
     call get_value(child, 'fermi_poles', inp%ai%fermi_poles, 0)
-    call get_value(child, 'medium', med, 'none'); inp%ai%ed_medium = med
-    call get_value(child, 'medium_nk', inp%ai%medium_nk, 40)
     call get_value(child, 'rank', inp%ai%maxrank, 2)
     call get_value(child, 'supercell', inp%ai%lsuper, 8)
     call get_value(child, 'flip_radius', inp%ai%flip_radius, 99)
@@ -188,9 +185,6 @@ contains
     end do
     if (inp%ai%nspin /= 1 .and. inp%ai%nspin /= 2) msg = '[scf] spin must be 1 or 2'
     if (inp%ai%nlevels < 2) msg = '[asr] levels must be >= 2'
-    if (med /= 'none' .and. med /= 'vca') msg = "[asr] medium must be 'none' or 'vca'"
-    if (med == 'vca' .and. hamil /= 'asr_ed') msg = '[asr] medium = "vca" needs hamiltonian = "asr_ed"'
-    if (inp%ai%medium_nk < 4) msg = '[asr] medium_nk must be >= 4'
     if (inp%ai%fermi_poles < 0 .or. inp%ai%fermi_poles > 200) msg = '[asr] fermi_poles must be 0 (automatic) .. 200'
     if (inp%ai%nrec /= 0 .and. inp%ai%nrec < inp%ai%nlevels) msg = '[asr] recursion_steps must be 0 or >= levels'
     if (inp%ai%maxrank < 0) msg = '[asr] rank must be >= 0'
