@@ -97,7 +97,8 @@ contains
     real(dp), allocatable :: y(:, :, :, :, :, :), enu(:, :, :), mom(:, :, :, :), dosef(:, :, :), w(:), xp(:), phimad(:, :), qbar(:)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), wmix(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:)
     real(dp), allocatable :: tmp(:), cum(:), yc(:, :, :), vtmp(:, :), etmp(:, :)
-    real(dp) :: alpha(0:2), c, avw, r1, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell
+    real(dp) :: alpha(0:2), c, avw, r1, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell, rlo, rhi
+    real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg
     logical :: vb, cubic, hlo, hhi, core_ok
 
@@ -203,7 +204,10 @@ contains
           print '(a,i0,a,3f9.4)', '  sum rule (E_F=6 Ry), component ', p, ': M0(s,p,d)/(1,3,5) =', (mom(p, 1, 0, l) / real(2 * l + 1, dp), l=0, 2)
         end do
       end if
-      ! E_F: Newton steps until N - N_elec changes sign, then Illinois false position on the bracket (as asr_alloy_scf)
+      ! E_F: Newton steps until N - N_elec changes sign, then Illinois false position on the bracket (as asr_alloy_scf), stopped at
+      ! |N - N_elec| < 2e-4.  The electron count is then made exact (see below): the residual left by the search went straight into
+      ! the sphere charges (self-Hartree 2 q/S: up to ~1.5e-4 Ry) and set an SCF noise floor above tol whenever E_F lies in a gap
+      ! (Co2CrAl: dV ~1e-4 for 120 iterations at converged moments).
       nfe = 16
       hlo = .false.; hhi = .false.; side = 0
       do jf = 1, nfe
@@ -211,14 +215,16 @@ contains
         nn = fs * sum([(w(p) * sum(mom(p, 1:nsp, 0, :)), p=1, ncomp)])
         dvc = fs * sum([(w(p) * sum(dosef(p, 1:nsp, :)), p=1, ncomp)])
         if (vb .and. it == 1) print '(a,i2,a,f10.6,a,f9.5,a,f9.4)', '    E_F search ', jf, ': E_F=', ef, '  N-nelec=', nn - nelec, '  DOS(E_F)=', dvc
-        if (abs(nn - nelec) < 2.0e-4_dp) exit
         if (nn < nelec) then
           if (side == -1 .and. hhi) fhi = 0.5_dp * fhi
           elo = ef; flo = nn - nelec; hlo = .true.; side = -1
+          rlo = nn - nelec; molo = mom; dslo = dosef
         else
           if (side == 1 .and. hlo) flo = 0.5_dp * flo
           ehi = ef; fhi = nn - nelec; hhi = .true.; side = 1
+          rhi = nn - nelec; mohi = mom; dshi = dosef
         end if
+        if (abs(nn - nelec) < 2.0e-4_dp .or. jf == nfe) exit
         if (hlo .and. hhi) then
           e = (elo * fhi - ehi * flo) / (fhi - flo)
           if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
@@ -226,16 +232,24 @@ contains
         else
           e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 1.0_dp)))
         end if
-        if (jf == nfe) then
-          e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
-          if (vb) print '(a,i0,a,es10.3,a,f9.5)', '    warning: E_F search not converged after ', nfe, ' passes: N - N_elec =', &
-            nn - nelec, ';  first-order E_F shift', e
-          do p = 1, ncomp; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
-            mom(p, sg, k, l) = mom(p, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, p))**k * dosef(p, sg, l)
-          end do; end do; end do; end do
-        end if
         ef = ef + e
       end do
+      if (abs(nn - nelec) >= 2.0e-4_dp .and. vb) print '(a,i0,a,es10.3)', '    warning: E_F search not converged after ', nfe, &
+        ' passes: N - N_elec =', nn - nelec
+      ! exact electron count: N is linear in the moments, so on a narrow bracket the moments interpolated linearly between its two
+      ! evaluations give N = N_elec exactly (error O(width^2) in the moments, no extra recursion); otherwise a first-order step
+      ! with the DOS at E_F
+      if (hlo .and. hhi .and. abs(ehi - elo) < 0.02_dp) then
+        e = rlo / (rlo - rhi)
+        ef = elo + e * (ehi - elo)
+        mom = molo + e * (mohi - molo); dosef = dslo + e * (dshi - dslo)
+      else if (abs(nn - nelec) > 0.0_dp) then
+        e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
+        do p = 1, ncomp; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
+          mom(p, sg, k, l) = mom(p, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, p))**k * dosef(p, sg, l)
+        end do; end do; end do; end do
+        ef = ef + e
+      end if
       ! densities, core, charges
       dv = 0.0_dp
       do p = 1, ncomp
