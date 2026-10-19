@@ -1104,5 +1104,15 @@ Same-model k-space references (VBH, equal spheres, nk 16):
 | Co2CrAl a = 5.727 | 0.902 | Cr 1.269 | -0.072 | 3.00 (Slater-Pauling 3) | Co 0.760, Cr 1.548, Al -0.071 |
 | B2 FeCo a = 2.857 | Co 1.768 | Fe 2.760 | | | |
 The Co/Cr split of Co2CrAl differs from the paper (total equal): sphere partition; our gate is the same-model k-space / SQS.
-Running (q33): ASR (levels 4, 24 steps, rank 1, bp, kT 1 mRy) for Co2FeAl, Co2CrAl, Co2Fe0.4Cr0.6Al, B2 FeCo; 80-atom SQS (20-site fcc 4b
-SQS, objective 0.040, one potential per species) x 2 for Co2Fe0.4Cr0.6Al.
+ASR results (q33: levels 4, 24 steps, rank 1, bp, kT 1 mRy, VBH) vs the same-model references (muB):
+| system | site | ASR r24 | reference | diff |
+|---|---|---|---|---|
+| B2 FeCo | Fe / Co | 2.767 / 1.711 | k-space 2.760 / 1.768 | +0.3% / -3.2% |
+| Co2FeAl | Co / Fe / Al | 1.106 / 2.694 / -0.107 | k-space 1.161 / 2.758 / -0.102 | -4.7% / -2.3% / ~0 |
+| Co2CrAl | Co / Cr / Al | 0.860 / 1.189 / -0.070 | k-space 0.902 / 1.269 / -0.072 | -4.7% / -6.3% / ~0 |
+| Co2Fe0.4Cr0.6Al | Co / Fe / Cr / Al | 0.936 / 2.751 / 1.237 / -0.082 | SQS 80 atoms x 2 (one potential per species) 1.017 / 2.849 / 1.186 / -0.086 | -8.0% / -3.4% / +4.3% / ~0 |
+(The two SQS cells agree to 1e-3.  Co2CrAl: moments constant to 1e-3 from it 30, dV stalls at ~1e-4: E_F in the minority gap, tiny DOS.)
+Total per formula unit: ASR 4.80 (Co2FeAl) and 3.63 (Co2Fe0.4Cr0.6Al) vs 5.00 / 3.80 (k-space / SQS = Slater-Pauling): the 24-step chain
+smears the minority gap.  Co (minority d edge at E_F in these half-metals) is the low one, the weak-moment / chain-resolution case (as Ni);
+strong moments (Fe, B2 FeCo) agree.  Paper ASR (Table 3): Co 1.075, Fe 2.617, Cr 0.972, Al -0.117, total 3.66 (same smearing).
+Running (q34): the three Heuslers at 36 steps from the r24 potentials.
