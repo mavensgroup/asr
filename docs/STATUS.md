@@ -1111,7 +1111,13 @@ ASR results (q33: levels 4, 24 steps, rank 1, bp, kT 1 mRy, VBH) vs the same-mod
 | Co2FeAl | Co / Fe / Al | 1.106 / 2.694 / -0.107 | k-space 1.161 / 2.758 / -0.102 | -4.7% / -2.3% / ~0 |
 | Co2CrAl | Co / Cr / Al | 0.860 / 1.189 / -0.070 | k-space 0.902 / 1.269 / -0.072 | -4.7% / -6.3% / ~0 |
 | Co2Fe0.4Cr0.6Al | Co / Fe / Cr / Al | 0.936 / 2.751 / 1.237 / -0.082 | SQS 80 atoms x 2 (one potential per species) 1.017 / 2.849 / 1.186 / -0.086 | -8.0% / -3.4% / +4.3% / ~0 |
-(The two SQS cells agree to 1e-3.  Co2CrAl: moments constant to 1e-3 from it 30, dV stalls at ~1e-4: E_F in the minority gap, tiny DOS.)
+(The two SQS cells agree to 1e-3.  Co2CrAl: moments constant to 1e-3 from it 30, but dV stalled at ~1e-4 for 120 iterations -> FIXED, below.)
+SCF did not stop at convergence (Co2CrAl) -- cause and fix (2026-10-19, desktop trial/q35): the E_F search exits at |N - N_elec| < 2e-4 and the
+residual went into the sphere charges (self-Hartree 2 q/S ~1.5e-4 Ry): a dV floor above tol = 1e-5.  In metals false position usually lands far
+inside the window; with E_F in a gap N(E) is flat and the residual is random in [0, 2e-4] (E_F jitter +-3e-4 Ry at constant charges; Anderson
+amplified it to spikes of 1e-2).  Now the count is made exact after the search (moments interpolated linearly between the two bracketing
+evaluations, N linear in the moments; else a first-order DOS step).  Co2CrAl from the stalled potential: converged in 12 iterations
+(dV 3e-6, cell charge 6.5e-7 instead of ~1e-3), moments unchanged (Co 0.8595, Cr 1.189, Al -0.070).  asr_alloy_scf still has the old exit.
 Total per formula unit: ASR 4.80 (Co2FeAl) and 3.63 (Co2Fe0.4Cr0.6Al) vs 5.00 / 3.80 (k-space / SQS = Slater-Pauling): the 24-step chain
 smears the minority gap.  Co (minority d edge at E_F in these half-metals) is the low one, the weak-moment / chain-resolution case (as Ni);
 strong moments (Fe, B2 FeCo) agree.  Paper ASR (Table 3): Co 1.075, Fe 2.617, Cr 0.972, Al -0.117, total 3.66 (same smearing).
