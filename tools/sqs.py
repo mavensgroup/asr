@@ -5,7 +5,8 @@ Searches supercells (Hermite normal forms of determinant N of the primitive cell
 occupation by simulated annealing (pair swaps) that best matches the random-alloy correlation functions
     Pi_k = <sigma_i sigma_j>_{shell k} = (2x - 1)^2      (sigma = +1 for A, -1 for B)
 for the first `npair` pair shells and the smallest triplet (Pi_3 = (2x - 1)^3).  Output: one TOML fragment per SQS with
-[structure] lattice = "cell" (vectors in units of the cubic lattice constant) and the [[site]] list for `asr` kind = "lmto".
+[structure] lattice = "cell" (vectors in units of the cubic lattice constant) and the [[site]] list; add [[species]], [scf],
+[kspace] and [calculation] method = "kspace" (an explicit cell runs in k-space only).
 
   python3 -I tools/sqs.py --lattice bcc --n 16 --x 0.5 --species Fe Co --nsqs 2 --out sqs_dir
 
@@ -177,6 +178,7 @@ def main():
             f.write(f'# SQS {a.lattice} N = {a.n}, x({a.species[0]}) = {a.x}: objective {best:.4f}, pair correlations (shells 1..{a.npair}) '
                     f'{np.round(p, 4).tolist()}, triplet {t:+.4f} (random: {t2:.3f} / {t3:+.3f})\n')
             if deco: f.write('# decorated: ' + ' '.join(a.decorate) + '\n')
+            f.write('# fragment: add [[species]], [scf], [kspace] and [calculation] method = "kspace"\n')
             f.write('[structure]\nlattice = "cell"\nsite_classes = true\nvectors = [' +
                     ', '.join('[' + ', '.join(f'{c:.6f}' for c in v) + ']' for v in sup) + ']\n\n')
             for r, s in zip(pos, sig):

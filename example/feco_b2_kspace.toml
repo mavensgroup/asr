@@ -1,0 +1,57 @@
+# Ordered B2 FeCo, ferromagnetic, k-space.  Recursion counterpart: example/feco_b2_asr.toml (same structure block).
+[calculation]
+name = "B2 FeCo FM"
+method = "kspace"
+
+[structure]
+lattice = "bcc"
+alat = 2.857             # Angstrom
+period = 1
+centering = "P"          # two sublattices: cube corner and cube centre
+
+[[sublattice]]
+name = "a"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Fe"]
+
+[[sublattice]]
+name = "b"
+positions = [[0.5, 0.5, 0.5]]
+species = ["Co"]
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Co"
+z = 27
+nval = 9
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 7.0]
+
+[scf]
+spin = 2
+xc = "vbh"
+mixing = 0.2
+tolerance = 1.0e-6
+max_iterations = 150
+zeta0 = 0.1
+
+[kspace]
+nk = 16
+bz = "tetra"
+dos_nk = 24
+
+[dos]
+emin = -0.9
+emax = 0.6
+npoints = 601
+eta = 0.01
+
+[output]
+dos_file = "feco_kspace_dos.dat"
+params_file = "feco_kspace_params.dat"

@@ -2,8 +2,7 @@
 # The L2_1 cell (a = 5.727 A) is a decoration of the bcc graph with a_bcc = a/2: period = 2, centering = "F".
 # Same machinery for ordered compounds (one species per sublattice) and multicomponent alloys (N species on a sublattice).
 [calculation]
-name = "co2fe04cr06al L2_1, kind sublattice"
-kind = "sublattice"
+name = "Co2Fe0.4Cr0.6Al L2_1"
 
 [structure]
 lattice = "bcc"

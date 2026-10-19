@@ -1,11 +1,17 @@
-# Disordered bcc Cu50Zn50 from the augmented-space recursion (own LMTO parameters, self-consistent).
+# Random bcc Cu0.5Zn0.5 (A2) by the energy-dependent augmented-space recursion: one sublattice with two species.
 [calculation]
 name = "CuZn bcc alloy"
-kind = "alloy"
 
 [structure]
 lattice = "bcc"
 alat = 2.85              # Angstrom
+centering = "I"
+
+[[sublattice]]
+name = "bcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Cu", "Zn"]
+concentrations = [0.5, 0.5]
 
 [[species]]
 symbol = "Cu"
@@ -13,7 +19,6 @@ z = 29
 nval = 11
 konfig = [4, 4, 3, 4]
 occupations = [1.0, 10.0]
-concentration = 0.5
 
 [[species]]
 symbol = "Zn"
@@ -26,19 +31,20 @@ occupations = [2.0, 10.0]
 spin = 1
 xc = "vbh"
 sim_beta = 1.0
+mixing = 0.3
 max_iterations = 60
 
 [asr]
-levels = 3               # Lanczos levels (depth); convergence must be checked
-rank = 2                 # max flipped sites per augmented-space state
-supercell = 8            # ASR graph size in conventional cells
-symmetry = true          # exact D4h reduction
-hamiltonian = "energy-independent"   # or "energy-dependent" (P(z)-S recursion per complex energy; see example/cuzn_alloy_ed.toml)
+levels = 4               # augmented-space generations
+recursion_steps = 24     # Lanczos steps; convergence must be checked
+rank = 1                 # max flipped sites per augmented-space state
+supercell = 8            # graph size in conventional cells
+contour_points = 32
 
 [dos]
 emin = -0.9
 emax = 0.7
-npoints = 801
+npoints = 401
 eta = 0.02
 
 [output]

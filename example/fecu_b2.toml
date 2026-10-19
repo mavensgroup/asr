@@ -1,12 +1,23 @@
-# Ordered B2 (CsCl) FeCu, nonmagnetic; two classes, Madelung and charge transfer included.
+# Ordered B2 FeCu, k-space, unequal ASA spheres.
 [calculation]
 name = "B2 FeCu"
-kind = "lmto"
+method = "kspace"
 
 [structure]
-lattice = "b2"
+lattice = "bcc"
 alat = 3.0               # Angstrom
-ratio = 1.0968           # sphere radius ratio r_Fe / r_Cu (spheres fill the cell volume)
+period = 1
+centering = "P"          # two sublattices: cube corner and cube centre
+
+[[sublattice]]
+name = "a"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Fe"]
+
+[[sublattice]]
+name = "b"
+positions = [[0.5, 0.5, 0.5]]
+species = ["Cu"]
 
 [[species]]
 symbol = "Fe"
@@ -25,18 +36,21 @@ occupations = [1.0, 10.0]
 [scf]
 spin = 1
 xc = "vbh"
-nk = 12
-bz = "tetra"
 mixing = 0.3
 tolerance = 1.0e-6
 max_iterations = 100
+
+[kspace]
+nk = 12
+bz = "tetra"
+dos_nk = 24
+sphere_ratio = 1.0968    # r_Fe / r_Cu (sublattice at the origin over the other; spheres fill the cell volume)
 
 [dos]
 emin = -0.9
 emax = 0.6
 npoints = 801
-smear = 0.01
-nk = 24
+eta = 0.01
 
 [output]
 dos_file = "fecu_b2_dos.dat"
