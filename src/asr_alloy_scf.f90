@@ -209,6 +209,8 @@ contains
     real(dp), allocatable :: xin(:), xout(:), xnext(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:), tmp(:), cum(:)
     real(dp), allocatable :: yc(:, :, :), vtmp(:, :), etmp(:, :)
     real(dp) :: alpha(0:2), c, avw, enu(0:2, 2, 2), xs(2), ef, nelec, r1, lo, hi, nn, vm, dvc, dv, e, fs, s_s
+    real(dp) :: rlo, rhi, molo(2, 2, 0:2, 0:2), mohi(2, 2, 0:2, 0:2), dslo(2, 2, 0:2), dshi(2, 2, 0:2)
+    real(dp), allocatable :: rxlo(:, :, :), rxhi(:, :, :)
     real(dp) :: mom(2, 2, 0:2, 0:2)                  ! (species, spin, k, l)
     integer :: nlev, ngen, mm(4, 2), s, sg, nsp, l, oc, n, it, i, k, nx, nmax, is, nod
     logical :: vb, core_ok
@@ -406,6 +408,8 @@ contains
         ! (Illinois: halve the retained end's residual when the same end is replaced twice), bisection if the estimate leaves
         ! the bracket.  The plain secant oscillated across the steep d-peak step of N(E) (CuZn: 0.8 e in 35 mRy) and never
         ! converged; the leftover was absorbed by a first-order moment correction (unbalanced species charges).
+        ! Stop at |N - N_elec| < 2e-4, then make the count exact (as asr_class_scf): the residual otherwise enters the sphere charges
+        ! (self-Hartree ~1.5e-4 Ry) and sets an SCF dV floor above tol when E_F lies in a gap or a low-DOS region.
         nfe = 16
         hlo = .false.; hhi = .false.; side = 0
         do jf = 1, nfe
@@ -413,14 +417,16 @@ contains
           nn = fs * (xs(1) * sum(mom(1, 1:nsp, 0, :)) + xs(2) * sum(mom(2, 1:nsp, 0, :)))
           dvc = fs * (xs(1) * sum(dosef(1, 1:nsp, :)) + xs(2) * sum(dosef(2, 1:nsp, :)))
           if (vb .and. it == 1) print '(a,i2,a,f10.6,a,f9.5,a,f9.4)', '    E_F search ', jf, ': E_F=', ef, '  N-nelec=', nn - nelec, '  DOS(E_F)=', dvc
-          if (abs(nn - nelec) < 2.0e-4_dp) exit
           if (nn < nelec) then
             if (side == -1 .and. hhi) fhi = 0.5_dp * fhi
             elo = ef; flo = nn - nelec; hlo = .true.; side = -1
+            rlo = nn - nelec; molo = mom; dslo = dosef; rxlo = rhoex
           else
             if (side == 1 .and. hlo) flo = 0.5_dp * flo
             ehi = ef; fhi = nn - nelec; hhi = .true.; side = 1
+            rhi = nn - nelec; mohi = mom; dshi = dosef; rxhi = rhoex
           end if
+          if (abs(nn - nelec) < 2.0e-4_dp .or. jf == nfe) exit
           if (hlo .and. hhi) then
             e = (elo * fhi - ehi * flo) / (fhi - flo)
             if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
@@ -428,17 +434,24 @@ contains
           else
             e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 1.0_dp)))
           end if
-          if (jf == nfe) then          ! out of evaluations: first-order correction of the moments with the DOS at E_F
-            e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
-            if (vb) print '(a,i0,a,es10.3,a,f9.5,a,es10.3)', '    warning: E_F search not converged after ', nfe, ' passes: N - N_elec =', &
-              nn - nelec, ';  first-order E_F shift', e, ', remaining', nn + e * dvc - nelec
-            do s = 1, 2; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
-              mom(s, sg, k, l) = mom(s, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, s))**k * dosef(s, sg, l)
-            end do; end do; end do; end do
-          end if
           ef = ef + e
         end do
-        if (inp%ed_exact .and. jf > nfe) call ed_moments(ef, mom, dosef, rhoex)   ! density at the final E_F
+        if (abs(nn - nelec) >= 2.0e-4_dp .and. vb) print '(a,i0,a,es10.3)', '    warning: E_F search not converged after ', nfe, &
+          ' passes: N - N_elec =', nn - nelec
+        ! exact count: linear interpolation of the moments (and exact density) between the two bracketing evaluations (N is linear in
+        ! the moments); without a narrow bracket a first-order step with the DOS at E_F
+        if (hlo .and. hhi .and. abs(ehi - elo) < 0.02_dp) then
+          e = rlo / (rlo - rhi)
+          ef = elo + e * (ehi - elo)
+          mom = molo + e * (mohi - molo); dosef = dslo + e * (dshi - dslo); rhoex = rxlo + e * (rxhi - rxlo)
+        else if (abs(nn - nelec) > 0.0_dp) then
+          e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
+          do s = 1, 2; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
+            mom(s, sg, k, l) = mom(s, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, s))**k * dosef(s, sg, l)
+          end do; end do; end do; end do
+          ef = ef + e
+          if (inp%ed_exact) call ed_moments(ef, mom, dosef, rhoex)   ! exact density at the final E_F
+        end if
         if (inp%tail_scan > 0) call tail_scan_run(ef)
       else
       ! recursions: four start orbitals per spin
