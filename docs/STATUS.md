@@ -1117,7 +1117,13 @@ residual went into the sphere charges (self-Hartree 2 q/S ~1.5e-4 Ry): a dV floo
 inside the window; with E_F in a gap N(E) is flat and the residual is random in [0, 2e-4] (E_F jitter +-3e-4 Ry at constant charges; Anderson
 amplified it to spikes of 1e-2).  Now the count is made exact after the search (moments interpolated linearly between the two bracketing
 evaluations, N linear in the moments; else a first-order DOS step).  Co2CrAl from the stalled potential: converged in 12 iterations
-(dV 3e-6, cell charge 6.5e-7 instead of ~1e-3), moments unchanged (Co 0.8595, Cr 1.189, Al -0.070).  asr_alloy_scf still has the old exit.
+(dV 3e-6, cell charge 6.5e-7 instead of ~1e-3), moments unchanged (Co 0.8595, Cr 1.189, Al -0.070).
+Ported to asr_alloy_scf for the asr_ed route only.  The older P(z) - S route keeps the plain exit: its A = B test SCF (test_alloy_scf, Ag, 8 levels,
+hard-core screening) has an antisymmetric A/B charge mode with gain ~ -9 per iteration (physical estimate ~ -0.6) that diverges as soon as the
+count is accurate -- with the exact-count step, with a first-order step only, and with the OLD code at a 1e-6 tolerance (diagnostic clones,
+desktop ~/asr_v1, ~/asr_v2); the 2e-4 residual noise happened to keep it damped.  Open issue for that (cross-check) route, not for asr_ed.
+36 steps (q34): Co2FeAl Co 1.154 / Fe 2.721 / Al -0.104 (k-space 1.161 / 2.758 / -0.102: -0.6% / -1.3%); Co2CrAl Co 0.816 / Cr 1.273 /
+Al -0.064 (k-space 0.902 / 1.269: Co -9.5%, Cr +0.3%); Co2Fe0.4Cr0.6Al running.
 Total per formula unit: ASR 4.80 (Co2FeAl) and 3.63 (Co2Fe0.4Cr0.6Al) vs 5.00 / 3.80 (k-space / SQS = Slater-Pauling): the 24-step chain
 smears the minority gap.  Co (minority d edge at E_F in these half-metals) is the low one, the weak-moment / chain-resolution case (as Ni);
 strong moments (Fe, B2 FeCo) agree.  Paper ASR (Table 3): Co 1.075, Fe 2.617, Cr 0.972, Al -0.117, total 3.66 (same smearing).
