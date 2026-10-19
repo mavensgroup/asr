@@ -408,8 +408,8 @@ contains
         ! (Illinois: halve the retained end's residual when the same end is replaced twice), bisection if the estimate leaves
         ! the bracket.  The plain secant oscillated across the steep d-peak step of N(E) (CuZn: 0.8 e in 35 mRy) and never
         ! converged; the leftover was absorbed by a first-order moment correction (unbalanced species charges).
-        ! Stop at |N - N_elec| < 2e-4, then make the count exact (as asr_class_scf): the residual otherwise enters the sphere charges
-        ! (self-Hartree ~1.5e-4 Ry) and sets an SCF dV floor above tol when E_F lies in a gap or a low-DOS region.
+        ! Stop at |N - N_elec| < 2e-4; on the asr_ed route the count is then made exact (as asr_class_scf): the residual otherwise enters
+        ! the sphere charges (self-Hartree ~1.5e-4 Ry) and sets an SCF dV floor above tol when E_F lies in a gap or a low-DOS region.
         nfe = 16
         hlo = .false.; hhi = .false.; side = 0
         do jf = 1, nfe
@@ -438,13 +438,16 @@ contains
         end do
         if (abs(nn - nelec) >= 2.0e-4_dp .and. vb) print '(a,i0,a,es10.3)', '    warning: E_F search not converged after ', nfe, &
           ' passes: N - N_elec =', nn - nelec
-        ! exact count: linear interpolation of the moments (and exact density) between the two bracketing evaluations (N is linear in
-        ! the moments); without a narrow bracket a first-order step with the DOS at E_F
-        if (hlo .and. hhi .and. abs(ehi - elo) < 0.02_dp) then
+        ! exact count (asr_ed route): linear interpolation of the moments between the two bracketing evaluations (N is linear in the
+        ! moments); without a narrow bracket a first-order step with the DOS at E_F.  The older P(z) - S route keeps the plain 2e-4 exit
+        ! (first-order step only when the search is exhausted): its A = B SCF (test_alloy_scf) has an antisymmetric A/B charge mode
+        ! with gain ~ -9 per iteration that diverges as soon as the count is accurate (also with a 1e-6 tolerance and no correction);
+        ! the residual noise of the 2e-4 exit happened to keep it damped (STATUS "Sublattices").
+        if (asr_ed .and. hlo .and. hhi .and. abs(ehi - elo) < 0.02_dp) then
           e = rlo / (rlo - rhi)
           ef = elo + e * (ehi - elo)
           mom = molo + e * (mohi - molo); dosef = dslo + e * (dshi - dslo); rhoex = rxlo + e * (rxhi - rxlo)
-        else if (abs(nn - nelec) > 0.0_dp) then
+        else if (abs(nn - nelec) >= 2.0e-4_dp .or. (asr_ed .and. abs(nn - nelec) > 0.0_dp)) then
           e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
           do s = 1, 2; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
             mom(s, sg, k, l) = mom(s, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, s))**k * dosef(s, sg, l)
