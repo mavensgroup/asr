@@ -1,0 +1,65 @@
+# Random fcc Fe0.66Ni0.14Cr0.20 (austenitic stainless steel), non-magnetic: the multicomponent gate of
+# Alam & Mookerjee, JPCM 21, 195503 (2009), Fig. 2.  The paper uses the lattice constant "at the total-energy minimum"
+# without quoting it; a = 3.59 A here is the experimental austenite value (r_WS = 2.65 Bohr).
+# One sublattice with three species: the N-species site-class operator (asr_augcls) in the class SCF.
+[calculation]
+name = "Fe66Ni14Cr20 fcc"
+
+[structure]
+lattice = "fcc"
+alat = 3.59              # Angstrom
+centering = "F"
+
+[[sublattice]]
+name = "fcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Fe", "Ni", "Cr"]
+concentrations = [0.66, 0.14, 0.20]
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Ni"
+z = 28
+nval = 10
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 8.0]
+
+[[species]]
+symbol = "Cr"
+z = 24
+nval = 6
+konfig = [4, 4, 3, 4]
+occupations = [1.0, 5.0]
+
+[scf]
+save_potential = "fe66ni14cr20_pot.dat"
+spin = 1
+xc = "vbh"
+sim_beta = 1.0
+mixing = 0.2
+max_iterations = 100
+tolerance = 1e-05
+
+[asr]
+levels = 4
+recursion_steps = 24
+rank = 1
+contour_points = 32
+supercell = 8
+ed_terminator = "bp"
+fermi_kt = 0.001
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 321
+eta = 0.02
+
+[output]
+dos_file = "fe66ni14cr20_dos.dat"

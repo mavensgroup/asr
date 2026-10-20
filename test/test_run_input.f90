@@ -94,6 +94,7 @@ program test_run_input
   call example('ag_fcc.toml', 'kspace'); call example('fe_bcc.toml', 'kspace'); call example('feco_b2_kspace.toml', 'kspace')
   call example('fecu_b2.toml', 'kspace'); call example('feco_b2_asr.toml', 'asr'); call example('cuzn_b2.toml', 'asr')
   call example('cuzn_alloy.toml', 'asr'); call example('co2fe04cr06al_l21.toml', 'asr')
+  call example('fe66ni14cr20_fcc.toml', 'asr')
   call report()
 contains
   subroutine example(name, method)

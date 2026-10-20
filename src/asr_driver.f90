@@ -430,7 +430,7 @@ contains
     character(len=8), allocatable :: labels(:)
     real(dp), allocatable :: zc(:), swsc(:), tsp(:)
     integer, allocatable :: nvc(:), natc(:)
-    real(dp) :: t0, t_scf, avw, tot, qcell, mcell
+    real(dp) :: t0, t_scf, avw, tot, qcell, mcell, fsp
 
     ok = .false.
     t0 = rep_wall()
@@ -475,13 +475,14 @@ contains
     write (u, '(a)') '# '//inp%name//'   states/Ry per atom of each component, summed over spin; total = per site (weighted)'
     write (u, '(a,f12.8)') '# E_F = ', res%ef
     write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2'
+    fsp = 2.0_dp / real(res%nspin, dp)                 ! res%edos is per spin channel; spin = 1 holds both spins in one
     do ie = 1, inp%npoints
       tsp = 0.0_dp
       do sg = 1, res%nspin
-        tsp(sg) = sum([(res%comp_w(p) * sum(res%edos(ie, :, p, sg)), p=1, ncomp)])
+        tsp(sg) = fsp * sum([(res%comp_w(p) * sum(res%edos(ie, :, p, sg)), p=1, ncomp)])
       end do
       tot = sum(tsp)
-      write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
+      write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
