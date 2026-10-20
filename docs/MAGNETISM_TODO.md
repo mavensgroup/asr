@@ -9,7 +9,11 @@ ASR (energy-dependent) vs our SQS with one potential per species (q32, STATUS "O
 (36 steps), FeV Fe agree within ~0.2-5%; FeV V 0.07 muB off (small induced moment); FeRh Fe -4.8% (flat in steps) is the only open item.
 Use 24 steps for strong moments, 36 for Ni-type.  Next project: partial (sublattice) disorder -> multicomponent -> SRO (HANDOFF below).
 
-## HANDOFF (next thread): partial disorder, then multicomponent, then SRO (toward HEA)
+## HANDOFF (next thread): docs/HANDOFF_hea_sro.md -- multicomponent sublattice disorder, then SRO (toward HEA)
+Item 1 below is DONE (2026-10-20: one input format, SCF stops, r36 Co2Fe0.4Cr0.6Al converged; STATUS "Sublattices").  Items 2 and 3 are
+specified in detail in docs/HANDOFF_hea_sro.md, which supersedes the short notes here.
+
+## (previous) HANDOFF: partial disorder, then multicomponent, then SRO (toward HEA)
 Order (each with its paper gate, energy-dependent AMscf operator throughout, ed-is-target-route):
 1. **Sublattice (partial) disorder**: concentrations per sublattice, some sublattices fully ordered.  Gate: Chakraborty, Chakrabarti, Mookerjee,
    cond-mat/0606737 (references/0606737v2.pdf): L2_1 Co2Fe0.4Cr0.6Al, a = 5.727 A, Co 8c, Al 4a, Fe/Cr random on 4b; Table 3 moments Co 1.075,
