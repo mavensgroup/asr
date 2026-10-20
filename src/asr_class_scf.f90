@@ -320,7 +320,9 @@ contains
           end do
         end do
       end if
-      call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix)
+      ! restart safeguards only far from self-consistency (dV > 1e-3); closer the map is linear (Co2Fe0.4Cr0.6Al: the Cr response
+      ! is linear to 2e-5 e for 5e-4 Ry shifts) and restarts every few iterations stalled the SCF at dV ~ 1e-4
+      call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix, safeguard=dv > 1.0e-3_dp)
       do p = 1, ncomp
         n = cr(p)%mesh%n
         do sg = 1, nsp
@@ -345,6 +347,7 @@ contains
         print '(a,i3,a,es10.3,a,f10.6,a,*(f8.4))', 'it', it, '  dV=', dv, '  EF=', ef, '  qnet=', cr(:)%qnet
         if (nsp == 2) print '(a,*(f8.4))', '                                      m   =', cr(:)%moment
         if (ed_nchain > 0) print '(a,f6.1,a,i0,a)', '      mean recursion depth used ', real(ed_nlev, dp) / real(ed_nchain, dp), ' of ', nlev, ' levels'
+        print '(a,i0,a,i0)', '      Anderson history ', mixer%nh, '  restarts so far ', mixer%nrestart
       end if
       if (dv < inp%tol .and. it > 3) then; res%converged = .true.; exit; end if
     end do

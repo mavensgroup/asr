@@ -1128,3 +1128,28 @@ Total per formula unit: ASR 4.80 (Co2FeAl) and 3.63 (Co2Fe0.4Cr0.6Al) vs 5.00 / 
 smears the minority gap.  Co (minority d edge at E_F in these half-metals) is the low one, the weak-moment / chain-resolution case (as Ni);
 strong moments (Fe, B2 FeCo) agree.  Paper ASR (Table 3): Co 1.075, Fe 2.617, Cr 0.972, Al -0.117, total 3.66 (same smearing).
 Running (q34): the three Heuslers at 36 steps from the r24 potentials.
+Co2Fe0.4Cr0.6Al at 36 steps did not stop either (fixed binary, q35/cfca_r36_fix): dV 2.5e-5 at it 15, then 2-3e-4; the Cr charge
+alternates in sign between iterations (+-5e-4 e), Co / Fe / Al stable to 1e-4.  Ruled out (q35, same start potential): the adaptive depth
+(depth_tol = 0: same floor), the BP tail (edges and depths frozen per chain once dV < 2e-3: same floor; the avg2 tail: no floor reached
+either, slower, Co 0.930).  Probe (q36): one SCF evaluation at the r24 potential with the Cr potential shifted by t 5e-4 Ry, t = -1, 0, 1:
+the output is linear to 2e-5 in the charges (Cr qnet -0.28250 / -0.29387 / -0.30522; production bp + adaptive depth) -> no noise; the Cr
+response is dq/dV = -23 e/Ry, gain of the Cr potential ~ -12 (ordinary ASA charge sloshing, strong).  Cause found in asr_mixing: after a
+history restart the new pairs were written at the old ring position while the fit uses columns 1..nh, so the newest pair was left out and
+stale pairs from before the restart were fitted; restarts (|r| grew by 2) fire in exactly the near-converged regime.  Fixed (history refilled
+from column 1; test_mixing checks the secant step after a restart).  Second change: in class_scf the two restart safeguards (|r| grew
+by 2; step against the residual) act only while dV > 1e-3 -- near convergence they fired every 2-4 iterations and reduced Anderson to
+linear mixing.  q37, same start potential, production settings (36 steps, bp, adaptive depth, mixing 0.1):
+  old mixer: no stop (dV 1e-4 .. 3e-4 for 21 iterations);  ring fix only (m1): converged in 33 iterations (dV 9.2e-6);
+  ring fix + no safeguards below 1e-3 (m3, committed): converged in 26 iterations (dV 1.9e-6).  Cell charge -7.5e-7.
+  (m2, ring fix without the growth test only: still restarted by the residual test, no better; stopped.)
+Converged r36 Co2Fe0.4Cr0.6Al (m3): Co 0.942, Fe 2.773, Cr 1.222, Al -0.082 muB (m1 agrees to 3e-4); vs SQS (one potential per
+species) 1.017 / 2.849 / 1.186 / -0.086: -7.4% / -2.7% / +3.0% / ~0; total 3.645 muB / f.u. (Slater-Pauling 3.8; chain smearing as above).
+
+## One input format, one program (2026-10-19)
+`asr <input.toml>` reads one format (asr_driver): structure (decorated sc/bcc/fcc + [[sublattice]], or an explicit cell + [[site]]) and
+species; `[calculation] method = "asr"` (default, every structure: pure, ordered compounds, partial disorder, binary .. HEA) or
+`"kspace"` (ordered only; the decoration is reduced to its primitive cell by the centering translations that map every sublattice onto itself,
+one ASA class per sublattice; B2 unequal spheres via [kspace] sphere_ratio).  Removed: kind = "lmto" / "alloy" / "model" readers
+(asr_input_lmto keeps the types; asr_alloy_driver, asr_input deleted; asr_alloy_scf stays as a library route for the tests).  An old file gets
+"kind is no longer read" with a pointer to method.  Examples converted (test_run_input reads all of them).  Gate: bcc Fe, B2 FeCo, B2 FeCu
+(sphere ratio 1.0968) in k-space, old reader vs new: identical iterations, dV, E_F, charges and moments (desktop ~/asr_pd/trial/one).
