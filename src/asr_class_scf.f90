@@ -105,6 +105,8 @@ contains
     real(dp), allocatable :: xin(:), xout(:), xnext(:), wmix(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:)
     real(dp), allocatable :: tmp(:), cum(:), yc(:, :, :), vtmp(:, :), etmp(:, :), esum(:)
     real(dp) :: alpha(0:2), c, avw, r1, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell, rlo, rhi, etot, ep, br
+    real(dp) :: ef_in, r2n, denu, rdv, efshift
+    integer :: npass, efmode, pdv, sgdv, kdv
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg
     logical :: vb, cubic, hlo, hhi, core_ok
@@ -156,6 +158,7 @@ contains
       do sg = 1, nsp; enu(:, sg, p) = etmp(:, sg); end do
       deallocate (vtmp, etmp)
     end do
+    ef_in = huge(1.0_dp)
     if (len_trim(inp%pot_in) > 0) call read_potentials()
     allocate (y(2, 0:2, nmax, 0:2, ncomp, 2)); y = 0.0_dp
     call all_params()
@@ -190,6 +193,7 @@ contains
     allocate (mom(ncomp, 2, 0:2, 0:2), dosef(ncomp, 2, 0:2))
     ed_depth_tol = inp%depth_tol; ed_tail = inp%ed_tail
     ef = maxval(enu(2, 1:nsp, :)) + 0.35_dp
+    if (ef_in < huge(1.0_dp)) ef = ef_in                 ! E_F of the start potential's run
     allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncomp), res%hist_qnet(inp%maxit, ncomp), &
               res%hist_etot(inp%maxit), esum(ncomp))
     br = inp%beta; if (inp%beta_restart > 0.0_dp) br = inp%beta_restart
@@ -213,7 +217,8 @@ contains
         end do
       end if
       ! E_F: Newton steps until N - N_elec changes sign, then Illinois false position on the bracket (as asr_alloy_scf), stopped at
-      ! |N - N_elec| < 2e-4.  The electron count is then made exact (see below): the residual left by the search went straight into
+      ! |N - N_elec| < 2e-4 or when the Newton step is below 1e-3 Ry (one contour per iteration close to self-consistency: the
+      ! first-order step below is exact at the fixed point, where E_F no longer moves between iterations).  The electron count is then made exact (see below): the residual left by the search went straight into
       ! the sphere charges (self-Hartree 2 q/S: up to ~1.5e-4 Ry) and set an SCF noise floor above tol whenever E_F lies in a gap
       ! (Co2CrAl: dV ~1e-4 for 120 iterations at converged moments).
       nfe = 16
@@ -232,7 +237,8 @@ contains
           ehi = ef; fhi = nn - nelec; hhi = .true.; side = 1
           rhi = nn - nelec; mohi = mom; dshi = dosef
         end if
-        if (abs(nn - nelec) < 2.0e-4_dp .or. jf == nfe) exit
+        npass = jf
+        if (abs(nn - nelec) < max(2.0e-4_dp, 1.0e-3_dp * dvc) .or. jf == nfe) exit
         if (hlo .and. hhi) then
           e = (elo * fhi - ehi * flo) / (fhi - flo)
           if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
@@ -242,13 +248,15 @@ contains
         end if
         ef = ef + e
       end do
-      if (abs(nn - nelec) >= 2.0e-4_dp .and. vb) print '(a,i0,a,es10.3)', '    warning: E_F search not converged after ', nfe, &
+      if (abs(nn - nelec) >= max(2.0e-4_dp, 1.0e-3_dp * dvc) .and. vb) print '(a,i0,a,es10.3)', '    warning: E_F search not converged after ', nfe, &
         ' passes: N - N_elec =', nn - nelec
+      efmode = 0; efshift = 0.0_dp
       ! exact electron count: N is linear in the moments, so on a narrow bracket the moments interpolated linearly between its two
       ! evaluations give N = N_elec exactly (error O(width^2) in the moments, no extra recursion); otherwise a first-order step
       ! with the DOS at E_F
       if (hlo .and. hhi .and. abs(ehi - elo) < 0.02_dp) then
         e = rlo / (rlo - rhi)
+        efshift = elo + e * (ehi - elo) - ef; efmode = 1
         ef = elo + e * (ehi - elo)
         mom = molo + e * (mohi - molo); dosef = dslo + e * (dshi - dslo)
       else if (abs(nn - nelec) > 0.0_dp) then
@@ -256,10 +264,10 @@ contains
         do p = 1, ncomp; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
           mom(p, sg, k, l) = mom(p, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, p))**k * dosef(p, sg, l)
         end do; end do; end do; end do
-        ef = ef + e
+        ef = ef + e; efshift = e; efmode = 2
       end if
       ! densities, core, charges; esum = band + core eigenvalue sums - int n v~_in (kinetic energy + int n 2Z/r)
-      dv = 0.0_dp
+      dv = 0.0_dp; pdv = 0; sgdv = 0; kdv = 0; denu = 0.0_dp
       do p = 1, ncomp
         n = cr(p)%mesh%n
         allocate (nval(n, nsp), ncore(n, nsp), ntot(n), tmp(n), cum(n), yc(2, 0:0, n))
@@ -324,10 +332,13 @@ contains
           i = offx(p) + (sg - 1) * (n + 3)
           xout(i + 2:i + n) = vh(2:n) + vxc(2:n, sg) + vm
           xout(i + 1) = xout(i + 2)
-          dvc = maxval(abs(xout(i + 2:i + n) - xin(i + 2:i + n)) * cr(p)%mesh%r(2:n) / (1.0_dp + cr(p)%mesh%r(2:n)))
-          dv = max(dv, dvc)
+          do k = 2, n
+            rdv = abs(xout(i + k) - xin(i + k)) * cr(p)%mesh%r(k) / (1.0_dp + cr(p)%mesh%r(k))
+            if (rdv > dv) then; dv = rdv; pdv = p; sgdv = sg; kdv = k; end if
+          end do
           do l = 0, 2
             xout(i + n + 1 + l) = enu(l, sg, p) + 0.7_dp * mom(p, sg, 1, l) / max(mom(p, sg, 0, l), 1.0e-6_dp)
+            denu = max(denu, abs(xout(i + n + 1 + l) - xin(i + n + 1 + l)))
           end do
         end do
         deallocate (ntot, vh, vxc, rho, exc)
@@ -345,6 +356,7 @@ contains
       ! restart safeguards only far from self-consistency (dV > 1e-2); closer the map is linear (Co2Fe0.4Cr0.6Al: the Cr response
       ! is linear to 2e-5 e for 5e-4 Ry shifts) and restarts every few iterations stalled the SCF at dV ~ 1e-4; Fe66Ni14Cr20 at
       ! levels 4 restarted at dV ~ 1.5e-3 (threshold 1e-3) 15 times in 35 iterations and never converged
+      r2n = sqrt(sum(wmix * (xout - xin)**2))
       call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix, safeguard=dv > 1.0e-2_dp, beta_restart=br)
       do p = 1, ncomp
         n = cr(p)%mesh%n
@@ -372,6 +384,9 @@ contains
         print '(a,f18.8,a)', '      E_total =', etot, ' Ry/site'
         if (ed_nchain > 0) print '(a,f6.1,a,i0,a)', '      mean recursion depth used ', real(ed_nlev, dp) / real(ed_nchain, dp), ' of ', nlev, ' levels'
         print '(a,i0,a,i0)', '      Anderson history ', mixer%nh, '  restarts so far ', mixer%nrestart
+        print '(a,i0,a,a,a,es9.2,a,es10.3,a,i0,a,i0,a,f8.4,a,es10.3)', '      E_F passes ', npass, ' final ', &
+          trim(merge('bracket', 'dos    ', efmode == 1)), ' shift ', efshift, '  |r|_2=', r2n, '  max dV: comp ', pdv, ' spin ', sgdv, &
+          ' r=', cr(max(pdv, 1))%mesh%r(max(kdv, 1)), '  max dE_nu=', denu
       end if
       if (len_trim(inp%pot_out) > 0) call write_potentials()       ! every iteration: a stopped run restarts from here
       if (dv < inp%tol .and. it > 3) then; res%converged = .true.; exit; end if
@@ -533,7 +548,8 @@ contains
     subroutine write_potentials()
       integer :: u, pp_, gg, kk
       open (newunit=u, file=trim(inp%pot_out), status='replace', action='write')
-      write (u, '(a)') '# asr sublattice component potentials (Ry): nspin ncomp; per component: z n r(n); E_nu(0:2) per spin; v(r_k, spin)'
+      write (u, '(a,es25.16)') '# asr sublattice component potentials (Ry): nspin ncomp; per component: z n r(n); E_nu(0:2) per spin; &
+                             &v(r_k, spin);  E_F= ', ef
       write (u, '(2i5)') nsp, ncomp
       do pp_ = 1, ncomp
         write (u, '(f8.2,i8,es25.16)') inp%spec(psp(pp_))%z, cr(pp_)%mesh%n, cr(pp_)%mesh%r(cr(pp_)%mesh%n)
@@ -546,9 +562,16 @@ contains
     subroutine read_potentials()
       integer :: u, pp_, gg, kk, nf, nspf, ncf, ios
       real(dp) :: zf, rf, vv2(2), ee(0:2, 2)
+      character(len=512) :: line
       open (newunit=u, file=trim(inp%pot_in), status='old', action='read', iostat=ios)
       if (ios /= 0) error stop 'class_scf: cannot open start_potential'
-      read (u, *); read (u, *) nspf, ncf
+      read (u, '(a)') line
+      kk = index(line, 'E_F=')
+      if (kk > 0) then
+        read (line(kk + 4:), *, iostat=ios) ef_in
+        if (ios /= 0) ef_in = huge(1.0_dp)
+      end if
+      read (u, *) nspf, ncf
       if (nspf > nsp) error stop 'class_scf: start_potential is spin polarised, the run is not'
       if (ncf /= ncomp) error stop 'class_scf: start_potential has a different number of components'
       do pp_ = 1, ncomp
