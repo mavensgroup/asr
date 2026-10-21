@@ -29,6 +29,21 @@ program test_mixing
   call check(maxval(abs(x - tgt)) < 1.0e-9_dp, 'Anderson mixing converges the stiff map')
   call check(it < 40, 'in fewer than 40 iterations')
 
+  ! beta_restart: the first step (no history) is the damped linear one, and the stiff map still converges
+  block
+    type(anderson_t) :: b
+    call anderson_init(b, 4, 6)
+    x = 0.0_dp; xo = F(x)
+    call anderson_step(b, x, xo, 0.3_dp, xn, beta_restart=0.03_dp)
+    call check(maxval(abs(xn - 0.03_dp * xo)) < 1.0e-14_dp, 'first step = x + beta_restart r')
+    x = xn
+    do it = 1, 60
+      xo = F(x); call anderson_step(b, x, xo, 0.3_dp, xn, beta_restart=0.03_dp); x = xn
+      if (maxval(abs(x - tgt)) < 1.0e-10_dp) exit
+    end do
+    call check(maxval(abs(x - tgt)) < 1.0e-9_dp, 'Anderson with beta_restart converges the stiff map')
+  end block
+
   ! after a restart the newest secant pair is the history: a kick far from the fixed point of a non-linear 1-d map restarts it
   ! (|r| grows), and the next step must be the secant step through the last two iterates (old ring bug: a stale pair was fitted)
   block

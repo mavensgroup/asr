@@ -3,7 +3,8 @@
 !> with gamma from min | r_k - sum_j gamma_j dR_j |.  History length m.
 !> Safeguard: the history is dropped when |r_k| grew by more than a factor 2 (the newest pair is kept), and when the Anderson step
 !> points against the current residual, (x_{k+1} - x_k).r_k <= 0: then the step is first retried with the newest pair alone, and
-!> only if that also points against r_k it is the linear step x_k + beta_restart r_k with an empty history.  In strongly
+!> only if that also points against r_k it is the linear step x_k + beta_restart r_k with an empty history (beta_restart is
+!> also the step of the first iteration, which has no history either).  In strongly
 !> non-linear early iterations (magnetic starts) the extrapolation otherwise marched the potential away from F(x) at the
 !> safety-clamp rate.  beta_restart (default beta) may be smaller than beta: a stiff map (charge sloshing between alloy
 !> components, Fe66Ni14Cr20 levels 4: gain ~45) is unstable under the linear step at beta = 0.2 (dV x8 after every restart, a
@@ -82,8 +83,8 @@ contains
       integer :: i, j, nh, info, ipiv(a%m)
       external :: dgesv
       nh = a%nh
+      if (nh == 0) then; xnext = xin + br * r; return; end if    ! no history (first step, after a restart): as a restart
       xnext = xin + beta * r
-      if (nh == 0) return
       do j = 1, nh
         do i = 1, nh
           amat(i, j) = sum(wt * a%dr(:, i) * a%dr(:, j))
