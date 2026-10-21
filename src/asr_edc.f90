@@ -98,7 +98,10 @@ contains
       wk%up = wk%u
       wk%u = wk%w / b(k)
     end do
-    ed_nchain = ed_nchain + 1; ed_nlev = ed_nlev + m
+    !$omp atomic
+    ed_nchain = ed_nchain + 1
+    !$omp atomic
+    ed_nlev = ed_nlev + m
     call cf_species(a, b, cc, m, z, g, fa)
     if (present(acoef)) acoef(1:m) = a(1:m)
     if (present(bcoef)) bcoef(1:m) = b(1:m)

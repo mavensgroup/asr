@@ -15,7 +15,8 @@
 !>                  concentrations = [x_A, ...] (sum 1; may be omitted for one species)
 !>   [[site]]       (lattice = "cell") position = [x, y, z] (Cartesian, alat units), species = "<symbol>"
 !>   [scf]          spin, xc, mixing, tolerance, max_iterations, zeta0, relativistic; method = "asr" also: sim_beta,
-!>                  save_potential / start_potential
+!>                  save_potential (written every iteration) / start_potential, mixing_restart (linear step after an Anderson
+!>                  restart; default = mixing; smaller for stiff charge-transfer maps)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull|bp|avg2), fermi_kt, fermi_poles, depth_tol
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
@@ -251,15 +252,18 @@ contains
 
     call section(table, 'scf', child)
     call check_keys(child, ['spin           ', 'xc             ', 'sim_beta       ', 'mixing         ', 'tolerance      ', &
-                            'max_iterations ', 'zeta0          ', 'relativistic   ', 'start_potential', 'save_potential '], '[scf]', msg)
+                            'max_iterations ', 'zeta0          ', 'relativistic   ', 'start_potential', 'save_potential ', &
+                            'mixing_restart '], '[scf]', msg)
     if (len(msg) > 0) return
-    if (kspace .and. (child%has_key('sim_beta') .or. child%has_key('start_potential') .or. child%has_key('save_potential'))) then
-      msg = '[scf] sim_beta / start_potential / save_potential are read with method = "asr" only'; return
+    if (kspace .and. (child%has_key('sim_beta') .or. child%has_key('start_potential') .or. child%has_key('save_potential') &
+                      .or. child%has_key('mixing_restart'))) then
+      msg = '[scf] sim_beta / start_potential / save_potential / mixing_restart are read with method = "asr" only'; return
     end if
     call get_value(child, 'spin', inp%ci%nspin, 1)
     call get_value(child, 'xc', xcs, 'vbh'); inp%ci%xc = xcs
     call get_value(child, 'sim_beta', inp%ci%sim_beta, 1.0_dp)
     call get_value(child, 'mixing', inp%ci%beta, 0.3_dp)
+    call get_value(child, 'mixing_restart', inp%ci%beta_restart, 0.0_dp)
     call get_value(child, 'tolerance', inp%ci%tol, merge(1.0e-6_dp, 1.0e-5_dp, kspace))
     call get_value(child, 'max_iterations', inp%ci%maxit, merge(100, 60, kspace))
     call get_value(child, 'zeta0', inp%ci%zeta0, merge(0.4_dp, 0.1_dp, kspace))
@@ -464,6 +468,7 @@ contains
       mcell = mcell + res%comp_w(p) * res%comp(p)%moment * inp%ci%dec%nsite
     end do
     print '(a,l1,a,i0,a,f10.6,a)', '  SCF converged=', res%converged, '  iterations=', res%iter, '  E_F=', res%ef, ' Ry'
+    print '(a,f18.8,a)', '  total energy =', res%etot, ' Ry per site'
     if (.not. res%converged) print '(a)', '  WARNING: SCF did not converge'
     do p = 1, ncomp
       print '(a,a12,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
@@ -507,6 +512,9 @@ contains
       write (ru, '(a,*(f8.4))') '      concentrations ', inp%ci%conc(1:inp%ci%nsc(kap), kap)
     end do
     call rep_scf_history(ru, labels, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%ci%tol, res%converged)
+    write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
+    write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)
+    write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per site'
     block
       type(asa_class_result_t), allocatable :: rc(:)
       rc = res%comp
