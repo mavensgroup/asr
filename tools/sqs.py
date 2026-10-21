@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Special quasirandom structures (SQS) for a binary A_x B_(1-x) on a cubic Bravais lattice (bcc / fcc).
+"""Special quasirandom structures (SQS) for a random alloy of N >= 2 species on a cubic Bravais lattice (bcc / fcc).
 
 Searches supercells (Hermite normal forms of determinant N of the primitive cell, compact shapes only) and, in each, the
-occupation by simulated annealing (pair swaps) that best matches the random-alloy correlation functions
-    Pi_k = <sigma_i sigma_j>_{shell k} = (2x - 1)^2      (sigma = +1 for A, -1 for B)
-for the first `npair` pair shells and the smallest triplet (Pi_3 = (2x - 1)^3).  Output: one TOML fragment per SQS with
+occupation by simulated annealing (swaps of two sites with different species) that best matches the random alloy on the first
+`npair` pair shells: the pair probabilities
+    P_ss'(k) = (bonds s-s' in shell k) / (bonds in shell k) = x_s x_s'      (all species pairs),
+objective sum_k w_k sum_ss' |P_ss'(k) - x_s x_s'|.  For a binary this is exactly |Pi_k - (2x - 1)^2| with the spin correlation
+Pi_k = <sigma_i sigma_j>_k (sigma = +1 for A, -1 for B), and the smallest triplet (Pi_3 = (2x - 1)^3) is matched as well; the
+binary search is the one of the binary-only version (same random stream, same SQS for the same seed).  Output: one TOML fragment per SQS with
 [structure] lattice = "cell" (vectors in units of the cubic lattice constant) and the [[site]] list; add [[species]], [scf],
 [kspace] and [calculation] method = "kspace" (an explicit cell runs in k-space only).
 
   python3 -I tools/sqs.py --lattice bcc --n 16 --x 0.5 --species Fe Co --nsqs 2 --out sqs_dir
+  python3 -I tools/sqs.py --lattice fcc --n 40 --species Co Cr Fe Mn Ni --x 0.2 0.2 0.2 0.2 0.2 --out hea   (--x: all
+  concentrations, or only x of the first species for a binary)
 
 Partial (sublattice) disorder: the SQS is built on the disordered sublattice only and every site is decorated with the ordered
 atoms at fixed offsets (cubic lattice-constant units), e.g. L2_1 Co2(Fe,Cr)Al with the Fe/Cr 4b sublattice as the fcc SQS lattice:
@@ -114,30 +119,46 @@ def correlations(sig, shells, tri):
     return np.array(pis), pt
 
 
-def anneal(n_a, shells, tri, target2, target3, w, rng, steps=20000):
-    n = shells[0].shape[0]
-    sig = np.array([1.0] * n_a + [-1.0] * (n - n_a)); rng.shuffle(sig)
-    def obj(s):
-        p, t = correlations(s, shells, tri)
-        return np.sum(w * np.abs(p - target2)) + np.abs(t - target3)
-    cur = obj(sig); best, bsig = cur, sig.copy()
+def pair_probs(lab, shells, ns):
+    """P[k, s, s'] = bond fraction s-s' in shell k (lab: species index per site)."""
+    occ = np.eye(ns)[lab]
+    return np.array([occ.T @ m @ occ / m.sum() for m in shells])
+
+
+def anneal(counts, shells, tri, x, w, rng, steps=20000):
+    """counts: sites per species; x: concentrations.  Returns (objective, species index per site)."""
+    ns = len(counts)
+    lab = np.concatenate([np.full(c, s) for s, c in enumerate(counts)]); rng.shuffle(lab)
+    xx = np.outer(x, x)
+    if ns == 2:
+        t2, t3 = (2 * x[0] - 1) ** 2, (2 * x[0] - 1) ** 3
+        def obj(l):
+            p, t = correlations(1.0 - 2.0 * l, shells, tri)
+            return np.sum(w * np.abs(p - t2)) + np.abs(t - t3)
+    else:
+        def obj(l):
+            return np.sum(w * np.abs(pair_probs(l, shells, ns) - xx).sum(axis=(1, 2)))
+    cur = obj(lab); best, blab = cur, lab.copy()
     for it in range(steps):
         T = 0.3 * (1 - it / steps) + 1e-4
-        i = rng.choice(np.where(sig > 0)[0]); j = rng.choice(np.where(sig < 0)[0])
-        sig[i], sig[j] = sig[j], sig[i]
-        new = obj(sig)
+        if ns == 2:
+            i = rng.choice(np.where(lab == 0)[0]); j = rng.choice(np.where(lab == 1)[0])
+        else:
+            i = rng.integers(len(lab)); j = rng.choice(np.where(lab != lab[i])[0])
+        lab[i], lab[j] = lab[j], lab[i]
+        new = obj(lab)
         if new <= cur or rng.random() < np.exp(-(new - cur) / T):
             cur = new
-            if cur < best - 1e-12: best, bsig = cur, sig.copy()
+            if cur < best - 1e-12: best, blab = cur, lab.copy()
         else:
-            sig[i], sig[j] = sig[j], sig[i]
-    return best, bsig
+            lab[i], lab[j] = lab[j], lab[i]
+    return best, blab
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--lattice', default='bcc'); ap.add_argument('--n', type=int, default=16)
-    ap.add_argument('--x', type=float, default=0.5); ap.add_argument('--species', nargs=2, required=True)
+    ap.add_argument('--x', type=float, nargs='+', default=[0.5]); ap.add_argument('--species', nargs='+', required=True)
     ap.add_argument('--npair', type=int, default=6); ap.add_argument('--ncells', type=int, default=40)
     ap.add_argument('--nsqs', type=int, default=2); ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--out', required=True)
@@ -147,9 +168,12 @@ def main():
     for d in a.decorate:
         sym, off = d.split(':'); deco.append((sym, np.array([float(c) for c in off.split(',')])))
     prim = PRIM[a.lattice]; rng = np.random.default_rng(a.seed)
-    n_a = int(round(a.x * a.n))
-    if abs(n_a - a.x * a.n) > 1e-9: sys.exit('x * n must be an integer')
-    t2, t3 = (2 * a.x - 1) ** 2, (2 * a.x - 1) ** 3
+    ns = len(a.species)
+    if ns < 2: sys.exit('at least two species')
+    x = np.array(a.x if len(a.x) == ns else ([a.x[0], 1.0 - a.x[0]] if ns == 2 and len(a.x) == 1 else []))
+    if len(x) != ns or abs(x.sum() - 1.0) > 1e-9 or np.any(x <= 0): sys.exit('--x: one positive concentration per species, sum 1')
+    counts = np.rint(x * a.n).astype(int)
+    if np.any(np.abs(counts - x * a.n) > 1e-9): sys.exit('x_s * n must be integers')
     w = 1.0 / np.arange(1, a.npair + 1)                      # nearer shells weigh more
     cands = []
     for h in hnfs(a.n):
@@ -166,23 +190,28 @@ def main():
         pos = sites_of(sup, prim)
         radii, shells = shells_and_pairs(sup, pos, a.npair)
         tri = triplet_list(sup, pos, radii)
-        best, sig = anneal(n_a, shells, tri, t2, t3, w, rng)
-        p, t = correlations(sig, shells, tri)
-        results.append((best, sup, pos, sig, p, t, aspect))
-        print(f'cell {len(seen):3d} aspect {aspect:5.2f}  objective {best:.4f}  pairs {np.round(p, 3)}  triplet {t:+.3f}', flush=True)
+        best, lab = anneal(counts, shells, tri, x, w, rng)
+        dp = np.abs(pair_probs(lab, shells, ns) - np.outer(x, x)).max(axis=(1, 2))   # worst pair deviation per shell
+        pt = correlations(1.0 - 2.0 * lab, shells, tri) if ns == 2 else None
+        results.append((best, sup, pos, lab, dp, pt, aspect))
+        print(f'cell {len(seen):3d} aspect {aspect:5.2f}  objective {best:.4f}  max |P - x x| per shell {np.round(dp, 3)}', flush=True)
     results.sort(key=lambda r: r[0])
     os.makedirs(a.out, exist_ok=True)
-    for q, (best, sup, pos, sig, p, t, aspect) in enumerate(results[:a.nsqs], 1):
+    for q, (best, sup, pos, lab, dp, pt, aspect) in enumerate(results[:a.nsqs], 1):
         fn = os.path.join(a.out, f'sqs{a.n}_{q}.toml')
         with open(fn, 'w') as f:
-            f.write(f'# SQS {a.lattice} N = {a.n}, x({a.species[0]}) = {a.x}: objective {best:.4f}, pair correlations (shells 1..{a.npair}) '
-                    f'{np.round(p, 4).tolist()}, triplet {t:+.4f} (random: {t2:.3f} / {t3:+.3f})\n')
+            f.write(f'# SQS {a.lattice} N = {a.n}, ' + ' '.join(f'{s}{c:g}' for s, c in zip(a.species, x)) +
+                    f': objective {best:.4f}, max |P_ss\' - x_s x_s\'| per shell (1..{a.npair}) {np.round(dp, 4).tolist()}\n')
+            if ns == 2:
+                p, t = pt
+                f.write(f'# pair correlations {np.round(p, 4).tolist()}, triplet {t:+.4f} '
+                        f'(random: {(2 * x[0] - 1) ** 2:.3f} / {(2 * x[0] - 1) ** 3:+.3f})\n')
             if deco: f.write('# decorated: ' + ' '.join(a.decorate) + '\n')
             f.write('# fragment: add [[species]], [scf], [kspace] and [calculation] method = "kspace"\n')
             f.write('[structure]\nlattice = "cell"\nsite_classes = true\nvectors = [' +
                     ', '.join('[' + ', '.join(f'{c:.6f}' for c in v) + ']' for v in sup) + ']\n\n')
-            for r, s in zip(pos, sig):
-                f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r) + f']\nspecies = "{a.species[0] if s > 0 else a.species[1]}"\n\n')
+            for r, s in zip(pos, lab):
+                f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r) + f']\nspecies = "{a.species[s]}"\n\n')
             for sym, off in deco:
                 for r in pos:
                     f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r + off) + f']\nspecies = "{sym}"\n\n')
