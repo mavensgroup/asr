@@ -18,7 +18,8 @@
 !>                  save_potential (written every iteration) / start_potential, mixing_restart (linear step after an Anderson
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
-!>                  cluster_radius, inversion_radius, ed_terminator (hull|bp|avg2), fermi_kt, fermi_poles, depth_tol
+!>                  cluster_radius, inversion_radius, ed_terminator (hull|bp|avg2), fermi_kt, fermi_poles, depth_tol,
+!>                  ef_scan, ef_scan_step, ef_scan_center (diagnostic: N(E) at the start potential, then stop)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
@@ -276,7 +277,8 @@ contains
     call section(table, 'asr', child)
     call check_keys(child, ['levels          ', 'recursion_steps ', 'rank            ', 'supercell       ', 'flip_radius     ', &
                             'contour_points  ', 'cluster_radius  ', 'inversion_radius', 'ed_terminator   ', 'fermi_kt        ', &
-                            'fermi_poles     ', 'depth_tol       '], '[asr]', msg)
+                            'fermi_poles     ', 'depth_tol       ', 'ef_scan         ', 'ef_scan_step    ', 'ef_scan_center  '], &
+                   '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ci%nlevels, 4)
     call get_value(child, 'recursion_steps', inp%ci%nrec, 0)
@@ -290,6 +292,9 @@ contains
     call get_value(child, 'fermi_kt', inp%ci%fermi_kt, 0.001_dp)
     call get_value(child, 'fermi_poles', inp%ci%fermi_poles, 0)
     call get_value(child, 'depth_tol', inp%ci%depth_tol, inp%ci%depth_tol)
+    call get_value(child, 'ef_scan', inp%ci%ef_scan, 0)
+    call get_value(child, 'ef_scan_step', inp%ci%ef_scan_step, inp%ci%ef_scan_step)
+    call get_value(child, 'ef_scan_center', inp%ci%ef_scan_center, inp%ci%ef_scan_center)
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &

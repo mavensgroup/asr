@@ -32,7 +32,7 @@ module asr_class_scf
   use asr_augorb, only: orb_alloy_t
   use asr_augcls
   use asr_edc
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_tail
+  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy
   use asr_sublattice
@@ -58,6 +58,8 @@ module asr_class_scf
     real(dp) :: ed_eta = 0.01_dp, fermi_kt = 0.001_dp, depth_tol = 1.0e-5_dp
     integer :: fermi_poles = 0
     character(len=8) :: ed_tail = 'bp'
+    integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
+    real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
     integer :: ndos = 0
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
     character(len=256) :: pot_in = '', pot_out = ''
@@ -199,7 +201,7 @@ contains
     br = inp%beta; if (inp%beta_restart > 0.0_dp) br = inp%beta_restart
 
     do it = 1, inp%maxit
-      ed_nchain = 0; ed_nlev = 0
+      ed_nchain = 0; ed_nlev = 0; ed_nfall = 0
       do p = 1, ncomp
         n = cr(p)%mesh%n
         do sg = 1, nsp
@@ -215,6 +217,10 @@ contains
         do p = 1, ncomp
           print '(a,i0,a,3f9.4)', '  sum rule (E_F=6 Ry), component ', p, ': M0(s,p,d)/(1,3,5) =', (mom(p, 1, 0, l) / real(2 * l + 1, dp), l=0, 2)
         end do
+      end if
+      if (inp%ef_scan > 0) then
+        call ef_scan_run()
+        stop 'class_scf: ef_scan done'
       end if
       ! E_F: Newton steps until N - N_elec changes sign, then Illinois false position on the bracket (as asr_alloy_scf), stopped at
       ! |N - N_elec| < 2e-4 or when the Newton step is below 1e-3 Ry (one contour per iteration close to self-consistency: the
@@ -383,6 +389,7 @@ contains
         if (nsp == 2) print '(a,*(f8.4))', '                                      m   =', cr(:)%moment
         print '(a,f18.8,a)', '      E_total =', etot, ' Ry/site'
         if (ed_nchain > 0) print '(a,f6.1,a,i0,a)', '      mean recursion depth used ', real(ed_nlev, dp) / real(ed_nchain, dp), ' of ', nlev, ' levels'
+        if (ed_nfall > 0) print '(a,i0,a,i0,a)', '      bp tail fixed point failed (hull used) in ', ed_nfall, ' of ', ed_nchain, ' chains'
         print '(a,i0,a,i0)', '      Anderson history ', mixer%nh, '  restarts so far ', mixer%nrestart
         print '(a,i0,a,a,a,es9.2,a,es10.3,a,i0,a,i0,a,f8.4,a,es10.3)', '      E_F passes ', npass, ' final ', &
           trim(merge('bracket', 'dos    ', efmode == 1)), ' shift ', efshift, '  |r|_2=', r2n, '  max dV: comp ', pdv, ' spin ', sgdv, &
@@ -449,6 +456,47 @@ contains
         end do
       end do
     end subroutine ed_moments
+
+    !> diagnostic ([asr] ef_scan = n): N(E) - N_elec at the start potential on 2n + 1 energies around ef_scan_center, split into
+    !> the parts of the Fermi contour (vertical leg, main line, Fermi step, tail line, Matsubara poles), the component charges
+    !> (valence electrons per atom) and the bp fallback count.  N(E) of an analytic G is smooth: a jump between neighbouring
+    !> energies locates a non-analytic step in G(z) (terminator branch or eigenvalue selection) in that part of the contour.
+    subroutine ef_scan_run()
+      complex(dp), allocatable :: zq(:), wq(:), gz(:, :, :, :)
+      real(dp) :: e0, ev, x, dsum, part(5), qc(ncomp)
+      integer :: js, j, o, gg, pp_, nq, ip, bnd(4)
+      integer(8) :: nf0
+      if (inp%fermi_kt <= 0.0_dp) error stop 'class_scf: ef_scan needs fermi_kt > 0'
+      e0 = ef; if (inp%ef_scan_center < huge(1.0_dp)) e0 = inp%ef_scan_center
+      print '(a,i0,a,es9.2,a,f10.6,a,a)', '  ef_scan: ', 2 * inp%ef_scan + 1, ' energies, step ', inp%ef_scan_step, ' Ry, centre ', e0, &
+        ', tail ', trim(inp%ed_tail)
+      print '(a)', '  ef_scan    E (Ry)     N-nelec       DOS     vert         main         step         tail         poles     &
+                   & | q per component | bp fallbacks'
+      do js = -inp%ef_scan, inp%ef_scan
+        ev = e0 + js * inp%ef_scan_step
+        nf0 = ed_nfall
+        call contour(ev, zq, wq, nq)
+        bnd = [4, 4 + inp%ncont, 4 + inp%ncont + 16, 4 + inp%ncont + 24]   ! last node of each part (contour_nodes_fermi order)
+        allocate (gz(nq + 1, 4, ncomp, nsp))
+        call chain_greens(zq, gz)
+        part = 0.0_dp; qc = 0.0_dp; dsum = 0.0_dp
+        do gg = 1, nsp
+          do pp_ = 1, ncomp
+            do o = 1, 4
+              dsum = dsum - fs * w(pp_) * worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
+              do j = 1, nq
+                ip = count(j > bnd) + 1
+                x = -fs * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
+                part(ip) = part(ip) + w(pp_) * x; qc(pp_) = qc(pp_) + x
+              end do
+            end do
+          end do
+        end do
+        print '(a,f12.7,es14.6,f9.3,5es13.5,a,*(f11.7))', '  ef_scan ', ev, sum(part) - nelec, dsum, part, ' |', qc
+        print '(a,i0)', '  ef_scan   bp fallbacks: ', ed_nfall - nf0
+        deallocate (gz)
+      end do
+    end subroutine ef_scan_run
 
     !> G(z) of every chain gz(energy, start orbital, component, spin) at the energies zs, the chains in parallel
     subroutine chain_greens(zs, gz)
