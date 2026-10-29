@@ -60,6 +60,7 @@ module asr_class_scf
     character(len=8) :: ed_tail = 'bp'
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
+    character(len=256) :: ef_scan_dump = ''            !! diagnostic: file for the chain coefficients of every scan energy
     integer :: ndos = 0
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
     character(len=256) :: pot_in = '', pot_out = ''
@@ -104,6 +105,8 @@ contains
     integer, allocatable :: coord(:, :), dist(:), offx(:), cls(:), perm(:, :), mats(:, :, :), pcl(:), psp(:)
     logical, allocatable :: flippable(:)
     real(dp), allocatable :: y(:, :, :, :, :, :), enu(:, :, :), mom(:, :, :, :), dosef(:, :, :), w(:), xp(:), phimad(:, :), qbar(:)
+    complex(dp), allocatable :: dmp_a(:, :, :, :, :), dmp_b(:, :, :, :, :)   ! ef_scan_dump: chain coefficients (level, node, orb, comp, spin)
+    integer, allocatable :: dmp_m(:, :, :, :)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), wmix(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:)
     real(dp), allocatable :: tmp(:), cum(:), yc(:, :, :), vtmp(:, :), etmp(:, :), esum(:)
     real(dp) :: alpha(0:2), c, avw, r1, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell, rlo, rhi, etot, ep, br
@@ -478,7 +481,15 @@ contains
         call contour(ev, zq, wq, nq)
         bnd = [4, 4 + inp%ncont, 4 + inp%ncont + 16, 4 + inp%ncont + 24]   ! last node of each part (contour_nodes_fermi order)
         allocate (gz(nq + 1, 4, ncomp, nsp))
+        if (len_trim(inp%ef_scan_dump) > 0) then
+          allocate (dmp_a(nlev, nq + 1, 4, ncomp, nsp), dmp_b(nlev, nq + 1, 4, ncomp, nsp), dmp_m(nq + 1, 4, ncomp, nsp))
+          dmp_a = (0.0_dp, 0.0_dp); dmp_b = (0.0_dp, 0.0_dp); dmp_m = 0
+        end if
         call chain_greens(zq, gz)
+        if (allocated(dmp_a)) then
+          call dump_chains(js, ev, zq, wq, nq)
+          deallocate (dmp_a, dmp_b, dmp_m)
+        end if
         part = 0.0_dp; qc = 0.0_dp; dsum = 0.0_dp
         do gg = 1, nsp
           do pp_ = 1, ncomp
@@ -497,6 +508,35 @@ contains
         deallocate (gz)
       end do
     end subroutine ef_scan_run
+
+    !> ef_scan_dump: the contour (node, z, w) and every chain (a_k, b_k, k = 1..m) at one scan energy, appended to the dump file;
+    !> header: nelec fs, component weights w(p), orbital weights worb(o)
+    subroutine dump_chains(js, ev, zq, wq, nq)
+      integer, intent(in) :: js, nq
+      real(dp), intent(in) :: ev
+      complex(dp), intent(in) :: zq(:), wq(:)
+      integer :: u, j, o, pp_, gg, k
+      if (js == -inp%ef_scan) then
+        open (newunit=u, file=trim(inp%ef_scan_dump), status='replace', action='write')
+        write (u, '(a,es25.16,f6.1,3i6)') 'H ', nelec, fs, ncomp, nsp, nlev
+        write (u, '(a,*(es25.16))') 'W ', w
+        write (u, '(a,*(f6.1))') 'O ', worb
+      else
+        open (newunit=u, file=trim(inp%ef_scan_dump), status='old', position='append', action='write')
+      end if
+      write (u, '(a,i4,es25.16,i6)') 'E ', js, ev, nq
+      do j = 1, nq + 1
+        write (u, '(a,i5,4es25.16)') 'Z ', j, zq(j), wq(j)
+      end do
+      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, nq + 1
+        write (u, '(a,4i5)') 'C ', j, o, pp_, gg
+        write (u, '(i4)') dmp_m(j, o, pp_, gg)
+        do k = 1, dmp_m(j, o, pp_, gg)
+          write (u, '(4es25.16)') dmp_a(k, j, o, pp_, gg), dmp_b(k, j, o, pp_, gg)
+        end do
+      end do; end do; end do; end do
+      close (u)
+    end subroutine dump_chains
 
     !> G(z) of every chain gz(energy, start orbital, component, spin) at the energies zs, the chains in parallel
     subroutine chain_greens(zs, gz)
@@ -544,7 +584,12 @@ contains
           cur(1, kp) = pp_; cur(2, kp) = gg
         end if
         if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; end if
-        call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg))
+        if (allocated(dmp_a)) then
+          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg), &
+                         acoef=dmp_a(:, j, o, pp_, gg), bcoef=dmp_b(:, j, o, pp_, gg), mused=dmp_m(j, o, pp_, gg))
+        else
+          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg))
+        end if
       end do
       !$omp end do
       do kp = 1, ncls

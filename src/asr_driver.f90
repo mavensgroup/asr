@@ -19,7 +19,7 @@
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull|bp|avg2), fermi_kt, fermi_poles, depth_tol,
-!>                  ef_scan, ef_scan_step, ef_scan_center (diagnostic: N(E) at the start potential, then stop)
+!>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
@@ -277,7 +277,8 @@ contains
     call section(table, 'asr', child)
     call check_keys(child, ['levels          ', 'recursion_steps ', 'rank            ', 'supercell       ', 'flip_radius     ', &
                             'contour_points  ', 'cluster_radius  ', 'inversion_radius', 'ed_terminator   ', 'fermi_kt        ', &
-                            'fermi_poles     ', 'depth_tol       ', 'ef_scan         ', 'ef_scan_step    ', 'ef_scan_center  '], &
+                            'fermi_poles     ', 'depth_tol       ', 'ef_scan         ', 'ef_scan_step    ', 'ef_scan_center  ', &
+                            'ef_scan_dump    '], &
                    '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ci%nlevels, 4)
@@ -295,6 +296,7 @@ contains
     call get_value(child, 'ef_scan', inp%ci%ef_scan, 0)
     call get_value(child, 'ef_scan_step', inp%ci%ef_scan_step, inp%ci%ef_scan_step)
     call get_value(child, 'ef_scan_center', inp%ci%ef_scan_center, inp%ci%ef_scan_center)
+    call get_value(child, 'ef_scan_dump', xcs, ''); inp%ci%ef_scan_dump = xcs
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
