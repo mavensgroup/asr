@@ -75,7 +75,7 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 
 ## Next actions, in order
 1. Done 2026-10-30: reviewed and committed; the four unit tests pass.  Main is not pushed yet (the user pushes).
-2. Rerun the 10 SRO runs above with the default `hull` tail from the committed code (bundle to the desktop, a git clone, not a copy).
+2. Running since 2026-10-30 19:28 in `~/asr_remote4/trial/sro_hull` (binary `bin/asr_ffaba36`, commit in `SOURCE_COMMIT`, `SUMMARY.txt`).  The same 10 runs with `hull`, plus `rand`: the random triad as a full SCF (the old `g1_nosro` was only 2 iterations).  `g1_sro0` (alpha = 0, 2 iterations) must equal the first 2 iterations of `rand` in every printed number.  Queue A: rand, t110, t101, t011, t100.  Queue B: g1_sro0, cuzn_rand, cuzn_m015, cuzn_m100, t010, t001, t111.  14 threads each.  Original plan:
    Levels 3 triads take 20 to 45 min each on 14 threads; CuZn levels 4 takes 1 to 2 h each.  Compare with the `bp` numbers above.
 3. B4.4: plot the 7 triad DOS against Alam Fig. 4.  Compute M2 per component from `dos.dat` and check the Fig. 5 ordering.
    Check first how Alam defines M2 (the second moment of which DOS, around which centre).  Then run the triads at levels 4

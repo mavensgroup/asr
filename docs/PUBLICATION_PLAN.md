@@ -7,6 +7,8 @@ memory and must be checked against the primary source before they go into a manu
 1. SRO (`docs/ROADMAP.md` phase 6; gates from `docs/archive/HANDOFF_hea_sro.md` Part B) stabilises: gates B4.1-B4.5 pass.
 2. Freeze v1.0 (scope below); the CPC preprint goes on arXiv first.
 3. PRB bcc Fe-Cr, written from the same binary and runs as the CPC validation; submitted without waiting for the CPC review.
+4. Wannier front end (section 4), after v1.0 and Fe-Cr.  Not part of v1.0: it would delay CPC and adds nothing to it.  It serves a
+   possible high-profile paper (Nature Computational Science) only together with a science result the LMTO-ASA path cannot reach.
 
 ## 1. CPC (Computer Physics Communications, Computer Programs in Physics)
 Venue: CPC (Questaal and several KKR codes were published there; CPC Program Library archive).  Fallbacks: Electronic Structure (IOP)
@@ -78,3 +80,37 @@ magnetic cluster expansion Fe-Cr studies; the experimental SRO and moment data. 
 - Heusler antisite / partial disorder + SRO (half-metallicity vs disorder): machinery mostly exists.
 - Magnetic HEA (Fe-Ni-Cr, Cantor family) moments and charge transfer vs SRO; may need DLM for frustrated Cr.
 - Disordered altermagnets: needs the configuration-averaged Bloch spectral function A(k,E) (not implemented; M8/M9).
+
+## 4. Wannier front end and a high-profile paper (after Fe-Cr)  (added 2026-10-30)
+A `_hr.dat` reader alone is an interface, not a result: it suits a CPC / JOSS update, not Nature Computational Science.  Wannier-based
+disorder is not new *(unverified: Berlijn, Volja & Ku, PRL 2011; Wannier tight-binding CPA; large-supercell KPM)*.  Wannier helps only
+by lifting the ASA restriction to open / layered structures, oxides and 2D alloys, and only after the operator work below.
+OpenMX goes through the same front end (its built-in MLWF `.HWR` output, or a Wannier90 export if the version has one *(to check)*); its
+non-orthogonal NAO basis is not read directly.
+
+### Steps (in order)
+1. **Ordered, k-space** (days): generalise `kgrid_op` (`src/asr_lmto_ham.f90`) from one 9x9 block to N_wan orbitals and several sites
+   per cell; `_hr.dat` reader (degeneracies, complex H(R)); Fermi level from a fixed electron count (no SCF).  Gate: DOS and bands vs
+   the source DFT / Wannier90 interpolation.
+2. **Operator generalisation** (weeks): remove the spd assumptions (`orb_l`, nl = 9 literals in augsym / augcls / asr_ed, s/p/d DOS
+   columns); bond blocks per (class, class', slot) instead of one block per slot; symmetry reduction for orbitals that are not real
+   harmonics (representation matrices from Wannier90 site symmetry, else the unreduced operator).  Gate: an spd Wannier model built
+   from our own LMTO H^(2) reproduces the existing EI results.
+3. **General off-diagonal disorder** (weeks): t_ij = t^BB + (t^AB - t^BB)(n_i + n_j) + (t^AA - 2 t^AB + t^BB) n_i n_j (N-species with
+   projectors), still a site-based augmented space; hops flip configurations at both bond ends.  Gate: brute-force configuration
+   average on a small cluster, as for the existing operators.
+4. **Hopping range**: MLWF hoppings reach further than screened S^alpha and the augmented space grows steeply with coordination.
+   Truncation radius with a convergence test (DOS, moments) before any production run.
+5. **Parameter extraction**: species-resolved on-site and hopping blocks with a common energy reference and the alloy charge transfer.
+   Wannierise an SQS supercell or a VCA run, not separate pure-A and pure-B runs (no common zero).  Gate: Wannier-ASR vs the SQS it
+   came from, within the 3-4% target.
+
+### High-profile candidates (choose the science first)
+- **CrFeCoNi, SRO-resolved magnetism, existing LMTO path** (no Wannier needed): validated vs SQS / experiment, with a clear cost
+  advantage over supercells.  Follows the section 2 stretch goal.
+- **Wannier-ASR on a non-close-packed disordered system with ARPES data**: needs steps 1-5 and the configuration-averaged Bloch spectral
+  function A(k,E) (M8/M9).  Months of work.
+
+### Before committing: novelty check
+Collect and read: Wannier-based disorder methods (Berlijn-Ku unfolding, Wannier TB-CPA, KPM supercells), ASR with off-diagonal disorder
+(Mookerjee and co-workers), and the ARPES data for the chosen system.  None of these has been checked yet.
