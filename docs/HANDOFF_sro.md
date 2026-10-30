@@ -1,0 +1,95 @@
+# HANDOFF: short-range order (new thread)
+
+Written 2026-10-30.  This thread works on ROADMAP phase 6 (short-range order) only.
+Read first: this file, then `docs/HANDOFF.md` (working rules, desktop), `docs/STATUS.md`, `docs/ROADMAP.md` phase 6.
+The full record of the SRO work so far is `docs/FINDINGS_LOG.md`, section "Short-range order: first-shell Warren-Cowley ...".
+The original plan with gates B1 to B5 is `docs/archive/HANDOFF_hea_sro.md`, Part B.
+
+## Model (implemented)
+- First-shell Warren-Cowley SRO between a site and its first shell only (Mookerjee and Prasad PRB 48, 17724 (1993); Alam and
+  Mookerjee JPCM 21, 195503 (2009), section 2.1).  P(c, s) = x_c y_s (1 - alpha_cs).  alpha > 0 means the pair avoids contact.
+  alpha < 0 means the pair is favoured.
+- Given the centre species c, the shell sites are independent with X_s^(c) = y_s (1 - alpha_cs).  Sites beyond the first shell are
+  uncorrelated.  Shell sites are not correlated among themselves.  This is the model of the papers.
+- Our route gets the centre projector for free.  `asr_ed` freezes the start site to the species of component c.  So the recursion of
+  component c is the uncorrelated one, except that the first shell of the origin carries X^(c) instead of x.
+- Component weights stay f_kappa x_c, because sum_c x_c X^(c) = x.
+- Electrostatics are unchanged: SIM with a random first shell (gate B3 is open).
+
+## Code (uncommitted in the main working tree; first job is review and commit)
+| file | change |
+|---|---|
+| `src/asr_sro.f90` (new) | `sro_conditional`: X^(c) from x, y and alpha.  One sublattice: symmetric unlike pairs, diagonal derived.  Two sublattices: full table, both marginals checked.  X >= 0 checked. |
+| `src/asr_augcls.f90` | `augcls_set_class_conc` resets one class's mt tables (node set unchanged).  `class_mt` builds the local basis on the species of non-zero weight only (a zero weight makes `augn_basis` singular). |
+| `src/asr_class_scf.f90` | With SRO the operator has 2 ncls classes.  Class ncls + kappa' is the first shell of the origin on sublattice kappa' (minimum image).  `chain_worker` sets these classes to `sro_cond` of the frozen component.  Error stop for SRO between sublattices that are not first-shell neighbours. |
+| `src/asr_driver.f90` | `[[sro]]` reader (`read_sro`), report block in `asr.out`.  Also the spin-resolved DOS columns of `dos.dat` (not SRO; the same patch sits in the desktop clone `~/asr_spindos`). |
+| `test/test_sro.f90` (new), `test/test_augcls.f90`, `test/test_run_input.f90` | unit gates below |
+| `example/fe66ni14cr20_fcc_sro.toml` (new) | Alam triad 1-1-0 at levels 4, `hull` |
+
+Input: `[[sro]] sublattices = ["A", "B"]` (optional with one sublattice), `shell = 1`, `pairs = [["Fe", "Ni", alpha], ...]`.
+
+Tests on the merged main plus this work (laptop, 2026-10-30): `test_sro` 16/16, `test_augcls` 16/16, `test_run_input` 33/33,
+`test_terminators` 11/11.  The full suite on committed main passed (41 programs, 306 checks; `docs/STATUS.md`).
+
+The working tree also holds the user's own edits: `README.md`, `.gitignore`, the doc comment in `src/asr_kinds.f90`, `doc/`,
+`ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md`.  Ask the user how to split the commits.  A sensible split:
+(1) SRO code, tests and example; (2) spin-resolved DOS columns; (3) the user's manual and docs.  Do not commit `suggestion.md` or
+`doc/build/` without asking.
+
+## Gates
+| gate | status |
+|---|---|
+| B4.1 alpha = 0 equals the uncorrelated run (unit test; SCF gate G1: every printed number identical) | 🟢 |
+| B4.2 brute force: ring of 5 with frozen centre and conditional shell (1.6e-15); fcc ternary D4h-reduced vs unreduced (8.3e-13) | 🟢 |
+| B3 electrostatics with SRO: keep SIM or use the explicit shell charge sum_s X_s^(p) q_s - qbar.  No literature prescription (FINDINGS_LOG lists what was checked). | 🔴 decision with the user |
+| B4.3 Tarafder et al. 2006 bcc CuZn, alpha about -0.15: compare the SRO-induced change of the DOS, not absolute peaks (their bands are shifted by about 0.19 Ry) | 🟠 runs exist, not analysed |
+| B4.4 Alam 2009 Fig. 4 (DOS of the 7 triads) and Fig. 5 (M2(110) < M2(101) < M2(011)) | 🟠 runs exist, not analysed |
+| B4.5 same-model reference: reverse Monte Carlo supercells at target alpha (new tool next to `tools/sqs.py`), k-space with one potential per species | 🔴 |
+| SRO between two sublattices (for example L2_1) in an SCF run | 🔴 only the reader and `sro_conditional` are tested |
+
+## Runs that exist (desktop `~/asr_sro/trial/sro`, 2026-10-24)
+`~/asr_sro` is a plain copy, not a git clone.  Its binary is in `~/asr_sro/bin`.  `SOURCE_MD5` records the source.  All runs used the
+`bp` tail (the old default).  `SUMMARY.txt` has start, end and wall times.
+
+Fe66Ni14Cr20 fcc NM, levels 3, 24 steps, `bp`.  Triad = (alpha_FeNi, alpha_FeCr, alpha_NiCr).  N(E_F) is the component total in
+states/Ry/atom.
+| run | iterations | E_F (Ry) | qnet Fe | Ni | Cr | N(E_F) Fe | Ni | Cr | E_total (Ry/site) |
+|---|---|---|---|---|---|---|---|---|---|
+| random (g1_nosro, 2 iterations from converged) | | -0.070292 | 0.0265 | 0.1460 | -0.1896 | 12.09 | 7.84 | 8.90 | -2522.70766986 |
+| t110 | 15 | -0.071734 | 0.0160 | 0.1246 | -0.1401 | 12.38 | 9.67 | 9.59 | -2522.70724592 |
+| t101 | 19 | -0.073827 | 0.0293 | 0.1117 | -0.1749 | 11.45 | 12.34 | 8.65 | -2522.70975395 |
+| t011 | 16 | -0.071717 | 0.0097 | 0.1285 | -0.1219 | 12.90 | 9.48 | 9.89 | -2522.70509509 |
+| t100 | 16 | -0.071886 | 0.0316 | 0.1242 | -0.1913 | 11.44 | 9.88 | 8.81 | -2522.70973062 |
+| t010 | 13 | -0.070298 | 0.0113 | 0.1461 | -0.1395 | 12.94 | 7.81 | 9.62 | -2522.70511344 |
+| t001 | 15 | -0.072053 | 0.0247 | 0.1284 | -0.1715 | 12.04 | 9.37 | 8.63 | -2522.70837832 |
+| t111 | 18 | -0.073287 | 0.0138 | 0.1125 | -0.1244 | 12.37 | 12.30 | 9.90 | -2522.70669202 |
+
+bcc CuZn 50:50, a = 2.85 A, levels 4, 24 steps, `bp`:
+| run | alpha_CuZn | iterations | E_F (Ry) | qnet Cu | N(E_F) Cu | Zn | E_total (Ry/site) |
+|---|---|---|---|---|---|---|---|
+| cuzn_rand | 0 | 32 | 0.001302 | 0.1094 | 1.779 | 0.906 | -3446.83325127 |
+| cuzn_m015 | -0.15 | 32 | 0.001115 | 0.1043 | 1.747 | 0.908 | -3446.83370998 |
+| cuzn_m100 | -1 (first shell all unlike) | 33 | 0.002440 | 0.0790 | 1.571 | 0.920 | -3446.83479384 |
+
+First observations (not checked further): ordering lowers the total energy (-0.46 mRy at -0.15, -1.54 mRy at -1).  The charge
+transfer drops when the shell is ordered.  This energy trend comes with an electrostatic model that ignores the shell composition
+(B3), so it is not yet a physical result.
+
+## Next actions, in order
+1. Review the uncommitted SRO code with the user, then commit it on main (split as above).  Rerun the four unit tests.
+2. Rerun the 10 SRO runs above with the default `hull` tail from the committed code (bundle to the desktop, a git clone, not a copy).
+   Levels 3 triads take 20 to 45 min each on 14 threads; CuZn levels 4 takes 1 to 2 h each.  Compare with the `bp` numbers above.
+3. B4.4: plot the 7 triad DOS against Alam Fig. 4.  Compute M2 per component from `dos.dat` and check the Fig. 5 ordering.
+   Check first how Alam defines M2 (the second moment of which DOS, around which centre).  Then run the triads at levels 4
+   (`example/fe66ni14cr20_fcc_sro.toml`; about 11 min per iteration on 28 threads).
+4. B4.3: the SRO-induced change of the CuZn DOS against Tarafder 2006 Fig. 3 (`../references/SRO-cuzn_tarafder2006.pdf`).
+5. B3: put the two options (SIM unchanged vs explicit shell charge) to the user with numbers from the triads and CuZn.  An explicit
+   shell term partly double counts the SIM screening charge.
+6. B4.5: reverse Monte Carlo tool for supercells at target alpha, then k-space references with one potential per species.
+7. Record every result in `docs/FINDINGS_LOG.md` and update the SRO rows of `docs/STATUS.md` and `docs/ROADMAP.md`.
+
+## Rules that matter here
+- All calculations on the desktop; unit tests on the laptop.  Code moves to the desktop by git (bundle or the user's push).
+- Production route `asr_ed` only.  Default tail `hull`; do not use `bp` for new runs (FINDINGS_LOG "Levels-4 SCF stall").
+- A fix or a model choice must hold in general, not only for the test system (memory `general-fixes-not-patches`).
+- Docs in simple sentences, no dashes.

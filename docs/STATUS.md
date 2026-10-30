@@ -29,7 +29,7 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 | OpenMP over independent chains | 🟢 | bit identical, l3 iteration 867 s to 398 s on 14 threads |
 | one input format and driver, `asr.out` report | 🟢 | `test_run_input` |
 | terminators `hull` (default), `bp`, `avg2` | 🟢 `hull`, `avg2` · 🟠 `bp` | `bp` is not safe on complex chains; `test_terminators` checks the Nevanlinna bound \|dG/dz\| <= -Im G / Im z [Levels-4 SCF stall] |
-| short-range order, first shell (`asr_sro`, `[[sro]]`) | 🟠 | uncommitted; `test_sro` 16/16, `test_augcls` 16/16, SCF gate G1 [Short-range order] |
+| short-range order, first shell (`asr_sro`, `[[sro]]`) | 🟠 | uncommitted; `test_sro` 16/16, `test_augcls` 16/16, SCF gate G1 [Short-range order]; plan in `docs/HANDOFF_sro.md` |
 | k-space LMTO-ASA for ordered cells and SQS supercells | 🟢 | SQS references below |
 | cross-check routes (EI H^(2)/H^(3), P(z) - S, exact KKR-ASA) | 🟢 kept for tests | not for production |
 | N(E) probe `ef_scan`, chain dump `ef_scan_dump`, `bp` fallback counter | 🟢 | merged in 099ae3a |
@@ -51,8 +51,8 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 |---|---|
 | cost: CoCrFeNi levels 4 takes 2.7 h per iteration, CoCrFeMnNi more | ⛔ for HEA levels 4 and 5, SRO series, Fe-Cr series |
 | SRO electrostatics (B3): SIM with a correlated shell, no literature prescription | 🔴 decision needed |
-| SRO gates B4.3 (Tarafder CuZn), B4.4 (Alam Fig. 4 and 5), B4.5 (RMC supercells) | 🔴 |
-| full unit-test suite: last complete run 2026-10-09 (39 programs, desktop); later threads ran subsets; full run takes more than 20 min | 🟠 |
+| SRO gates B4.3 (Tarafder CuZn), B4.4 (Alam Fig. 4 and 5), B4.5 (RMC supercells) | 🟠 B4.3 and B4.4 runs exist (`bp`, 2026-10-24), not analysed; B4.5 🔴 |
+| full unit-test suite on merged main `3986fc2` (desktop, 2026-10-30, about 75 min): 41 test programs, 306 checks, 0 failed; 6 `probe_*` programs stop because they need arguments or local reference files (not tests) | 🟢 |
 | gfortran + OpenBLAS build never tried | 🔴 (CPC requirement) |
 | FeRh Fe -4.8 % (rank 2 untested) | 🟠 low priority |
 

@@ -72,8 +72,8 @@ centre of `asr_ed` makes the shell of component c uncorrelated with concentratio
 | B4.1 alpha = 0 gives the uncorrelated result (unit test and SCF gate G1) | 🟢 |
 | B4.2 brute force: ring with frozen centre and conditional shell, and reduced vs unreduced fcc | 🟢 |
 | B3 electrostatics with SRO (SIM vs explicit shell charge); no literature prescription found | 🔴 decision needed |
-| B4.3 Tarafder 2006 CuZn: SRO-induced change of the DOS | 🔴 |
-| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🔴 |
+| B4.3 Tarafder 2006 CuZn: SRO-induced change of the DOS | 🟠 runs at alpha 0, -0.15, -1 exist (`bp`), not analysed |
+| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🟠 7 triads at levels 3 exist (`bp`), not analysed |
 | B4.5 same-model reference: reverse Monte Carlo supercells at target alpha | 🔴 |
 
 ### 7. v1.0 freeze and CPC paper 🔴
@@ -89,7 +89,7 @@ Exchange J_ij (`docs/JIJ_PLAN.md`), Bloch spectral function A(k,E), optical cond
 magnetism, Wannier front end.
 
 ## Order of work (next items)
-1. Commit the SRO work that sits uncommitted in the main working tree, after review.
+1. Commit the SRO work that sits uncommitted in the main working tree, after review (`docs/HANDOFF_sro.md`).
 2. Alam and Mookerjee comparison with the converged levels-4 Fe66Ni14Cr20 DOS.
 3. Speed work (phase 5), measured before and after.
 4. SRO gates B3 and B4.3 to B4.5.

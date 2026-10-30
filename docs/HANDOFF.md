@@ -2,24 +2,25 @@
 
 Updated 2026-10-30.  This is the only current handoff.  Old handoffs are in `docs/archive/`.
 Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROADMAP.md` (order of work).  Details and numbers are in
-`docs/FINDINGS_LOG.md`.
+`docs/FINDINGS_LOG.md`.  A thread on short-range order also reads `docs/HANDOFF_sro.md`.
 
 ## Code state
 | where | what |
 |---|---|
-| `main` | local `099ae3a` (docs cleanup + merge of `l4stall`), not pushed; GitHub: check with `git log origin/main -1` (last known push `574c467`) |
-| main working tree, uncommitted | SRO work: `src/asr_sro.f90`, `test/test_sro.f90`, `example/fe66ni14cr20_fcc_sro.toml`, changes in `asr_augcls`, `asr_class_scf`, `asr_driver`, `test_augcls`, `test_run_input`; the user's own edits in `README.md`, `.gitignore`, `src/asr_kinds.f90`, `doc/`, `ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md` |
+| `main` | local `3986fc2` and later docs commits (docs cleanup, merge of `l4stall`), not pushed; GitHub `origin/main` is `574c467` |
+| main working tree, uncommitted | SRO work (`docs/HANDOFF_sro.md`): `src/asr_sro.f90`, `test/test_sro.f90`, `example/fe66ni14cr20_fcc_sro.toml`, changes in `asr_augcls`, `asr_class_scf`, `asr_driver`, `test_augcls`, `test_run_input`; the user's own edits in `README.md`, `.gitignore`, `src/asr_kinds.f90`, `doc/`, `ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md` |
 | branch `l4stall` (worktree `../asr_l4stall`), merged into main | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
 | stash in `../asr_l4stall` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
-| default tail in the code | `hull` (since `3a47711`); `example/fe66ni14cr20_fcc_sro.toml` (uncommitted) still sets `bp` explicitly |
+| default tail in the code | `hull` (since `3a47711`); the uncommitted SRO example and `doc/manual` now say `hull` too |
 
 ## Desktop state (`ssh desktop`, idle on 2026-10-30)
 | clone | commit | use |
 |---|---|---|
-| `~/asr_remote4` | `5c8075e` | main run tree, `env.sh`, all `trial/` directories |
+| `~/asr_remote4` | `3986fc2` (merged main, by bundle, 2026-10-30) | main run tree, `env.sh`, all `trial/` directories; full test run in `trial/fulltest` |
 | `~/asr_q` | `574c467` | binary `bin/asr_574c467` used by the HEA l3 `bp` queue |
 | `~/asr_l4` | `03ac4e5` (`l4stall`) | binary of all 2026-10-29/30 runs (`build/ifx_A08D5D447AF67060/app/asr`) |
-| `~/asr_spindos` | `03ac4e5` (`l4stall`) | not created by the l4-stall thread; origin unknown, leave it |
+| `~/asr_spindos` | `03ac4e5` (`l4stall`) | spin-resolved `dos.dat` columns (uncommitted); the same patch is in the main working tree |
+| `~/asr_sro` | plain copy, not a clone | the SRO runs of 2026-10-24 in `trial/sro` (`bp` tail; `docs/HANDOFF_sro.md`) |
 | `~/asr_pd`, `~/asr_base`, `~/asr_v1`, `~/asr_v2` | older | disposable diagnostic clones |
 
 Recent runs (`~/asr_remote4/trial/`):
@@ -28,11 +29,10 @@ Recent runs (`~/asr_remote4/trial/`):
 - `a1/scan/{bp,hull,avg2,bpdump}`: N(E) scans; `bpdump/chains.dat` (25 MB) with `tailtest.py` (offline replica of `cf_species`).
 
 ## Next actions
-1. Review and commit the uncommitted SRO work (with the user).  The desktop needs the merged main (bundle or push + pull) before
-   new runs; `~/asr_l4` already has the l4stall code.
+1. SRO: review and commit the uncommitted work with the user, then the SRO gates (`docs/HANDOFF_sro.md`; a new thread).
 2. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
 3. Speed work (ROADMAP phase 5).
-4. The user manual (`doc/manual`, the user's uncommitted files) should say that `hull` is the default and why `bp` is not.
+4. Push main (the user: `git push origin main`).  Then the desktop can use `git pull --ff-only github main` again.
 
 ## Working rules
 - All calculations on the desktop, unit tests may run on the laptop.  The SRM VPN drops every few hours:
