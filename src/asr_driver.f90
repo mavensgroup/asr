@@ -575,7 +575,12 @@ contains
     open (newunit=u, file=dfile, status='replace', action='write')
     write (u, '(a)') '# '//inp%name//'   states/Ry per atom of each component, summed over spin; total = per site (weighted)'
     write (u, '(a,f12.8)') '# E_F = ', res%ef
-    write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2'
+    if (res%nspin == 2) then                           ! spin-resolved columns per component follow (per atom, per spin)
+      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2', &
+        ('  '//trim(labels(p))//'_up_s _p _d _dn_s _p _d', p=1, ncomp)
+    else
+      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2'
+    end if
     fsp = 2.0_dp / real(res%nspin, dp)                 ! res%edos is per spin channel; spin = 1 holds both spins in one
     do ie = 1, inp%npoints
       tsp = 0.0_dp
@@ -583,7 +588,12 @@ contains
         tsp(sg) = fsp * sum([(res%comp_w(p) * sum(res%edos(ie, :, p, sg)), p=1, ncomp)])
       end do
       tot = sum(tsp)
-      write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
+      if (res%nspin == 2) then
+        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp, &
+          (((res%edos(ie, l, p, sg), l=0, 2), sg=1, 2), p=1, ncomp)
+      else
+        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
+      end if
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
