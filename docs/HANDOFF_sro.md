@@ -39,7 +39,7 @@ when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncom
 |---|---|
 | B4.1 alpha = 0 equals the uncorrelated run (unit test; SCF gate G1: every printed number identical) | 🟢 |
 | B4.2 brute force: ring of 5 with frozen centre and conditional shell (1.6e-15); fcc ternary D4h-reduced vs unreduced (8.3e-13) | 🟢 |
-| B3 electrostatics with SRO: keep SIM or use the explicit shell charge sum_s X_s^(p) q_s - qbar.  No literature prescription (FINDINGS_LOG lists what was checked). | 🔴 decision with the user |
+| B3 electrostatics with SRO.  Decided with the user 2026-10-31: keep SIM unchanged (option a) as the default.  The explicit shell charge sum_s X_s^(p) q_s - qbar (option b) becomes a sensitivity test once its double counting of the SIM screening charge is worked out.  Report observables that change little between the two.  SRO energies stay unphysical until then. | 🟢 decided (a); 🔴 test (b) |
 | B4.3 Tarafder et al. 2006 bcc CuZn, alpha about -0.15: compare the SRO-induced change of the DOS, not absolute peaks (their bands are shifted by about 0.19 Ry) | 🟠 runs exist, not analysed |
 | B4.4 Alam 2009 Fig. 4 (DOS of the 7 triads) and Fig. 5 (M2(110) < M2(101) < M2(011)) | 🟠 runs exist, not analysed |
 | B4.5 same-model reference: reverse Monte Carlo supercells at target alpha (new tool next to `tools/sqs.py`), k-space with one potential per species | 🔴 |
