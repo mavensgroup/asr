@@ -7,11 +7,11 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 ## Code state
 | where | what |
 |---|---|
-| `main` | local: this docs cleanup on top of `3ca0c9a`, not pushed; GitHub: check with `git log origin/main -1` (last known push `574c467`) |
+| `main` | local `099ae3a` (docs cleanup + merge of `l4stall`), not pushed; GitHub: check with `git log origin/main -1` (last known push `574c467`) |
 | main working tree, uncommitted | SRO work: `src/asr_sro.f90`, `test/test_sro.f90`, `example/fe66ni14cr20_fcc_sro.toml`, changes in `asr_augcls`, `asr_class_scf`, `asr_driver`, `test_augcls`, `test_run_input`; the user's own edits in `README.md`, `.gitignore`, `src/asr_kinds.f90`, `doc/`, `ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md` |
-| branch `l4stall` (worktree `../asr_l4stall`), not pushed | `93aa84e` `[asr] ef_scan` probe (N(E) at a fixed potential, split by contour part) and the `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump` (chain coefficients for offline tail tests) |
+| branch `l4stall` (worktree `../asr_l4stall`), merged into main | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
 | stash in `../asr_l4stall` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
-| default tail in the code | still `bp` (`asr_driver`, `asr_class_scf`).  Production runs must set `ed_terminator = "hull"` until the default changes |
+| default tail in the code | `hull` (since `3a47711`); `example/fe66ni14cr20_fcc_sro.toml` (uncommitted) still sets `bp` explicitly |
 
 ## Desktop state (`ssh desktop`, idle on 2026-10-30)
 | clone | commit | use |
@@ -28,11 +28,11 @@ Recent runs (`~/asr_remote4/trial/`):
 - `a1/scan/{bp,hull,avg2,bpdump}`: N(E) scans; `bpdump/chains.dat` (25 MB) with `tailtest.py` (offline replica of `cf_species`).
 
 ## Next actions
-1. Make `hull` the default `ed_terminator`; keep `bp` as an option with a warning in the manual; add a unit test that N(E) is smooth on
-   a fixed chain family (data: Cr e_g chain at node 36 in `bpdump/chains.dat`); run the unit tests; merge `l4stall`.
-2. Review and commit the uncommitted SRO work (with the user).
-3. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
-4. Speed work (ROADMAP phase 5).
+1. Review and commit the uncommitted SRO work (with the user).  The desktop needs the merged main (bundle or push + pull) before
+   new runs; `~/asr_l4` already has the l4stall code.
+2. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
+3. Speed work (ROADMAP phase 5).
+4. The user manual (`doc/manual`, the user's uncommitted files) should say that `hull` is the default and why `bp` is not.
 
 ## Working rules
 - All calculations on the desktop, unit tests may run on the laptop.  The SRM VPN drops every few hours:

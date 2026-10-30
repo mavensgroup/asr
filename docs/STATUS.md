@@ -11,7 +11,7 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 | `[asr] levels` | 4 (3 for scans) | Co, Ni moments in HEAs need 4 or 5 |
 | `rank` | 1 | rank 2 and 3 change nothing at levels 4 [Queue 2 results] |
 | `recursion_steps` | 24 for strong moments, 36 for Ni-type weak moments | chain resolution [Tail scan at fixed potential] |
-| `ed_terminator` | `"hull"` (the code default is still `"bp"`) | `bp` puts a pole next to the contour [Levels-4 SCF stall] |
+| `ed_terminator` | `"hull"` (default since 3a47711) | `bp` puts a pole next to the contour [Levels-4 SCF stall] |
 | `fermi_kt` | 0.001 | removes the N(E) noise floor, within 0.003 muB of sharp |
 | `contour_points` | 32 | 32 = 64 to 1e-3 |
 | `[scf] sim_beta` | 1 | corrected SIM [SIM sign and magnitude error] |
@@ -28,11 +28,11 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 | class SCF: any sublattices and species, Madelung + SIM, exact electron count, Anderson with restart fix, total energy | 🟢 | binaries, Heuslers, HEAs below |
 | OpenMP over independent chains | 🟢 | bit identical, l3 iteration 867 s to 398 s on 14 threads |
 | one input format and driver, `asr.out` report | 🟢 | `test_run_input` |
-| terminators `hull`, `bp`, `avg2` | 🟢 `hull`, `avg2` · 🟠 `bp` | `bp` is not safe on complex chains [Levels-4 SCF stall] |
+| terminators `hull` (default), `bp`, `avg2` | 🟢 `hull`, `avg2` · 🟠 `bp` | `bp` is not safe on complex chains; `test_terminators` checks the Nevanlinna bound \|dG/dz\| <= -Im G / Im z [Levels-4 SCF stall] |
 | short-range order, first shell (`asr_sro`, `[[sro]]`) | 🟠 | uncommitted; `test_sro` 16/16, `test_augcls` 16/16, SCF gate G1 [Short-range order] |
 | k-space LMTO-ASA for ordered cells and SQS supercells | 🟢 | SQS references below |
 | cross-check routes (EI H^(2)/H^(3), P(z) - S, exact KKR-ASA) | 🟢 kept for tests | not for production |
-| N(E) probe `ef_scan`, chain dump `ef_scan_dump` | 🟢 | branch `l4stall`, not merged |
+| N(E) probe `ef_scan`, chain dump `ef_scan_dump`, `bp` fallback counter | 🟢 | merged in 099ae3a |
 
 ## Validation against same-model references (3 to 4 % bar)
 | system | result | status |
@@ -49,7 +49,6 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 ## Blockers and open problems
 | item | status |
 |---|---|
-| default tail is still `bp` in the code; `l4stall` not merged | ⛔ for every new run until fixed (set `ed_terminator = "hull"`) |
 | cost: CoCrFeNi levels 4 takes 2.7 h per iteration, CoCrFeMnNi more | ⛔ for HEA levels 4 and 5, SRO series, Fe-Cr series |
 | SRO electrostatics (B3): SIM with a correlated shell, no literature prescription | 🔴 decision needed |
 | SRO gates B4.3 (Tarafder CuZn), B4.4 (Alam Fig. 4 and 5), B4.5 (RMC supercells) | 🔴 |

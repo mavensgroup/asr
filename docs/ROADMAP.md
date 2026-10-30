@@ -47,7 +47,7 @@ and partially ordered alloys, short-range order, local environments.  First outp
 | N-species SQS tool (`tools/sqs.py`) | 🟢 |
 | Fe66Ni14Cr20 levels 3 (NM and spin) and levels 4 (NM, `hull` tail) converged | 🟢 |
 | CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin) vs 40-atom SQS: Fe, Cr, Mn within the bar; Co, Ni 9 to 27 % low (levels 3 resolution) | 🟢 |
-| `hull` as the default tail in the code, smoothness test, merge branch `l4stall` | 🔴 next |
+| `hull` as the default tail in the code, Nevanlinna-bound test, merge branch `l4stall` | 🟢 |
 | Alam and Mookerjee 2009 Fig. 2 comparison (Ni-Fe splitting, Cr spikes) at levels 4 | 🔴 |
 | HEA at levels 4 or 5 for the weak Co and Ni moments | ⛔ needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
 | more SQS cells for error bars | 🔴 |
@@ -89,10 +89,9 @@ Exchange J_ij (`docs/JIJ_PLAN.md`), Bloch spectral function A(k,E), optical cond
 magnetism, Wannier front end.
 
 ## Order of work (next items)
-1. `hull` default tail in the code, N(E) smoothness test, merge `l4stall` into main.  The user pushes.
-2. Commit the SRO work that sits uncommitted in the main working tree, after review.
-3. Alam and Mookerjee comparison with the converged levels-4 Fe66Ni14Cr20 DOS.
-4. Speed work (phase 5), measured before and after.
-5. SRO gates B3 and B4.3 to B4.5.
-6. HEA levels 4 or 5 and more SQS cells.
-7. v1.0 checklist, then the CPC preprint and the Fe-Cr paper.
+1. Commit the SRO work that sits uncommitted in the main working tree, after review.
+2. Alam and Mookerjee comparison with the converged levels-4 Fe66Ni14Cr20 DOS.
+3. Speed work (phase 5), measured before and after.
+4. SRO gates B3 and B4.3 to B4.5.
+5. HEA levels 4 or 5 and more SQS cells.
+6. v1.0 checklist, then the CPC preprint and the Fe-Cr paper.
