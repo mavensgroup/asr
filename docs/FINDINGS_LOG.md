@@ -1191,6 +1191,40 @@ self-consistent potential: KKR-CPA (DLM) potentials of the random state, SRO is 
 neglected in the DLM state) is significant for the Cantor alloys.  Raghuraman, Wang & Widom PRB 102, 054207 (2020) (SRO cluster in
 KKR-CPA): plain Hartree, no SIM or environment term.  Neither gives a SIM + SRO prescription for a self-consistent SRO potential.
 
+### SRO reruns with the `hull` tail (2026-10-30, desktop `~/asr_remote4/trial/sro_hull`, binary `bin/asr_ffaba36`)
+The 2026-10-24 runs (`bp`, now in `trial/sro_bp`) were repeated from committed main with `ed_terminator = "hull"`.  Two queues of 14
+threads; all done in 5 h 46 min.  Every full SCF converged.  `rand` is the random triad as a full SCF (9 iterations).  The old `bp`
+reference `g1_nosro` was only 2 iterations from the converged `bp` potential.
+SCF gate G1 on committed code: `g1_sro0` (all alpha = 0 through the SRO code, 2 iterations) equals the first 2 iterations of `rand` in
+every printed number (dV, E_F, qnet, total energy -2522.70768619 Ry).
+Fe66Ni14Cr20 fcc NM, levels 3, 24 steps.  Triad = (alpha_FeNi, alpha_FeCr, alpha_NiCr).  N(E_F) = component total in states/Ry/atom.
+dE = E_total - E_total(random) in mRy/site.  dE(bp) uses the `bp` reference -2522.70766986.
+| run | it | E_F (Ry) | qnet Fe | Ni | Cr | N(E_F) Fe | Ni | Cr | dE hull | dE bp |
+|---|---|---|---|---|---|---|---|---|---|---|
+| rand | 9 | -0.070287 | 0.0265 | 0.1460 | -0.1895 | 12.03 | 7.77 | 8.84 | 0 | 0 |
+| t110 | 16 | -0.071742 | 0.0160 | 0.1245 | -0.1401 | 12.35 | 9.63 | 9.56 | 0.389 | 0.424 |
+| t101 | 19 | -0.073852 | 0.0294 | 0.1114 | -0.1749 | 11.42 | 12.26 | 8.62 | -2.123 | -2.084 |
+| t011 | 15 | -0.071719 | 0.0097 | 0.1283 | -0.1218 | 12.86 | 9.43 | 9.89 | 2.533 | 2.575 |
+| t100 | 16 | -0.071904 | 0.0317 | 0.1240 | -0.1914 | 11.40 | 9.84 | 8.77 | -2.005 | -2.061 |
+| t010 | 16 | -0.070309 | 0.0113 | 0.1461 | -0.1394 | 12.91 | 7.78 | 9.59 | 2.512 | 2.556 |
+| t001 | 13 | -0.072099 | 0.0247 | 0.1282 | -0.1714 | 12.01 | 9.31 | 8.60 | -0.707 | -0.708 |
+| t111 | 18 | -0.073295 | 0.0139 | 0.1122 | -0.1244 | 12.34 | 12.23 | 9.89 | 0.954 | 0.978 |
+bcc CuZn 50:50, a = 2.85 A, levels 4, 24 steps:
+| run | alpha_CuZn | it | E_F (Ry) | qnet Cu | N(E_F) Cu | Zn | dE hull | dE bp |
+|---|---|---|---|---|---|---|---|---|
+| cuzn_rand | 0 | 34 | 0.001358 | 0.1094 | 1.78 | 0.90 | 0 | 0 |
+| cuzn_m015 | -0.15 | 31 | 0.001162 | 0.1043 | 1.75 | 0.91 | -0.472 | -0.459 |
+| cuzn_m100 | -1 | 31 | 0.002476 | 0.0790 | 1.57 | 0.92 | -1.564 | -1.543 |
+Findings:
+- `hull` and `bp` agree at levels 3 and in CuZn levels 4.  qnet agrees to 3e-4 e.  E_F agrees to 5e-5 Ry.  The SRO energy shifts dE agree
+  to 0.06 mRy.  `hull` gives N(E_F) lower by 0.3 to 0.8 percent in every run.  So no SRO conclusion depends on the tail.
+- Triads: the energy shifts are not additive in the pairs.  For example dE(t100) + dE(t001) = -2.71 mRy, but dE(t101) = -2.12 mRy.
+- Fe-Cr avoidance (t010, t011) costs about 2.5 mRy.  Fe-Ni avoidance (t100, t101) gains about 2 mRy.  These signs come with the SIM
+  electrostatics of a random shell (gate B3 open), so they are not yet physical results.
+- SRO moves charge: avoiding Fe-Cr contact cuts the Cr charge from -0.19 to -0.14 e.  Avoiding Ni contact raises N_Ni(E_F) from 7.8
+  to 12.3 states/Ry.
+- CuZn: ordering lowers the energy (-0.47 mRy at alpha = -0.15, -1.56 mRy at -1) and lowers the charge transfer (0.109 to 0.079 e).
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is
