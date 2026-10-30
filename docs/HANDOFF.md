@@ -41,7 +41,8 @@ Recent runs (`~/asr_remote4/trial/`):
   bundle: `git bundle create x.bundle 574c467..<branch>`, `scp`, `git fetch /tmp/x.bundle <branch>:<branch>`.  Only the user pushes.
 - Build on the desktop with `source ~/asr_remote4/env.sh; asr_build` (plain `fpm build` misses the MKL link flags).  After a module
   signature change: `rm -rf build/ifx_*`.
-- Launch: `setsid nohup bash run.sh < /dev/null > run.log 2>&1 &` then `echo $! > pid` in the same shell.  `run.sh` sources `env.sh`
+- Launch over ssh: `ssh -n desktop 'cd DIR && setsid -f bash run.sh < /dev/null > run.log 2>&1'`.  The redirect must sit on the
+  `setsid -f` command itself; otherwise ssh waits for the job and hangs until the timeout.  Find the PID later with `pgrep -af`.  `run.sh` sources `env.sh`
   and sets `FORT_BUFFERED=false OMP_NUM_THREADS=<n> MKL_NUM_THREADS=1`.  Check with `pgrep -af app/asr`.
 - Kill by PID only.  Never `pkill -f` a pattern that also appears in your own command line.
 - A long build in the foreground of one ssh command can hit the 600 s tool limit: build first, launch second.

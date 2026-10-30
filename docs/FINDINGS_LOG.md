@@ -1225,6 +1225,43 @@ Findings:
   to 12.3 states/Ry.
 - CuZn: ordering lowers the energy (-0.47 mRy at alpha = -0.15, -1.56 mRy at -1) and lowers the charge transfer (0.109 to 0.079 e).
 
+### Gate B4.4: triads against Alam & Mookerjee 2009 figures 4 and 5 (2026-10-31, levels 3, `trial/sro_hull`)
+Tool: `tools/sro_triads.py <dir> [--perm A B C]` (reads `rand/` and `tXYZ/` `dos.dat`; prints the tables below; draws the figure).
+The paper's definitions (section 3): M_n(E) = int_{-inf}^E dE' E'^n n(E') of the configuration-averaged total DOS.  It is cumulative
+and not centred.  Energies are absolute: the paper's E_F of the random alloy is about -0.07 Ry (figure 2), ours is -0.0703 Ry.  Labels
+are (alpha_AB, alpha_AC, alpha_BC) with (A, B, C) = (Fe, Ni, Cr) by the text, table 1 and the panel titles of figure 4.  The paper's
+conditional probabilities X^(j) are the same as `sro_conditional`.
+Paper claims: figure 4 falls into two shape families set by alpha_BC (alpha_NiCr): alpha_BC = 0 (110, 100, 010) one main peak at
+-0.2 Ry; alpha_BC = 1 (101, 011, 001, 111) a shoulder at -0.4 Ry and strong peaks at -0.2 and +0.15 Ry.  Figure 5:
+M2(110) < M2(101) < M2(011), M2(100) < M2(010) < M2(001), M4(110) < M4(101) < M4(011).
+Our results (L1 change of the DOS against the random alloy, states/atom; total, then d of Fe, Ni, Cr):
+| run (FeNi, FeCr, NiCr) | total | Fe d | Ni d | Cr d |
+|---|---|---|---|---|
+| t100 | 0.160 | 0.232 | 1.486 | 0.130 |
+| t001 | 0.217 | 0.079 | 0.779 | 0.739 |
+| t101 | 0.313 | 0.258 | 2.123 | 0.637 |
+| t010 | 0.497 | 0.528 | 0.084 | 2.085 |
+| t110 | 0.503 | 0.556 | 1.498 | 2.078 |
+| t011 | 0.666 | 0.575 | 0.866 | 2.581 |
+| t111 | 0.667 | 0.606 | 2.152 | 2.537 |
+- Each pair acts on the right component: alpha_FeNi = 1 changes the Ni d DOS, alpha_FeCr = 1 the Cr d DOS (asr.out conditional
+  tables checked: t100 Ni centre P = (0, 0.80, 0.20); t010 Cr centre P = (0, 0.14, 0.86)).  The size of the total change is set by
+  alpha_FeCr, the pair with the majority species.  No run shows the paper's strong +0.15 Ry peak.
+- With the literal labels (Fe, Ni, Cr) every paper claim fails: both M2 orderings hold at 0 % of the energies in [-0.6, 0.3] Ry, and
+  the figure 4 families do not separate in our DOS change.
+- With A and B swapped, (A, B, C) = (Ni, Fe, Cr), every claim holds: both M2 orderings at 100 % of the energies (normalised over the
+  window or per atom), the M4 ordering, and the families (alpha_BC = 1 family min L1 0.50 > alpha_BC = 0 family max 0.31).  It is
+  the only one of the six assignments for which the orderings hold.  With the integral started at -0.6 Ry instead of the window bottom
+  the orderings still hold at 81 % and 86 % of the energies for this assignment, and at <= 12 % for all others.
+- Size: our SRO changes are about ten times smaller than the paper's.  Our M2 differences between triads are about 0.5 percent; the
+  paper's curves differ by about 5 percent.  Our random DOS is already sharper than the paper's figure 2 (peak 26 vs 14.5 states/Ry
+  at -0.2 Ry).  This belongs to the figure 2 comparison (HANDOFF item 2), not to SRO.
+- Reading: our code assigns the pairs correctly.  The paper's figures behave as if its A and B were Ni and Fe.  This points to a label
+  swap in the paper (text and figures disagree), not in our code.  It is an inference from the figures only.
+- Side note: the random DOS has a one-point dip at E = 0.130 Ry (5.45 -> 4.11 -> 5.10 states/Ry; also in g1_sro0, not in the SRO
+  runs).  A `hull` glitch on the real axis at one energy; 0.006 states; no effect on the SCF (contour) or on the moments.
+Levels 4 (the same 7 triads, started 2026-10-31 02:56, `trial/sro_l4`, random reference `trial/a1/l4_hull`): pending.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is
