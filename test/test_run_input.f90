@@ -35,7 +35,7 @@ program test_run_input
   call read_run_input(f, inp, msg)
   call check(len(msg) == 0, 'pure bcc Fe accepted')
   call check(inp%method == 'asr' .and. inp%ci%dec%ncls == 1 .and. inp%ci%dec%nsite == 2, 'method defaults to asr; bcc graph, 2 sites')
-  call check(inp%ci%tol == 1.0e-5_dp .and. inp%ci%nlevels == 4 .and. inp%ci%ed_tail == 'bp', 'asr defaults filled')
+  call check(inp%ci%tol == 1.0e-5_dp .and. inp%ci%nlevels == 4 .and. inp%ci%ed_tail == 'hull', 'asr defaults filled')
 
   call put('[calculation]'//nl//'kind = "lmto"'//nl//bccfe)
   call read_run_input(f, inp, msg)

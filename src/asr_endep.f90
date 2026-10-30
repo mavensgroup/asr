@@ -23,7 +23,10 @@ module asr_endep
   !> 'bp' tails whose fixed point failed (zgeev error: last iterate kept; 200 iterations: hull values): statistics
   integer(8) :: ed_nfall = 0
   !> square-root tail of cf_species: 'hull' (band edges = extreme eigenvalues of the finite chain), 'bp' (Beer-Pettifor fixed
-  !> point: edges where the terminated fraction has its poles, outside the hull), 'avg2' (last two coefficients)
+  !> point: edges where the terminated fraction has its poles, outside the hull), 'avg2' (last two coefficients).
+  !> Warning: on the complex chains of the energy-dependent route 'bp' can lock onto a state split off by the end-site shift; the
+  !> terminated fraction then has a pole next to the contour and N(E_F) varies steeply (levels-4 Fe66Ni14Cr20 SCF stall, Cr e_g).
+  !> 'hull' is the default of the class SCF; test_terminators checks the Nevanlinna bound |dG/dz| <= -Im G / Im z.
   character(len=8) :: ed_tail = 'hull'
 
   !> gamma-representation parameters (9 orbitals) of one species / spin; p = 0: two-parameter P^gamma = (z - C)/Delta,

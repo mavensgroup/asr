@@ -57,7 +57,7 @@ module asr_class_scf
     logical :: relativistic = .true.
     real(dp) :: ed_eta = 0.01_dp, fermi_kt = 0.001_dp, depth_tol = 1.0e-5_dp
     integer :: fermi_poles = 0
-    character(len=8) :: ed_tail = 'bp'
+    character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
     character(len=256) :: ef_scan_dump = ''            !! diagnostic: file for the chain coefficients of every scan energy

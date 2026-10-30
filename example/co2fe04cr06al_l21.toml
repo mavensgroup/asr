@@ -70,7 +70,7 @@ recursion_steps = 24
 rank = 1
 contour_points = 32
 supercell = 8
-ed_terminator = "bp"
+ed_terminator = "hull"
 fermi_kt = 0.001
 
 [dos]
