@@ -90,11 +90,42 @@ program test_run_input
   call read_run_input(f, inp, msg)
   call check(index(msg, 'B2') > 0, 'sphere_ratio outside B2 rejected')
 
+  ! [[sro]]
+  call put(bccfe(1:index(bccfe, '[[sublattice]]') - 1)//co//'[[sublattice]]'//nl//'name = "a"'//nl// &
+           'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.75, 0.25]'//nl// &
+           '[[sro]]'//nl//'pairs = [["Fe", "Co", -0.2]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%ci%sro, 'one-sublattice [[sro]] accepted')
+  if (len(msg) == 0) call check(abs(inp%ci%sro_cond(1, 2, 1, 1) - 0.25_dp * 1.2_dp) < 1.0e-14_dp .and. &
+                                abs(inp%ci%sro_cond(2, 2, 1, 1) - (0.25_dp - 0.75_dp * 0.2_dp)) < 1.0e-14_dp, &
+                                '[[sro]] conditional probabilities: P(Co|Fe) = x_Co (1 - alpha), P(Co|Co) = x_Co + x_Fe alpha')
+  call put(bccfe(1:index(bccfe, '[[sublattice]]') - 1)//co//'[[sublattice]]'//nl//'name = "a"'//nl// &
+           'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.75, 0.25]'//nl// &
+           '[[sro]]'//nl//'pairs = [["Fe", "Co", -0.4]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, '< 0') > 0, '[[sro]] alpha outside the X >= 0 bounds rejected')
+  call put(bccfe(1:index(bccfe, '[[sublattice]]') - 1)//co//'[[sublattice]]'//nl//'name = "a"'//nl// &
+           'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.75, 0.25]'//nl// &
+           '[[sro]]'//nl//'pairs = [["Fe", "Co", -0.1], ["Co", "Fe", -0.1]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'twice') > 0, '[[sro]] pair given twice rejected')
+  call put(bccfe(1:index(bccfe, '[[sublattice]]') - 1)//co//'[[sublattice]]'//nl//'name = "a"'//nl// &
+           'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.75, 0.25]'//nl// &
+           '[[sro]]'//nl//'pairs = [["Fe", "Co", 0.0], ["Co", "Fe", -0.1]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'twice') > 0, '[[sro]] pair given twice rejected when the first alpha is 0')
+  call put(b2//'[[sro]]'//nl//'pairs = [["Fe", "Co", -0.1]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'needs sublattices') > 0, '[[sro]] without sublattices on a several-sublattice structure rejected')
+  call put(kspace//bccfe//'[[sro]]'//nl//'pairs = []'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'method = "asr"') > 0, '[[sro]] with method = kspace rejected')
+
   ! every shipped example is a valid input (fpm test runs from the project root)
   call example('ag_fcc.toml', 'kspace'); call example('fe_bcc.toml', 'kspace'); call example('feco_b2_kspace.toml', 'kspace')
   call example('fecu_b2.toml', 'kspace'); call example('feco_b2_asr.toml', 'asr'); call example('cuzn_b2.toml', 'asr')
   call example('cuzn_alloy.toml', 'asr'); call example('co2fe04cr06al_l21.toml', 'asr')
-  call example('fe66ni14cr20_fcc.toml', 'asr')
+  call example('fe66ni14cr20_fcc.toml', 'asr'); call example('fe66ni14cr20_fcc_sro.toml', 'asr')
   call report()
 contains
   subroutine example(name, method)

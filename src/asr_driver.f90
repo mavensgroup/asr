@@ -14,6 +14,9 @@
 !>   [[sublattice]] name, positions = [[x, y, z], ...] (fractional coordinates of the decoration cell), species = ["A", ...],
 !>                  concentrations = [x_A, ...] (sum 1; may be omitted for one species)
 !>   [[site]]       (lattice = "cell") position = [x, y, z] (Cartesian, alat units), species = "<symbol>"
+!>   [[sro]]        (method = "asr") first-shell Warren-Cowley short-range order: sublattices = ["A", "B"] (optional with one
+!>                  sublattice), shell = 1, pairs = [["Fe", "Ni", alpha], ...] (one sublattice: unlike pairs, symmetric, diagonal
+!>                  derived; alpha > 0 = the pair avoids contact, 1 = never neighbours); see asr_sro
 !>   [scf]          spin, xc, mixing, tolerance, max_iterations, zeta0, relativistic; method = "asr" also: sim_beta,
 !>                  save_potential (written every iteration) / start_potential, mixing_restart (linear step after an Anderson
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
@@ -36,6 +39,7 @@ module asr_driver
   use asr_asa, only: core_shells_for, asa_class_result_t
   use asr_lmto_driver, only: run_lmto, atom_shells
   use asr_sublattice, only: decoration_t, decoration_build
+  use asr_sro, only: sro_conditional
   use asr_class_scf
   use asr_report
   !$ use omp_lib, only: omp_get_max_threads
@@ -79,7 +83,7 @@ contains
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
     call check_keys(table, ['calculation', 'structure  ', 'species    ', 'sublattice ', 'site       ', 'scf        ', 'asr        ', &
-                            'kspace     ', 'dos        ', 'output     '], 'top level', msg)
+                            'kspace     ', 'dos        ', 'output     ', 'sro        '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -251,6 +255,10 @@ contains
         msg = 'method = "kspace" needs an ordered structure (one species per sublattice); disorder runs with method = "asr"'; return
       end if
     end if
+    if (table%has_key('sro')) then
+      if (kspace .or. cell) then; msg = '[[sro]] needs method = "asr" on a decorated lattice'; return; end if
+      call read_sro(table, inp, msg); if (len(msg) > 0) return
+    end if
 
     call section(table, 'scf', child)
     call check_keys(child, ['spin           ', 'xc             ', 'sim_beta       ', 'mixing         ', 'tolerance      ', &
@@ -356,6 +364,86 @@ contains
     end if
   end subroutine read_run_input
 
+  !> [[sro]] entries: sublattices = ["A", "B"] (optional with one sublattice), shell = 1, pairs = [["Fe", "Ni", alpha], ...].
+  !> One sublattice: symmetric off-diagonal Warren-Cowley parameters, the diagonal is derived.  Two sublattices: pair [a, b, alpha]
+  !> is species a on the first, b on the second; unset pairs are 0 and both marginals must vanish (asr_sro).  Fills
+  !> inp%ci%sro_cond for every sublattice pair (alpha = 0 where no entry).
+  subroutine read_sro(table, inp, msg)
+    type(toml_table), intent(inout) :: table
+    type(run_input_t), intent(inout) :: inp
+    character(len=:), allocatable, intent(out) :: msg
+    type(toml_array), pointer :: arr, ka, kb
+    type(toml_table), pointer :: sp
+    real(dp), allocatable :: alpha(:, :, :, :), cond(:, :)
+    logical, allocatable :: given(:, :), seen(:, :, :, :)
+    character(len=:), allocatable :: str
+    integer :: nsub, nmax, i, j, k, ish, ks(2), kk(2), n1, n2
+    real(dp) :: x
+    msg = ''
+    nsub = size(inp%ci%nsc); nmax = maxval(inp%ci%nsc)
+    allocate (alpha(nmax, nmax, nsub, nsub), given(nsub, nsub), seen(nmax, nmax, nsub, nsub))
+    alpha = 0.0_dp; given = .false.; seen = .false.
+    call get_value(table, 'sro', arr, requested=.false.)
+    if (.not. associated(arr)) then; msg = '[[sro]] must be an array of tables'; return; end if
+    do i = 1, len(arr)
+      call get_value(arr, i, sp)
+      if (.not. associated(sp)) then; msg = '[[sro]] must be an array of tables'; return; end if
+      call check_keys(sp, ['sublattices', 'shell      ', 'pairs      '], '[[sro]]', msg); if (len(msg) > 0) return
+      call get_value(sp, 'shell', ish, 1)
+      if (ish /= 1) then; msg = '[[sro]] shell: only the first shell (1) is implemented'; return; end if
+      nullify (ka); call get_value(sp, 'sublattices', ka, requested=.false.)
+      if (associated(ka)) then
+        if (len(ka) /= 2) then; msg = '[[sro]] sublattices = ["A", "B"] (two names, may be equal)'; return; end if
+        do j = 1, 2
+          call get_value(ka, j, str); ks(j) = 0
+          do k = 1, nsub
+            if (trim(inp%subname(k)) == str) ks(j) = k
+          end do
+          if (ks(j) == 0) then; msg = '[[sro]] sublattices: '//str//' is not a [[sublattice]] name'; return; end if
+        end do
+      else
+        if (nsub /= 1) then; msg = '[[sro]] needs sublattices = ["A", "B"] when there are several sublattices'; return; end if
+        ks = 1
+      end if
+      if (given(ks(1), ks(2)) .or. given(ks(2), ks(1))) then; msg = '[[sro]] sublattice pair given twice'; return; end if
+      given(ks(1), ks(2)) = .true.
+      nullify (ka); call get_value(sp, 'pairs', ka, requested=.false.)
+      if (.not. associated(ka)) then; msg = '[[sro]] needs pairs = [["A", "B", alpha], ...]'; return; end if
+      do j = 1, len(ka)
+        nullify (kb); call get_value(ka, j, kb)
+        if (.not. associated(kb)) then; msg = '[[sro]] pairs must be [["A", "B", alpha], ...]'; return; end if
+        if (len(kb) /= 3) then; msg = '[[sro]] pairs must be [["A", "B", alpha], ...]'; return; end if
+        do k = 1, 2
+          call get_value(kb, k, str); kk(k) = 0
+          if (.not. allocated(str)) then; msg = '[[sro]] pairs must be [["A", "B", alpha], ...]'; return; end if
+          do n1 = 1, inp%ci%nsc(ks(k))
+            if (inp%species(inp%ci%spc(n1, ks(k)))%symbol == str) kk(k) = n1
+          end do
+          if (kk(k) == 0) then; msg = '[[sro]] pair species '//str//' is not on sublattice '//trim(inp%subname(ks(k))); return; end if
+        end do
+        call get_value(kb, 3, x)
+        if (ks(1) == ks(2) .and. kk(1) == kk(2)) then
+          msg = '[[sro]] alpha of a species with itself is derived (one sublattice); give the unlike pairs only'; return
+        end if
+        if (seen(kk(1), kk(2), ks(1), ks(2))) then; msg = '[[sro]] pair given twice'; return; end if
+        alpha(kk(1), kk(2), ks(1), ks(2)) = x; alpha(kk(2), kk(1), ks(2), ks(1)) = x
+        seen(kk(1), kk(2), ks(1), ks(2)) = .true.; seen(kk(2), kk(1), ks(2), ks(1)) = .true.
+      end do
+    end do
+    inp%ci%sro = .true.
+    allocate (inp%ci%sro_cond(nmax, nmax, nsub, nsub)); inp%ci%sro_cond = 0.0_dp
+    do i = 1, nsub
+      do j = 1, nsub
+        n1 = inp%ci%nsc(i); n2 = inp%ci%nsc(j)
+        call sro_conditional(inp%ci%conc(1:n1, i), inp%ci%conc(1:n2, j), alpha(1:n1, 1:n2, i, j), i == j, cond, msg)
+        if (len(msg) > 0) then
+          msg = '[[sro]] '//trim(inp%subname(i))//' - '//trim(inp%subname(j))//': '//msg; return
+        end if
+        inp%ci%sro_cond(1:n1, 1:n2, i, j) = cond
+      end do
+    end do
+  end subroutine read_sro
+
   !> The ordered decorated structure as a k-space cell (li%lattice, cell_vec, site_pos, site_sp, species): the decoration cell is
   !> reduced to its primitive cell by the centering translations (I or F) that map every sublattice onto itself; one ASA class per
   !> sublattice (a species on several sublattices is labelled species@sublattice).  sphere_ratio /= 1: unequal spheres, B2 only
@@ -437,7 +525,7 @@ contains
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
     type(class_scf_result_t) :: res
-    integer :: i, ie, l, p, sg, u, nsp, ncomp, ru, nthr, kap
+    integer :: i, ie, l, p, sg, u, nsp, ncomp, ru, nthr, kap, k
     character(len=:), allocatable :: dfile
     character(len=8), allocatable :: labels(:)
     real(dp), allocatable :: zc(:), swsc(:), tsp(:)
@@ -519,6 +607,20 @@ contains
         (trim(inp%species(inp%ci%spc(i, kap))%symbol)//' ', i=1, inp%ci%nsc(kap))
       write (ru, '(a,*(f8.4))') '      concentrations ', inp%ci%conc(1:inp%ci%nsc(kap), kap)
     end do
+    if (inp%ci%sro) then
+      write (ru, '(a)') ' first-shell short-range order (Warren-Cowley): P(neighbour species | centre species); shell sites'// &
+        ' independent given the centre, uncorrelated beyond the first shell; SIM unchanged'
+      do kap = 1, inp%ci%dec%ncls
+        do k = 1, inp%ci%dec%ncls
+          if (all(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
+                      spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) < 1.0e-12_dp)) cycle
+          do i = 1, inp%ci%nsc(kap)
+            write (ru, '(a,a8,a,a8,a,a4,a,*(f8.4))') '   centre on ', inp%subname(kap), ' neighbour on ', inp%subname(k), &
+              ' centre ', trim(inp%species(inp%ci%spc(i, kap))%symbol), ': ', inp%ci%sro_cond(i, 1:inp%ci%nsc(k), kap, k)
+          end do
+        end do
+      end do
+    end if
     call rep_scf_history(ru, labels, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%ci%tol, res%converged)
     write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
     write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)

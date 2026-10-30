@@ -47,6 +47,9 @@ module asr_class_scf
     type(decoration_t) :: dec                          !! sublattices on the graph lattice
     integer, allocatable :: nsc(:), spc(:, :)           !! per sublattice: number of species, chemical species spc(k, sublattice)
     real(dp), allocatable :: conc(:, :)                 !! conc(k, sublattice)
+    logical :: sro = .false.                            !! first-shell short-range order (asr_sro)
+    real(dp), allocatable :: sro_cond(:, :, :, :)       !! sro_cond(k, k', kappa, kappa') = P(species k' on a first-shell site of
+                                                        !! sublattice kappa' | species k at a site of kappa)
     real(dp) :: alat = 0.0_dp                          !! graph lattice constant (Bohr)
     character(len=8) :: lattice = 'bcc', xc = 'vbh'
     real(dp) :: rcl = 1.2_dp, rinv = 0.0_dp            !! kept S^alpha range, inversion cluster radius (alat)
@@ -113,7 +116,8 @@ contains
     real(dp) :: ef_in, r2n, denu, rdv, efshift
     integer :: npass, efmode, pdv, sgdv, kdv
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
-    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg
+    integer, allocatable :: pk(:)
+    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
     logical :: vb, cubic, hlo, hhi, core_ok
 
     vb = .false.; if (present(verbose)) vb = verbose
@@ -127,23 +131,31 @@ contains
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec
     ! ---- components
     ncomp = sum(inp%nsc)
-    allocate (pcl(ncomp), psp(ncomp), w(ncomp), xp(ncomp))
+    allocate (pcl(ncomp), psp(ncomp), pk(ncomp), w(ncomp), xp(ncomp))
     p = 0
     do kap = 1, ncls
       do k = 1, inp%nsc(kap)
-        p = p + 1; pcl(p) = kap; psp(p) = inp%spc(k, kap); xp(p) = inp%conc(k, kap); w(p) = inp%dec%frac(kap) * inp%conc(k, kap)
+        p = p + 1; pcl(p) = kap; pk(p) = k; psp(p) = inp%spc(k, kap); xp(p) = inp%conc(k, kap)
+        w(p) = inp%dec%frac(kap) * inp%conc(k, kap)
       end do
     end do
     nelec = sum([(w(p) * real(inp%spec(psp(p))%nval, dp), p=1, ncomp)])
-    mdl%nl = 9; mdl%nsp = ncomp; mdl%ncls = ncls
-    allocate (mdl%nsc(ncls), mdl%spc(maxval(inp%nsc), ncls), mdl%conc(maxval(inp%nsc), ncls))
-    mdl%nsc = inp%nsc; mdl%spc = 0; mdl%conc = 0.0_dp
+    ! operator classes: the sublattices, and with SRO also ncls + kappa' = first-shell sites of the origin on sublattice kappa'
+    ! (same species; their concentrations are set per central component in chain_worker)
+    nmc = ncls; if (inp%sro) nmc = 2 * ncls
+    mdl%nl = 9; mdl%nsp = ncomp; mdl%ncls = nmc
+    allocate (mdl%nsc(nmc), mdl%spc(maxval(inp%nsc), nmc), mdl%conc(maxval(inp%nsc), nmc))
+    mdl%spc = 0; mdl%conc = 0.0_dp
     p = 0
     do kap = 1, ncls
+      mdl%nsc(kap) = inp%nsc(kap)
       do k = 1, inp%nsc(kap)
         p = p + 1; mdl%spc(k, kap) = p; mdl%conc(k, kap) = inp%conc(k, kap)
       end do
     end do
+    if (inp%sro) then
+      mdl%nsc(ncls + 1:) = mdl%nsc(1:ncls); mdl%spc(:, ncls + 1:) = mdl%spc(:, 1:ncls); mdl%conc(:, ncls + 1:) = mdl%conc(:, 1:ncls)
+    end if
     call decoration_madelung(inp%dec, inp%alat, phimad)
     allocate (qbar(ncls))
     call xc_init(xf, inp%xc)
@@ -179,6 +191,26 @@ contains
     allocate (cop(ncls), res%nodes(ncls))
     do kap = 1, ncls
       call decoration_classes(inp%dec, coord, mg, kap, cls)
+      if (inp%sro) then                                ! first shell of the origin (site 1 at coord 0; minimum image)
+        r2min = huge(1)
+        do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2)); end do
+        do i = 2, g%n
+          if (sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2) == r2min) cls(i) = ncls + cls(i)
+        end do
+        do k = 1, ncls                                 ! SRO with a sublattice that is not in the first shell: input error
+          if (.not. any(cls == ncls + k)) then
+            do i = 1, inp%nsc(kap)
+              if (any(abs(inp%sro_cond(i, 1:inp%nsc(k), kap, k) - inp%conc(1:inp%nsc(k), k)) > 1.0e-12_dp)) &
+                error stop 'class_scf: [[sro]] for a sublattice pair that are not first-shell neighbours'
+            end do
+          else if (vb) then
+            do i = 1, inp%nsc(kap)
+              print '(a,i0,a,i0,a,i0,a,i0,a,*(f8.4))', '  SRO: sublattice ', kap, ' component ', i, ', first-shell sites ', &
+                count(cls == ncls + k), ' on sublattice ', k, ': P(s | centre) =', inp%sro_cond(i, 1:inp%nsc(k), kap, k)
+            end do
+          end if
+        end do
+      end if
       call class_ops(coord, mg, cls, perm, mats, cubic)
       if (.not. cubic) error stop 'class_scf: a sublattice site is not cubic (needs the p_x, p_y / t2g, e_g partners separately)'
       call orbital_rep(mats, cop(kap)%d)
@@ -566,7 +598,7 @@ contains
       complex(dp), intent(inout) :: gz(:, :, :, :)
       type(augcls_op), allocatable :: lop(:)
       type(edn_work_t), allocatable :: lwk(:)
-      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp
+      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks
       nz = size(zs)
       allocate (lop(ncls), lwk(ncls)); cur = -1
       !$omp do schedule(dynamic)
@@ -581,6 +613,11 @@ contains
         end if
         if (cur(1, kp) /= pp_ .or. cur(2, kp) /= gg) then
           call augcls_set_params(lop(kp), ms(pp_, gg)); call augcls_freeze_site(lop(kp), 1, pp_)
+          if (inp%sro) then
+            do ks = 1, ncls
+              call augcls_set_class_conc(lop(kp), ncls + ks, inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks))
+            end do
+          end if
           cur(1, kp) = pp_; cur(2, kp) = gg
         end if
         if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; end if

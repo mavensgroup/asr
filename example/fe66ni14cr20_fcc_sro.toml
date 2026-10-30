@@ -1,0 +1,70 @@
+# fcc Fe0.66Ni0.14Cr0.20 with first-shell Warren-Cowley short-range order: the SRO gate of Alam & Mookerjee, JPCM 21, 195503
+# (2009), Fig. 4, triad (alpha_FeNi, alpha_FeCr, alpha_NiCr) = (1, 1, 0): Fe has only Fe neighbours, Ni and Cr avoid Fe.
+# alpha_cs = 1 - P(s | c) / x_s for an unlike pair: > 0 clustering (the pair avoids contact), < 0 ordering.  In the asr_ed
+# recursion of component c the first shell of the frozen centre carries the conditional concentrations P(s | c) (asr_sro); shell
+# sites are independent of each other and sites beyond the first shell are uncorrelated (the model of the paper).
+# Otherwise as example/fe66ni14cr20_fcc.toml (a = 3.59 A, experimental austenite; non-magnetic).
+[calculation]
+name = "Fe66Ni14Cr20 fcc SRO 110"
+
+[structure]
+lattice = "fcc"
+alat = 3.59              # Angstrom
+centering = "F"
+
+[[sublattice]]
+name = "fcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Fe", "Ni", "Cr"]
+concentrations = [0.66, 0.14, 0.20]
+
+[[sro]]
+pairs = [["Fe", "Ni", 1.0], ["Fe", "Cr", 1.0], ["Ni", "Cr", 0.0]]
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Ni"
+z = 28
+nval = 10
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 8.0]
+
+[[species]]
+symbol = "Cr"
+z = 24
+nval = 6
+konfig = [4, 4, 3, 4]
+occupations = [1.0, 5.0]
+
+[scf]
+save_potential = "fe66ni14cr20_sro110_pot.dat"
+spin = 1
+xc = "vbh"
+sim_beta = 1.0
+mixing = 0.2
+max_iterations = 100
+tolerance = 1e-05
+
+[asr]
+levels = 4
+recursion_steps = 24
+rank = 1
+contour_points = 32
+supercell = 8
+ed_terminator = "hull"
+fermi_kt = 0.001
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 321
+eta = 0.02
+
+[output]
+dos_file = "fe66ni14cr20_sro110_dos.dat"

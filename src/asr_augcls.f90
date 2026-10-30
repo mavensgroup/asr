@@ -24,7 +24,7 @@ module asr_augcls
   implicit none
   private
   public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c
+            augcls_rand_c, augcls_set_class_conc
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -93,6 +93,37 @@ contains
       end if
     end do
   end subroutine augcls_freeze_site
+
+  !> New concentrations of class kap (same species list and node set): short-range order sets the first-shell class of the frozen
+  !> start site to the conditional concentrations of the central species.  Species of zero weight are allowed (see class_mt).
+  subroutine augcls_set_class_conc(op, kap, conc)
+    type(augcls_op), intent(inout) :: op
+    integer, intent(in) :: kap
+    real(dp), intent(in) :: conc(:)
+    if (size(conc) /= op%nsc(kap)) error stop 'augcls_set_class_conc: wrong number of concentrations'
+    if (any(conc < 0.0_dp) .or. abs(sum(conc) - 1.0_dp) > 1.0e-8_dp) error stop 'augcls_set_class_conc: concentrations'
+    call class_mt(conc, op%mt(:, :, :, kap))
+  end subroutine augcls_set_class_conc
+
+  !> mt(l+1, k+1, k') = x_k' phi_l(k') phi_k(k') for one class.  The basis phi_0 .. phi_{n'-1} is built on the n' species of
+  !> non-zero weight only (asr_augn::augn_basis is singular otherwise); local states n' .. n-1 then have all mt entries zero, so
+  !> they are never coupled to the rest of the node set and drop out of every chain.
+  subroutine class_mt(conc, mt)
+    real(dp), intent(in) :: conc(:)
+    real(dp), intent(out) :: mt(:, :, :)
+    real(dp), allocatable :: phi(:, :)
+    integer, allocatable :: sup(:)
+    integer :: l, k, j, n
+    mt = 0.0_dp
+    sup = pack([(j, j=1, size(conc))], conc > 0.0_dp)
+    n = size(sup)
+    call augn_basis(conc(sup), phi)
+    do l = 1, n
+      do k = 1, n
+        do j = 1, n; mt(l, k, sup(j)) = conc(sup(j)) * phi(l, j) * phi(k, j); end do
+      end do
+    end do
+  end subroutine class_mt
 
   ! ------------------------------------------------------------------ configurations (sorted codes site*nsmax + state)
   pure integer function get_state(cfg, r, nsm)
@@ -367,7 +398,6 @@ contains
     type(store_t) :: st
     logical, allocatable :: canflip(:)
     integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:)
-    real(dp), allocatable :: phi(:, :)
     integer :: nop, nsm, i, lev, r, r1, r2, k1, k2, nsit, f, j, idx, rkmax, cs, osz, gb, ns, k, l, gg, jj, kap, ncomb, q, dgt
     logical :: isnew
 
@@ -425,12 +455,7 @@ contains
     op%nsc = mdl%nsc; op%spc = mdl%spc
     allocate (op%mt(nsm, nsm, nsm, mdl%ncls)); op%mt = 0.0_dp
     do kap = 1, mdl%ncls
-      call augn_basis(mdl%conc(1:mdl%nsc(kap), kap), phi)
-      do l = 1, mdl%nsc(kap)
-        do k = 1, mdl%nsc(kap)
-          do jj = 1, mdl%nsc(kap); op%mt(l, k, jj, kap) = mdl%conc(jj, kap) * phi(l, jj) * phi(k, jj); end do
-        end do
-      end do
+      call class_mt(mdl%conc(1:mdl%nsc(kap), kap), op%mt(:, :, :, kap))
     end do
     ns = maxval(g%nbr_ptr(2:g%n + 1) - g%nbr_ptr(1:g%n)); op%nslot = ns
     allocate (op%flipr(nsm, st%n), op%flipg(nsm, st%n), op%hopr(ns, st%n), op%hopg(ns, st%n), op%lst(st%n), op%site(st%n), &

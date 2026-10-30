@@ -3,7 +3,10 @@
 !>      site frozen to each allowed species: recursion == exact configuration average of [E - H(E)]^-1_00 (identity group);
 !>  (B) decorated bcc (L2_1 pattern: two rock-salt sublattices + the body-centre sublattice; ordered | ternary | ordered), origin on
 !>      each sublattice (O_h and T_d site groups): class-reduced chain == unreduced chain, all four start orbitals;
-!>  (C) regressions, one class: binary == asr_augsym/asr_ed (same D4h group, same node count), ternary == unreduced asr_augn/asr_edn.
+!>  (C) regressions, one class: binary == asr_augsym/asr_ed (same D4h group, same node count), ternary == unreduced asr_augn/asr_edn;
+!>  (D) short-range order (first-shell class of the frozen start site with conditional concentrations, augcls_set_class_conc):
+!>      ring of 5 == exact average over the conditional product measure, including species of zero conditional weight; fcc ternary:
+!>      reduced == unreduced with the shell class, and shell concentrations = x reproduce the operator without a shell class.
 program test_augcls
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
@@ -44,6 +47,8 @@ program test_augcls
   call ring_brute_force()
   call decorated_bcc()
   call regressions()
+  call ring_sro()
+  call fcc_sro()
   call report()
 
 contains
@@ -352,4 +357,150 @@ contains
     print '(a,es9.2)', '  ternary regression: max |augcls - augn| ', errt
     call check_close(errt, 0.0_dp, 1.0e-9_dp, 'one ternary class (reduced) == unreduced asr_augn / asr_edn')
   end subroutine regressions
+
+  !> ring of 5: site 1 (class 3, ternary {1,3,4}) frozen; its neighbours are shell classes 4 (copy of 3, on site 2) and 5 (copy of
+  !> class 2 = binary {2,3}, on site 5); site 3 ordered, site 4 binary uncorrelated.  Conditional concentrations per central
+  !> species, some zero.
+  subroutine ring_sro()
+    integer, parameter :: n = 5, nlev = 400, rcls(n) = [3, 4, 1, 2, 5]
+    real(dp), parameter :: c4(3, 3) = reshape([0.0_dp, 0.7_dp, 0.3_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.2_dp, 0.6_dp, 0.2_dp], [3, 3])
+    real(dp), parameter :: c5(2, 3) = reshape([0.1_dp, 0.9_dp, 1.0_dp, 0.0_dp, 0.55_dp, 0.45_dp], [2, 3])
+    type(graph_t) :: g
+    type(class_alloy_t) :: mdl, mb
+    type(augcls_op) :: op
+    type(edn_t) :: ed
+    type(edn_work_t) :: wk
+    integer :: perm(n, 1), i, l2, j, cen, kz, m, cf(n), q, c, ncfg, l0
+    real(dp) :: dmat(9, 9, 1), u, pc, err
+    complex(dp) :: z, gre, gden, a(nlev), b(nlev)
+    logical :: fl(n)
+    allocate (g%nbr_ptr(n + 1), g%nbr(2 * n)); g%n = n
+    do i = 1, n
+      g%nbr_ptr(i) = 2 * (i - 1) + 1
+      g%nbr(2 * i - 1) = mod(i, n) + 1
+      g%nbr(2 * i) = mod(i - 2 + n, n) + 1
+    end do
+    g%nbr_ptr(n + 1) = 2 * n + 1
+    call three_classes(mb)
+    mdl%nl = 9; mdl%nsp = 4; mdl%ncls = 5
+    allocate (mdl%nsc(5), mdl%spc(3, 5), mdl%conc(3, 5))
+    mdl%nsc(1:3) = mb%nsc; mdl%spc(:, 1:3) = mb%spc; mdl%conc(:, 1:3) = mb%conc
+    mdl%nsc(4) = mb%nsc(3); mdl%spc(:, 4) = mb%spc(:, 3); mdl%conc(:, 4) = mb%conc(:, 3)
+    mdl%nsc(5) = mb%nsc(2); mdl%spc(:, 5) = mb%spc(:, 2); mdl%conc(:, 5) = mb%conc(:, 2)
+    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    do l = 1, 9; do l2 = 1, 9
+      call random_number(u); mdl%block(l, l2, 1) = 0.5_dp * (u - 0.5_dp)
+    end do; end do
+    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    do l = 1, 9; do l2 = l, 9
+      call random_number(u); mdl%block0(l, l2) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l) = mdl%block0(l, l2)
+    end do; end do
+    perm(:, 1) = [(i, i=1, n)]
+    dmat = 0.0_dp; do l = 1, 9; dmat(l, l, 1) = 1.0_dp; end do
+    fl = .true.; fl(1) = .false.
+    err = 0.0_dp
+    do j = 1, 3
+      cen = mdl%spc(j, 3)
+      call edc_setup(mdl, pp, alpha, cen, ed)
+      call build_augcls_operator(g, mdl, rcls, perm, dmat, 1, 80, op, flippable=fl)
+      call augcls_freeze_site(op, 1, cen)
+      call augcls_set_class_conc(op, 4, c4(:, j)); call augcls_set_class_conc(op, 5, c5(:, j))
+      call edn_work_init(wk, op%dim())
+      do l0 = 1, 9, 4
+        do kz = 1, 3
+          z = cmplx(-0.3_dp + 0.3_dp * kz, 0.3_dp, dp)
+          call edc_green(op, wk, ed, z, l0, nlev, gre, a, b, m)
+          gre = cf_complex(a, b, m, z)
+          gden = (0.0_dp, 0.0_dp)
+          ncfg = product(mdl%nsc(rcls(2:n)))
+          do c = 0, ncfg - 1
+            q = c; pc = 1.0_dp; cf(1) = cen
+            do i = 2, n
+              associate (k => rcls(i))
+                cf(i) = mdl%spc(mod(q, mdl%nsc(k)) + 1, k)
+                select case (k)
+                case (4); pc = pc * c4(mod(q, mdl%nsc(k)) + 1, j)
+                case (5); pc = pc * c5(mod(q, mdl%nsc(k)) + 1, j)
+                case default; pc = pc * mdl%conc(mod(q, mdl%nsc(k)) + 1, k)
+                end select
+                q = q / mdl%nsc(k)
+              end associate
+            end do
+            if (pc > 0.0_dp) gden = gden + pc * dense_g(mdl, g, cf, cen, z, l0)
+          end do
+          err = max(err, abs(gre - gden))
+        end do
+      end do
+    end do
+    print '(a,es10.3)', '  ring SRO: max |recursion - exact conditional average| ', err
+    call check_close(err, 0.0_dp, 1.0e-6_dp, 'SRO shell classes (zero weights included): ED recursion == exact conditional average')
+  end subroutine ring_sro
+
+  !> fcc graph, one ternary class {2,3,4}; class 2 = first shell of the origin (geometric, minimum image).
+  subroutine fcc_sro()
+    integer, parameter :: nlev = 3
+    real(dp), parameter :: cs(3, 3) = reshape([0.0_dp, 0.8_dp, 0.2_dp, 0.4_dp, 0.4_dp, 0.2_dp, 0.3_dp, 0.3_dp, 0.4_dp], [3, 3])
+    type(graph_t) :: g
+    type(orb_alloy_t) :: m0
+    type(class_alloy_t) :: mdl
+    type(augcls_op) :: opr, opu, op0
+    type(edn_t) :: ed
+    type(edn_work_t) :: w1, w2, w0
+    integer, allocatable :: coord(:, :), cls(:), cls0(:), perm(:, :), perm0(:, :), mats(:, :, :), pid(:, :)
+    real(dp), allocatable :: d(:, :, :), did(:, :, :)
+    logical, allocatable :: fl(:)
+    complex(dp) :: z, g1, g2, g0, a1(nlev), b1(nlev), a2(nlev), b2(nlev)
+    real(dp) :: err, err0
+    integer :: i, j, cen, io, kz, m1, m2, r2, r2min, nsh
+    call build_lmto_alloy('fcc', 4, 1.05_dp, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, alpha_in=alpha)
+    mdl%nl = 9; mdl%nsp = 4; mdl%ncls = 2
+    allocate (mdl%nsc(2), mdl%spc(3, 2), mdl%conc(3, 2))
+    mdl%nsc = 3; mdl%spc(:, 1) = [2, 3, 4]; mdl%spc(:, 2) = [2, 3, 4]
+    mdl%conc(:, 1) = [0.3_dp, 0.5_dp, 0.2_dp]; mdl%conc(:, 2) = mdl%conc(:, 1)
+    mdl%block = m0%block; mdl%block0 = m0%block0
+    allocate (fl(g%n)); fl = .true.; fl(1) = .false.
+    allocate (cls0(g%n)); cls0 = 1; cls = cls0
+    r2min = huge(1)
+    do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + 4, 8) - 4)**2)); end do
+    nsh = 0
+    do i = 2, g%n
+      r2 = sum((modulo(coord(:, i) + 4, 8) - 4)**2)
+      if (r2 == r2min) then; cls(i) = 2; nsh = nsh + 1; end if
+    end do
+    call check(nsh == 12, 'fcc: 12 first-shell sites')
+    call class_ops(coord, 8, cls0, perm0, mats)
+    call class_ops(coord, 8, cls, perm, mats)
+    call orbital_rep(mats, d)
+    call check(size(perm, 2) == size(perm0, 2), 'fcc: the shell class keeps the site group')
+    allocate (pid(g%n, 1), did(9, 9, 1)); pid(:, 1) = [(i, i=1, g%n)]; did = 0.0_dp
+    do i = 1, 9; did(i, i, 1) = 1.0_dp; end do
+    err = 0.0_dp; err0 = 0.0_dp
+    do j = 1, 3
+      cen = mdl%spc(j, 1)
+      call edc_setup(mdl, pp, alpha, cen, ed)
+      call build_augcls_operator(g, mdl, cls, perm, d, 1, nlev, opr, maxrank=1, flippable=fl)
+      call build_augcls_operator(g, mdl, cls, pid, did, 1, nlev, opu, maxrank=1, flippable=fl)
+      call build_augcls_operator(g, mdl, cls0, perm0, d, 1, nlev, op0, maxrank=1, flippable=fl)
+      call augcls_freeze_site(opr, 1, cen); call augcls_freeze_site(opu, 1, cen); call augcls_freeze_site(op0, 1, cen)
+      if (j == 1) print '(a,i0,a,i0,a,i0)', '  fcc SRO: nodes unreduced ', opu%nn, '  reduced ', opr%nn, '  no shell class ', op0%nn
+      call edn_work_init(w1, opu%dim()); call edn_work_init(w2, opr%dim()); call edn_work_init(w0, op0%dim())
+      do io = 1, 4
+        call augcls_set_start(opr, l0s(io), d); call augcls_set_start(op0, l0s(io), d)
+        do kz = 1, 2
+          z = cmplx(-0.2_dp + 0.3_dp * kz, 0.15_dp, dp)
+          call augcls_set_class_conc(opr, 2, mdl%conc(:, 1))            ! shell = x: no SRO
+          call edc_green(opr, w2, ed, z, l0s(io), nlev, g2, a2, b2, m2)
+          call edc_green(op0, w0, ed, z, l0s(io), nlev, g0)
+          err0 = max(err0, abs(g2 - g0))
+          call augcls_set_class_conc(opr, 2, cs(:, j)); call augcls_set_class_conc(opu, 2, cs(:, j))
+          call edc_green(opu, w1, ed, z, l0s(io), nlev, g1, a1, b1, m1)
+          call edc_green(opr, w2, ed, z, l0s(io), nlev, g2, a2, b2, m2)
+          err = max(err, maxval(abs(a1(1:m1) - a2(1:m2))), maxval(abs(b1(1:m1 - 1) - b2(1:m2 - 1))), abs(g1 - g2))
+        end do
+      end do
+    end do
+    print '(a,es9.2,a,es9.2)', '  fcc SRO: max |reduced - unreduced| ', err, '   max |G(shell = x) - G(no shell class)| ', err0
+    call check_close(err, 0.0_dp, 1.0e-9_dp, 'fcc SRO: class-reduced == unreduced with conditional shell concentrations')
+    call check_close(err0, 0.0_dp, 1.0e-12_dp, 'fcc SRO: shell concentrations = x reproduce the operator without a shell class')
+  end subroutine fcc_sro
 end program test_augcls
