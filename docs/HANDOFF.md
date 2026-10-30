@@ -7,10 +7,10 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 ## Code state
 | where | what |
 |---|---|
-| `main` | local `3986fc2` and later docs commits (docs cleanup, merge of `l4stall`), not pushed; GitHub `origin/main` is `574c467` |
+| `main` | local `dd435bb` (merge of `l4stall`, SRO, spin-resolved DOS, docs), not pushed; GitHub `origin/main` is `574c467`.  The laptop has one checkout (`asr_new`) and one remote (`origin`) |
 | main, committed 2026-10-30 | `176a727` SRO (`docs/HANDOFF_sro.md`), `f2f9ca7` spin-resolved `dos.dat` columns, `455a069` the user's manual and docs; only `suggestion.md` is left uncommitted |
-| branch `l4stall` (worktree `../asr_l4stall`), merged into main | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
-| stash in `../asr_l4stall` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
+| `l4stall` (merged into main; branch and worktree deleted 2026-10-30) | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
+| `stash@{0}` in `asr_new` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
 | default tail in the code | `hull` (since `3a47711`); the uncommitted SRO example and `doc/manual` now say `hull` too |
 
 ## Desktop state (`ssh desktop`, idle on 2026-10-30)
@@ -19,7 +19,7 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 | `~/asr_remote4` | `3986fc2` (merged main, by bundle, 2026-10-30) | main run tree, `env.sh`, all `trial/` directories; full test run in `trial/fulltest` |
 | `~/asr_q` | `574c467` | binary `bin/asr_574c467` used by the HEA l3 `bp` queue |
 | `~/asr_l4` | `03ac4e5` (`l4stall`) | binary of all 2026-10-29/30 runs (`build/ifx_A08D5D447AF67060/app/asr`) |
-| `~/asr_spindos` | `03ac4e5` (`l4stall`) | spin-resolved `dos.dat` columns (uncommitted); the same patch is in the main working tree |
+| `~/asr_spindos` | `03ac4e5` (`l4stall`) | spin-resolved `dos.dat` columns, now committed on main as `f2f9ca7`; disposable |
 | `~/asr_sro` | plain copy, not a clone | the SRO runs of 2026-10-24 in `trial/sro` (`bp` tail; `docs/HANDOFF_sro.md`) |
 | `~/asr_pd`, `~/asr_base`, `~/asr_v1`, `~/asr_v2` | older | disposable diagnostic clones |
 
