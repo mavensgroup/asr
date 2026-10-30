@@ -16,7 +16,7 @@ The original plan with gates B1 to B5 is `docs/archive/HANDOFF_hea_sro.md`, Part
 - Component weights stay f_kappa x_c, because sum_c x_c X^(c) = x.
 - Electrostatics are unchanged: SIM with a random first shell (gate B3 is open).
 
-## Code (uncommitted in the main working tree; first job is review and commit)
+## Code (committed on main 2026-10-30: `176a727` SRO, `f2f9ca7` spin-resolved DOS, `455a069` the user's docs)
 | file | change |
 |---|---|
 | `src/asr_sro.f90` (new) | `sro_conditional`: X^(c) from x, y and alpha.  One sublattice: symmetric unlike pairs, diagonal derived.  Two sublattices: full table, both marginals checked.  X >= 0 checked. |
@@ -31,10 +31,8 @@ Input: `[[sro]] sublattices = ["A", "B"]` (optional with one sublattice), `shell
 Tests on the merged main plus this work (laptop, 2026-10-30): `test_sro` 16/16, `test_augcls` 16/16, `test_run_input` 33/33,
 `test_terminators` 11/11.  The full suite on committed main passed (41 programs, 306 checks; `docs/STATUS.md`).
 
-The working tree also holds the user's own edits: `README.md`, `.gitignore`, the doc comment in `src/asr_kinds.f90`, `doc/`,
-`ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md`.  Ask the user how to split the commits.  A sensible split:
-(1) SRO code, tests and example; (2) spin-resolved DOS columns; (3) the user's manual and docs.  Do not commit `suggestion.md` or
-`doc/build/` without asking.
+Review on 2026-10-30 found no correctness bug.  One input fix went in before the commit: `read_sro` now rejects a repeated pair also
+when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncommitted.  `doc/build/` is ignored.
 
 ## Gates
 | gate | status |
@@ -76,7 +74,7 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 (B3), so it is not yet a physical result.
 
 ## Next actions, in order
-1. Review the uncommitted SRO code with the user, then commit it on main (split as above).  Rerun the four unit tests.
+1. Done 2026-10-30: reviewed and committed; the four unit tests pass.  Main is not pushed yet (the user pushes).
 2. Rerun the 10 SRO runs above with the default `hull` tail from the committed code (bundle to the desktop, a git clone, not a copy).
    Levels 3 triads take 20 to 45 min each on 14 threads; CuZn levels 4 takes 1 to 2 h each.  Compare with the `bp` numbers above.
 3. B4.4: plot the 7 triad DOS against Alam Fig. 4.  Compute M2 per component from `dos.dat` and check the Fig. 5 ordering.

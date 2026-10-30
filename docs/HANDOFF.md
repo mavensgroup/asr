@@ -8,7 +8,7 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 | where | what |
 |---|---|
 | `main` | local `3986fc2` and later docs commits (docs cleanup, merge of `l4stall`), not pushed; GitHub `origin/main` is `574c467` |
-| main working tree, uncommitted | SRO work (`docs/HANDOFF_sro.md`): `src/asr_sro.f90`, `test/test_sro.f90`, `example/fe66ni14cr20_fcc_sro.toml`, changes in `asr_augcls`, `asr_class_scf`, `asr_driver`, `test_augcls`, `test_run_input`; the user's own edits in `README.md`, `.gitignore`, `src/asr_kinds.f90`, `doc/`, `ford.md`, `suggestion.md`, `docs/JIJ_PLAN.md`, `docs/PUBLICATION_PLAN.md` |
+| main, committed 2026-10-30 | `176a727` SRO (`docs/HANDOFF_sro.md`), `f2f9ca7` spin-resolved `dos.dat` columns, `455a069` the user's manual and docs; only `suggestion.md` is left uncommitted |
 | branch `l4stall` (worktree `../asr_l4stall`), merged into main | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
 | stash in `../asr_l4stall` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
 | default tail in the code | `hull` (since `3a47711`); the uncommitted SRO example and `doc/manual` now say `hull` too |
@@ -29,7 +29,7 @@ Recent runs (`~/asr_remote4/trial/`):
 - `a1/scan/{bp,hull,avg2,bpdump}`: N(E) scans; `bpdump/chains.dat` (25 MB) with `tailtest.py` (offline replica of `cf_species`).
 
 ## Next actions
-1. SRO: review and commit the uncommitted work with the user, then the SRO gates (`docs/HANDOFF_sro.md`; a new thread).
+1. SRO gates (`docs/HANDOFF_sro.md`).  The SRO code is committed.
 2. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
 3. Speed work (ROADMAP phase 5).
 4. Push main (the user: `git push origin main`).  Then the desktop can use `git pull --ff-only github main` again.
