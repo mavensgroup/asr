@@ -7,7 +7,7 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 ## Code state
 | where | what |
 |---|---|
-| `main` | local `dd435bb` (merge of `l4stall`, SRO, spin-resolved DOS, docs), not pushed; GitHub `origin/main` is `574c467`.  The laptop has one checkout (`asr_new`) and one remote (`origin`) |
+| `main` | pushed to GitHub (`b535dd0` on 2026-10-31); the desktop `~/asr_remote4` pulls it with `git pull --ff-only github main`.  The laptop has one checkout (`asr_new`) and one remote (`origin`) |
 | main, committed 2026-10-30 | `176a727` SRO (`docs/HANDOFF_sro.md`), `f2f9ca7` spin-resolved `dos.dat` columns, `455a069` the user's manual and docs; only `suggestion.md` is left uncommitted |
 | `l4stall` (merged into main; branch and worktree deleted 2026-10-30) | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
 | `stash@{0}` in `asr_new` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
@@ -32,7 +32,7 @@ Recent runs (`~/asr_remote4/trial/`):
 1. SRO gates (`docs/HANDOFF_sro.md`).  The SRO code is committed.
 2. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
 3. Speed work (ROADMAP phase 5).
-4. Push main (the user: `git push origin main`; GitHub still had `574c467` on 2026-10-30).  Then `~/asr_remote4` pulls with `git pull --ff-only github main`.
+4. Done 2026-10-31: main is on GitHub and the desktop pulls it again.
 
 ## Working rules
 - All calculations on the desktop, unit tests may run on the laptop.  The SRM VPN drops every few hours:
