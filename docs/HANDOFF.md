@@ -16,12 +16,12 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 ## Desktop state (`ssh desktop`, idle on 2026-10-30)
 | clone | commit | use |
 |---|---|---|
-| `~/asr_remote4` | `3986fc2` (merged main, by bundle, 2026-10-30) | main run tree, `env.sh`, all `trial/` directories; full test run in `trial/fulltest` |
-| `~/asr_q` | `574c467` | binary `bin/asr_574c467` used by the HEA l3 `bp` queue |
-| `~/asr_l4` | `03ac4e5` (`l4stall`) | binary of all 2026-10-29/30 runs (`build/ifx_A08D5D447AF67060/app/asr`) |
-| `~/asr_spindos` | `03ac4e5` (`l4stall`) | spin-resolved `dos.dat` columns, now committed on main as `f2f9ca7`; disposable |
-| `~/asr_sro` | plain copy, not a clone | the SRO runs of 2026-10-24 in `trial/sro` (`bp` tail; `docs/HANDOFF_sro.md`) |
-| `~/asr_pd`, `~/asr_base`, `~/asr_v1`, `~/asr_v2` | older | disposable diagnostic clones |
+| `~/asr_remote4` | `3986fc2` (merged main, by bundle, 2026-10-30); pulls `dd435bb` and later once main is on GitHub | the only `asr_new` checkout on the desktop: run tree, `env.sh`, all `trial/` directories; full test run in `trial/fulltest` |
+| `~/asr_remote4/trial/archive_clones` | | archive of the clones retired on 2026-10-30 (`asr_q`, `asr_l4`, `asr_spindos`, `asr_pd`, `asr_base`, `asr_v1`, `asr_v2`, `asr_sro`, `asr_remote`, `asr_remote2`, `asr_remote3`): per clone `HEAD.txt`, `uncommitted.patch`, untracked run files; binaries `asr_q/bin/asr_574c467` and `asr_l4/asr_03ac4e5` (the binary of the 2026-10-29/30 runs) |
+| `~/asr_remote4/trial/sro_bp` | | the SRO runs of 2026-10-24 (`bp` tail; `docs/HANDOFF_sro.md`) |
+| `~/asr2`, `~/asr2_omp` | | the older project `mavens-group/asr2`, not this code |
+
+The hub `~/asr.git` is deleted (its branches are in main).  `~/asr_remote4` has one remote, `github`.
 
 Recent runs (`~/asr_remote4/trial/`):
 - `a1/l4_hull`: Fe66Ni14Cr20 levels 4 NM, `hull`, converged in 6 iterations (DOS in `fe66ni14cr20_dos.dat`).
@@ -32,7 +32,7 @@ Recent runs (`~/asr_remote4/trial/`):
 1. SRO gates (`docs/HANDOFF_sro.md`).  The SRO code is committed.
 2. Alam and Mookerjee Fig. 2 comparison from `a1/l4_hull` (Ni-Fe splitting from levels 3 to 4, Cr spikes).
 3. Speed work (ROADMAP phase 5).
-4. Push main (the user: `git push origin main`).  Then the desktop can use `git pull --ff-only github main` again.
+4. Push main (the user: `git push origin main`; GitHub still had `574c467` on 2026-10-30).  Then `~/asr_remote4` pulls with `git pull --ff-only github main`.
 
 ## Working rules
 - All calculations on the desktop, unit tests may run on the laptop.  The SRM VPN drops every few hours:

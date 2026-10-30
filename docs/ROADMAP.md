@@ -68,7 +68,7 @@ Model: first-shell Warren-Cowley, centre-shell correlations only (Mookerjee and 
 centre of `asr_ed` makes the shell of component c uncorrelated with concentrations X^(c).
 | item | status |
 |---|---|
-| B1/B2 formalism and code (`asr_sro`, shell class in `asr_augcls`, `[[sro]]` input) | 🟠 written, not committed |
+| B1/B2 formalism and code (`asr_sro`, shell class in `asr_augcls`, `[[sro]]` input) | 🟢 committed `176a727` (2026-10-30) |
 | B4.1 alpha = 0 gives the uncorrelated result (unit test and SCF gate G1) | 🟢 |
 | B4.2 brute force: ring with frozen centre and conditional shell, and reduced vs unreduced fcc | 🟢 |
 | B3 electrostatics with SRO (SIM vs explicit shell charge); no literature prescription found | 🔴 decision needed |

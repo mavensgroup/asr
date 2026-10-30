@@ -29,7 +29,7 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 | OpenMP over independent chains | 🟢 | bit identical, l3 iteration 867 s to 398 s on 14 threads |
 | one input format and driver, `asr.out` report | 🟢 | `test_run_input` |
 | terminators `hull` (default), `bp`, `avg2` | 🟢 `hull`, `avg2` · 🟠 `bp` | `bp` is not safe on complex chains; `test_terminators` checks the Nevanlinna bound \|dG/dz\| <= -Im G / Im z [Levels-4 SCF stall] |
-| short-range order, first shell (`asr_sro`, `[[sro]]`) | 🟠 | uncommitted; `test_sro` 16/16, `test_augcls` 16/16, SCF gate G1 [Short-range order]; plan in `docs/HANDOFF_sro.md` |
+| short-range order, first shell (`asr_sro`, `[[sro]]`) | 🟠 | committed `176a727`; `test_sro` 16/16, `test_augcls` 16/16, SCF gate G1 [Short-range order]; plan in `docs/HANDOFF_sro.md` |
 | k-space LMTO-ASA for ordered cells and SQS supercells | 🟢 | SQS references below |
 | cross-check routes (EI H^(2)/H^(3), P(z) - S, exact KKR-ASA) | 🟢 kept for tests | not for production |
 | N(E) probe `ef_scan`, chain dump `ef_scan_dump`, `bp` fallback counter | 🟢 | merged in 099ae3a |

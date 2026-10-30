@@ -22,7 +22,7 @@ The original plan with gates B1 to B5 is `docs/archive/HANDOFF_hea_sro.md`, Part
 | `src/asr_sro.f90` (new) | `sro_conditional`: X^(c) from x, y and alpha.  One sublattice: symmetric unlike pairs, diagonal derived.  Two sublattices: full table, both marginals checked.  X >= 0 checked. |
 | `src/asr_augcls.f90` | `augcls_set_class_conc` resets one class's mt tables (node set unchanged).  `class_mt` builds the local basis on the species of non-zero weight only (a zero weight makes `augn_basis` singular). |
 | `src/asr_class_scf.f90` | With SRO the operator has 2 ncls classes.  Class ncls + kappa' is the first shell of the origin on sublattice kappa' (minimum image).  `chain_worker` sets these classes to `sro_cond` of the frozen component.  Error stop for SRO between sublattices that are not first-shell neighbours. |
-| `src/asr_driver.f90` | `[[sro]]` reader (`read_sro`), report block in `asr.out`.  Also the spin-resolved DOS columns of `dos.dat` (not SRO; the same patch sits in the desktop clone `~/asr_spindos`). |
+| `src/asr_driver.f90` | `[[sro]]` reader (`read_sro`), report block in `asr.out`.  Also the spin-resolved DOS columns of `dos.dat` (not SRO; committed separately as `f2f9ca7`). |
 | `test/test_sro.f90` (new), `test/test_augcls.f90`, `test/test_run_input.f90` | unit gates below |
 | `example/fe66ni14cr20_fcc_sro.toml` (new) | Alam triad 1-1-0 at levels 4, `hull` |
 
@@ -45,8 +45,8 @@ when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncom
 | B4.5 same-model reference: reverse Monte Carlo supercells at target alpha (new tool next to `tools/sqs.py`), k-space with one potential per species | 🔴 |
 | SRO between two sublattices (for example L2_1) in an SCF run | 🔴 only the reader and `sro_conditional` are tested |
 
-## Runs that exist (desktop `~/asr_sro/trial/sro`, 2026-10-24)
-`~/asr_sro` is a plain copy, not a git clone.  Its binary is in `~/asr_sro/bin`.  `SOURCE_MD5` records the source.  All runs used the
+## Runs that exist (desktop `~/asr_remote4/trial/sro_bp`, 2026-10-24)
+They were run from a plain copy `~/asr_sro`, retired on 2026-10-30.  Its binary and `SOURCE_MD5` are in `~/asr_remote4/trial/archive_clones/asr_sro`.  All runs used the
 `bp` tail (the old default).  `SUMMARY.txt` has start, end and wall times.
 
 Fe66Ni14Cr20 fcc NM, levels 3, 24 steps, `bp`.  Triad = (alpha_FeNi, alpha_FeCr, alpha_NiCr).  N(E_F) is the component total in
