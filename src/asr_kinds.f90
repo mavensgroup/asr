@@ -1,3 +1,4 @@
+!> Kind parameters (`dp` = double, `i4`/`i8` = 32/64-bit integers) and constants (`pi`, `ci`) shared by every module.
 module asr_kinds
   use, intrinsic :: iso_fortran_env, only: real64, int32, int64
   implicit none

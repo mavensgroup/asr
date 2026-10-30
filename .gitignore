@@ -4,3 +4,4 @@ trial/*
 *.mod
 *.swp
 *~
+doc/build/
