@@ -78,8 +78,10 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 2. Done 2026-10-31: the `hull` reruns are in `~/asr_remote4/trial/sro_hull`.  All converged, G1 passes, and `hull` agrees with `bp`
    (FINDINGS_LOG "SRO reruns with the `hull` tail").  Use the `hull` runs from now on.
 3. B4.4 done 2026-10-31 at levels 3 and 4 (`trial/sro_hull`, `trial/sro_l4`; FINDINGS_LOG "Gate B4.4").  Open: the factor 10 in
-   the size of the SRO effects.  It does not shrink from levels 3 to 4.  Our random DOS is already sharper than the paper's figure 2,
-   so the figure 2 comparison (HANDOFF item 2) comes first.
+   the size of the SRO effects.  It does not shrink from levels 3 to 4.  With the paper's A and B swapped, the grouping of the triads agrees, but the
+   paper's Fe-Cr SRO peak is at +0.14 Ry and ours at -0.06 Ry, and the paper's is about ten times larger (FINDINGS_LOG "Alam 2009
+   figures 4 and 5 against ours").  The paper's DOS is per spin.  Its Cr band sits at least 0.1 Ry above ours, so the figure 2
+   comparison of the component DOS (HANDOFF item 2) comes first.
 4. B4.3: the SRO-induced change of the CuZn DOS against Tarafder 2006 Fig. 3 (`../references/SRO-cuzn_tarafder2006.pdf`).
 5. B3: put the two options (SIM unchanged vs explicit shell charge) to the user with numbers from the triads and CuZn.  An explicit
    shell term partly double counts the SIM screening charge.

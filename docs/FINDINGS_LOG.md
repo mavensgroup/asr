@@ -1254,8 +1254,8 @@ Our results (L1 change of the DOS against the random alloy, states/atom; total, 
   the only one of the six assignments for which the orderings hold.  With the integral started at -0.6 Ry instead of the window bottom
   the orderings still hold at 81 % and 86 % of the energies for this assignment, and at <= 12 % for all others.
 - Size: our SRO changes are about ten times smaller than the paper's.  Our M2 differences between triads are about 0.5 percent; the
-  paper's curves differ by about 5 percent.  Our random DOS is already sharper than the paper's figure 2 (peak 26 vs 14.5 states/Ry
-  at -0.2 Ry).  This belongs to the figure 2 comparison (HANDOFF item 2), not to SRO.
+  paper's curves differ by about 5 percent.  (Corrected 2026-10-31: the paper's DOS is per spin, see below.
+  Halved, our random peak is 13.3 states/Ry against the paper's 14.5.)
 - Reading: our code assigns the pairs correctly.  The paper's figures behave as if its A and B were Ni and Fe.  This points to a label
   swap in the paper (text and figures disagree), not in our code.  It is an inference from the figures only.
 - Side note: the random DOS has a one-point dip at E = 0.130 Ry (5.45 -> 4.11 -> 5.10 states/Ry; also in g1_sro0, not in the SRO
@@ -1281,6 +1281,38 @@ Levels 4 (the same 7 triads, `trial/sro_l4`, binary `bin/asr_ffaba36`; done 2026
   the laptop; the desktop has no matplotlib).
 - So the levels-3 B4.4 reading holds at levels 4: our pair assignment is right, the paper's figures behave as if A and B were Ni and
   Fe, and our SRO changes stay about ten times smaller than the paper's.  More levels do not close the size gap.
+
+### Alam 2009 figures 4 and 5 against ours with the paper's A and B swapped (2026-10-31, levels 4)
+Assumption: (A, B, C) = (Ni, Fe, Cr), the only assignment under which the paper's orderings hold (above).  Then paper triad
+(alpha_AB, alpha_AC, alpha_BC) = (NiFe, NiCr, FeCr), and our run tXYZ = (FeNi, FeCr, NiCr).  Map: 110 -> t101, 101 -> t110,
+011 -> t011, 100 -> t100, 010 -> t001, 001 -> t010, 111 -> t111.  The swap keeps alpha_AB (the Fe-Ni pair) and exchanges alpha_AC
+and alpha_BC.  Note: the paper's own table 1 examples and the comparison panels of figure 4 ("Fe-NiCr" for 1-1-0) follow the printed
+labels, so the swap stays an inference.
+Method: figures 2, 4 and 5 digitised from `../references/SRO-1_alam.pdf` at 300 dpi (axis frames and tick marks found in the image,
+curves traced by colour, outliers removed by a running median).  Figure 4 has no numbers on its DOS axes, so each curve is scaled to
+its own main peak.  Files: desktop `trial/sro_l4/alam_compare/` (`alam_clean.json` digitised curves, `digit.py`, `frames.py`,
+`compare.py`, figure `alam_vs_ours_swapped.png`).
+- The paper's DOS is per spin.  Its random total DOS (figure 2) integrates to 4.05 electrons from -0.6 Ry to E_F.  Ours gives 7.56
+  (7.88 expected, both spins).  Per spin, our random peak is 13.3 states/Ry at -0.19 Ry; the paper's is 14.5 at -0.22 Ry.
+- Main peak: both at -0.18 to -0.20 Ry in every triad.
+- Agreement: the triads split into the same two groups.  Paper 110, 100, 010 (alpha_FeCr = 0) are almost identical to each other
+  (second peak 0.55 to 0.57 of the main peak, valley 0.36 to 0.37).  Ours t101, t100, t001 are almost identical to the random alloy.
+  Paper 101, 011, 001, 111 (alpha_FeCr = 1) show a new peak above E_F.  Ours t110, t011, t010, t111 show a new hump above E_F.  So the
+  Fe-Cr pair controls the DOS in both.  The M2 and M4 orderings hold in ours.
+- Disagreement 1, position: the paper's Fe-Cr peak is at +0.136 Ry (0.20 Ry above E_F).  Ours is a hump at -0.06 Ry, just above E_F
+  (-0.071), with a shoulder at +0.08 Ry.  In ours this hump comes from Cr d (split into -0.07 and +0.08 Ry) and from Fe d (its maximum
+  moves from -0.17 to -0.05 Ry).
+- Disagreement 2, size: the paper's Fe-Cr peak reaches 0.83 to 0.93 of the main peak, with a valley of 0.27 to 0.38 between.  Ours
+  rises by about 0.07 of the main peak over the random curve, with no valley.  The spread of M2 at E = 0 is 6.0 % and 4.9 % in the
+  paper, 0.75 % and 0.56 % in ours.  The spread of M4 (110, 101, 011) is 29.5 % in the paper and 1.1 % in ours.
+- Disagreement 3, lower edge: the paper's Fe-Cr family has a separate peak at -0.37 Ry.  Ours has no change there.
+- Disagreement 4, the near-random group: the paper's 110, 100, 010 have a valley near 0 Ry and a peak at +0.21 Ry.  Ours have
+  neither.  These three paper panels agree with each other, so this is a difference of the random alloy itself (figure 2 comparison).
+  The paper's Cr partial DOS in figure 2 still rises at +0.1 Ry, its axis limit.  Our Cr d peak is at +0.025 Ry.  So the paper's Cr
+  antibonding weight sits at least 0.1 Ry higher than ours.  This would also move its Fe-Cr SRO peak up, from near E_F to +0.14 Ry.
+- Reading: with the swap the qualitative physics agrees (which pair matters and the sign of each change).  The energies and sizes do
+  not.  The first suspect is the random alloy (the Cr band position), not the SRO model.  Next: the figure 2 comparison with the
+  component DOS.
 
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
