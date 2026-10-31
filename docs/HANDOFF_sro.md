@@ -14,7 +14,7 @@ The original plan with gates B1 to B5 is `docs/archive/HANDOFF_hea_sro.md`, Part
 - Our route gets the centre projector for free.  `asr_ed` freezes the start site to the species of component c.  So the recursion of
   component c is the uncorrelated one, except that the first shell of the origin carries X^(c) instead of x.
 - Component weights stay f_kappa x_c, because sum_c x_c X^(c) = x.
-- Electrostatics are unchanged: SIM with a random first shell (gate B3 is open).
+- Electrostatics are unchanged: SIM with a random first shell (gate B3 decided 2026-10-31: this stays the default).
 
 ## Code (committed on main 2026-10-30: `176a727` SRO, `f2f9ca7` spin-resolved DOS, `455a069` the user's docs)
 | file | change |
@@ -83,8 +83,8 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
    figures 4 and 5 against ours").  The paper's DOS is per spin.  Its Cr band sits at least 0.1 Ry above ours, so the figure 2
    comparison of the component DOS (HANDOFF item 2) comes first.
 4. B4.3: the SRO-induced change of the CuZn DOS against Tarafder 2006 Fig. 3 (`../references/SRO-cuzn_tarafder2006.pdf`).
-5. B3: put the two options (SIM unchanged vs explicit shell charge) to the user with numbers from the triads and CuZn.  An explicit
-   shell term partly double counts the SIM screening charge.
+5. B3 option (b) as a sensitivity test: the explicit shell charge sum_s X_s^(p) q_s - qbar, once its double counting of the SIM
+   screening charge is worked out.  Option (a), SIM unchanged, is the default (decided 2026-10-31).
 6. B4.5: reverse Monte Carlo tool for supercells at target alpha, then k-space references with one potential per species.
 7. Record every result in `docs/FINDINGS_LOG.md` and update the SRO rows of `docs/STATUS.md` and `docs/ROADMAP.md`.
 
