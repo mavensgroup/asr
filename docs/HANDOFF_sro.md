@@ -41,7 +41,7 @@ when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncom
 | B4.2 brute force: ring of 5 with frozen centre and conditional shell (1.6e-15); fcc ternary D4h-reduced vs unreduced (8.3e-13) | 🟢 |
 | B3 electrostatics with SRO.  Decided with the user 2026-10-31: keep SIM unchanged (option a) as the default.  The explicit shell charge sum_s X_s^(p) q_s - qbar (option b) becomes a sensitivity test once its double counting of the SIM screening charge is worked out.  Report observables that change little between the two.  SRO energies stay unphysical until then. | 🟢 decided (a); 🔴 test (b) |
 | B4.3 Tarafder et al. 2006 bcc CuZn, alpha about -0.15: compare the SRO-induced change of the DOS, not absolute peaks (their bands are shifted by about 0.19 Ry) | 🟠 runs exist, not analysed |
-| B4.4 Alam 2009 Fig. 4 and 5 at levels 3: all claims hold with the paper's A and B swapped (Ni, Fe, Cr), all fail with its printed labels; our pair assignment checked; our SRO effects about 10 times smaller (FINDINGS_LOG "Gate B4.4").  Levels 4 running in `trial/sro_l4`. | 🟠 levels 3 done, levels 4 pending |
+| B4.4 Alam 2009 Fig. 4 and 5 at levels 3 and 4: all claims hold with the paper's A and B swapped (Ni, Fe, Cr), all fail with its printed labels; our pair assignment checked; dE changes by at most 0.14 mRy from levels 3 to 4; our SRO effects about 10 times smaller at both levels (FINDINGS_LOG "Gate B4.4"). | 🟢 orderings and families; 🟠 size gap open |
 | B4.5 same-model reference: reverse Monte Carlo supercells at target alpha (new tool next to `tools/sqs.py`), k-space with one potential per species | 🔴 |
 | SRO between two sublattices (for example L2_1) in an SCF run | 🔴 only the reader and `sro_conditional` are tested |
 
@@ -77,10 +77,9 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 1. Done 2026-10-30: reviewed and committed; the four unit tests pass.  Main is not pushed yet (the user pushes).
 2. Done 2026-10-31: the `hull` reruns are in `~/asr_remote4/trial/sro_hull`.  All converged, G1 passes, and `hull` agrees with `bp`
    (FINDINGS_LOG "SRO reruns with the `hull` tail").  Use the `hull` runs from now on.
-3. B4.4 levels 3 done 2026-10-31 (`tools/sro_triads.py`).  Levels 4 started 2026-10-31 02:56 in `~/asr_remote4/trial/sro_l4`
-   (7 triads from the converged `a1/l4_hull` potential; queue A t110 t101 t011 t100, queue B t010 t001 t111; about 3 h per run).
-   When done: copy `a1/l4_hull` as `rand` (its DOS file is `fe66ni14cr20_dos.dat`) and run `tools/sro_triads.py` on it.
-   Check whether the swapped-label agreement and the size of the effects hold at levels 4.
+3. B4.4 done 2026-10-31 at levels 3 and 4 (`trial/sro_hull`, `trial/sro_l4`; FINDINGS_LOG "Gate B4.4").  Open: the factor 10 in
+   the size of the SRO effects.  It does not shrink from levels 3 to 4.  Our random DOS is already sharper than the paper's figure 2,
+   so the figure 2 comparison (HANDOFF item 2) comes first.
 4. B4.3: the SRO-induced change of the CuZn DOS against Tarafder 2006 Fig. 3 (`../references/SRO-cuzn_tarafder2006.pdf`).
 5. B3: put the two options (SIM unchanged vs explicit shell charge) to the user with numbers from the triads and CuZn.  An explicit
    shell term partly double counts the SIM screening charge.

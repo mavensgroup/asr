@@ -73,7 +73,7 @@ centre of `asr_ed` makes the shell of component c uncorrelated with concentratio
 | B4.2 brute force: ring with frozen centre and conditional shell, and reduced vs unreduced fcc | 🟢 |
 | B3 electrostatics with SRO (SIM vs explicit shell charge); no literature prescription found | 🔴 decision needed |
 | B4.3 Tarafder 2006 CuZn: SRO-induced change of the DOS | 🟠 runs at alpha 0, -0.15, -1 exist (`bp`), not analysed |
-| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🟠 7 triads at levels 3 exist (`bp`), not analysed |
+| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🟢 done at levels 3 and 4 (`hull`); size gap of 10 open |
 | B4.5 same-model reference: reverse Monte Carlo supercells at target alpha | 🔴 |
 
 ### 7. v1.0 freeze and CPC paper 🔴

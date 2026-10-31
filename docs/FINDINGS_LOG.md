@@ -1260,7 +1260,27 @@ Our results (L1 change of the DOS against the random alloy, states/atom; total, 
   swap in the paper (text and figures disagree), not in our code.  It is an inference from the figures only.
 - Side note: the random DOS has a one-point dip at E = 0.130 Ry (5.45 -> 4.11 -> 5.10 states/Ry; also in g1_sro0, not in the SRO
   runs).  A `hull` glitch on the real axis at one energy; 0.006 states; no effect on the SCF (contour) or on the moments.
-Levels 4 (the same 7 triads, started 2026-10-31 02:56, `trial/sro_l4`, random reference `trial/a1/l4_hull`): pending.
+Levels 4 (the same 7 triads, `trial/sro_l4`, binary `bin/asr_ffaba36`; done 2026-10-31 13:47).  The random reference is
+`trial/a1/l4_hull` (6 iterations, E_total -2522.70755148 Ry), linked as `sro_l4/rand`.  Its input equals the triad inputs except
+`[[sro]]` and the start potential.  All 7 converged in 13 to 18 iterations, about 3 h each on 14 threads (1.5 GB per run).
+| run | it | E_F (Ry) | qnet Fe | Ni | Cr | N(E_F) Fe | Ni | Cr | dE l4 | dE l3 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| rand | 6 | -0.070903 | 0.0269 | 0.1470 | -0.1915 | 12.13 | 7.85 | 8.85 | 0 | 0 |
+| t100 | 14 | -0.072518 | 0.0321 | 0.1249 | -0.1934 | 11.52 | 9.85 | 8.79 | -1.970 | -2.005 |
+| t010 | 16 | -0.070975 | 0.0117 | 0.1472 | -0.1417 | 13.03 | 7.85 | 9.56 | 2.581 | 2.512 |
+| t001 | 13 | -0.072682 | 0.0251 | 0.1294 | -0.1734 | 12.11 | 9.38 | 8.61 | -0.681 | -0.707 |
+| t110 | 15 | -0.072480 | 0.0166 | 0.1253 | -0.1424 | 12.35 | 9.65 | 9.53 | 0.278 | 0.389 |
+| t101 | 17 | -0.074515 | 0.0296 | 0.1131 | -0.1770 | 11.54 | 12.49 | 8.63 | -2.082 | -2.123 |
+| t011 | 16 | -0.072409 | 0.0100 | 0.1295 | -0.1238 | 12.99 | 9.51 | 9.75 | 2.548 | 2.533 |
+| t111 | 18 | -0.074107 | 0.0142 | 0.1137 | -0.1265 | 12.36 | 12.43 | 9.76 | 0.812 | 0.954 |
+- The SRO effects are converged in the number of levels.  dE changes by at most 0.14 mRy from levels 3 to 4.  qnet changes by at most
+  2e-3 e.  E_F moves down by 0.6 to 0.8 mRy in every run, the same as the random alloy (-0.62 mRy), so the SRO shift of E_F is stable.
+- `tools/sro_triads.py` at levels 4: L1 changes within 0.02 states/atom of levels 3 (t100 0.152, t001 0.212, t101 0.311, t010 0.485,
+  t110 0.495, t011 0.658, t111 0.665).  Only (A, B, C) = (Ni, Fe, Cr) satisfies the paper's M2 orderings (100 % of the energies for
+  both) and its figure 4 families.  The printed labels (Fe, Ni, Cr) fail at 0 %.  Figure: `trial/sro_l4/sro_triads_l4.png` (drawn on
+  the laptop; the desktop has no matplotlib).
+- So the levels-3 B4.4 reading holds at levels 4: our pair assignment is right, the paper's figures behave as if A and B were Ni and
+  Fe, and our SRO changes stay about ten times smaller than the paper's.  More levels do not close the size gap.
 
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
