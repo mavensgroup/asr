@@ -1432,6 +1432,36 @@ Tests running (`trial/b45`, binary `bin/asr_22366b9`): (1) ASR with beta = 0.495
 (`screen/P_*`) must reproduce the species-class cells without fitting; (2) site-class cells (one potential per atom,
 `ks_site/`) at alpha 0, +-0.1484 give the physical beta and the physical SRO energies.
 
+### B3 re-derived: single-site elimination of the charge-excess model (2026-11-02; to be tested by the site-class cells)
+Three earlier forms (mine lambda = 1 - beta; Kimi `sro_kimi.md` lambda = beta/z; Gemini lambda = (1.763 - beta)/z or 1 - R1/R2)
+all have V_p = Madelung - beta 2 dq_p/R1 + lambda 2 Delta_p/R1 with Delta_p = z sum_s (X_s^(p) - x_s) q_s and a symmetric pair
+energy.  They differ only in lambda.  Each guesses where the screening charge sits.  The re-derivation computes it instead.
+Model (charge-excess / linear q-V law, Bruno, Zingales and Wang; the q-V relation of LSMS): q_i = b_s - (V_i - mu)/a, V_i =
+sum_{j /= i} M_ij q_j with the point-charge M = 2/R of the ASA.  Then q = G b, V = W b, G = (1 + M/a)^-1, W = M G = a (1 - G).
+Single-site elimination (one potential per species, first-shell SRO, A_ps = X_s^(p) - x_s):
+    dq = (G00 + z G1 A) db,   V = (W00 + z W1 A) db   =>   V = F dq,   F = a [ (G00 I + z G1 A)^-1 - I ].
+- alpha = 0: F = a (1/G00 - 1) = -2 beta/R1.  So beta is fixed by the lattice and the hardness a.
+- Linear in A: lambda = -a G1 R1 / (2 G00^2).  G1 < 0 is the part of a neighbour's screening cloud that sits on the centre.
+- Energy: w F is symmetric (w A is), so E = 1/2 sum_p w_p dq_p (F dq)_p.  In this model it equals the exact configuration
+  average, 1/2 [W00 sigma_b^2 + z W1 C1(alpha)], for every alpha (proof: minimise sum w a/2 (q - b)^2 + 1/2 q w F q).  So no
+  fluctuation correction is needed.
+bcc, a = 2.85 A (`trial/b45/analysis/cef.py`; checks: B2 Madelung 1.762675 exact; stable only for a > 0.755 Ry, the B2 point):
+| a (Ry) | beta | lambda | 1 - beta | beta/z | (1.763 - beta)/8 | alpha = -1, first-shell model vs exact B2 |
+|---|---|---|---|---|---|---|
+| 1.00 | 1.135 | 0.174 | -0.135 | 0.142 | 0.078 | 1.78 vs 1.763 |
+| 1.263 | 1.045 | 0.212 | -0.045 | 0.131 | 0.090 | 1.94 vs 1.763 |
+| 2.0 | 0.908 | 0.283 | 0.092 | 0.114 | 0.107 | 2.32 |
+| 10 | 0.550 | 0.518 | 0.450 | 0.069 | 0.152 | 4.06 |
+| 100 | 0.226 | 0.786 | 0.774 | 0.028 | 0.192 | 6.3 |
+- a = 1.263 Ry is the hardness of our ASR (q_Cu 0.072 at beta = 0, 0.109 at beta = 1: 2/(a R1) = 0.339).  It gives beta = 1.045,
+  so the default beta = 1 is consistent with the ASR's own response.  beta cannot exceed 1.763 (instability at the B2 point).
+- lambda = 1 - beta is the weak-screening limit only (a -> infinity).  At metallic screening lambda is about 0.21; Kimi's and
+  Gemini's values are rough estimates of the same G1 effect (40 to 60 % too small).
+- The B2 limit comes out within 10 % without matching.
+- Assumption to test: a local response (q_i depends on V_i only).  The site-class cells measure a (slope of q_i on V_i),
+  G1/G00 (q_i - q_s on the chemical shell charge; predicted -0.11) and beta, lambda (V_i on q_i and D1, D2, D3):
+  `trial/b45/analysis/regress.py`.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is
