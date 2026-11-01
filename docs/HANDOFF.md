@@ -7,7 +7,7 @@ Read order for a new thread: this file, `docs/STATUS.md` (dashboard), `docs/ROAD
 ## Code state
 | where | what |
 |---|---|
-| `main` | pushed to GitHub (`b535dd0` on 2026-10-31); the desktop `~/asr_remote4` pulls it with `git pull --ff-only github main`.  The laptop has one checkout (`asr_new`) and one remote (`origin`) |
+| `main` | pushed to GitHub (`b8c3280` on 2026-11-02); the desktop `~/asr_remote4` pulls it with `git pull --ff-only github main`.  The laptop has one checkout (`asr_new`) and one remote (`origin`) |
 | main, committed 2026-10-30 | `176a727` SRO (`docs/HANDOFF_sro.md`), `f2f9ca7` spin-resolved `dos.dat` columns, `455a069` the user's manual and docs; only `suggestion.md` is left uncommitted |
 | `l4stall` (merged into main; branch and worktree deleted 2026-10-30) | `93aa84e` `[asr] ef_scan` probe and `bp` fallback counter `ed_nfall`; `03ac4e5` `ef_scan_dump`; `3a47711` default tail `hull`, Nevanlinna-bound test |
 | `stash@{0}` in `asr_new` | rejected `bp` repair "continued from the real chain" (fails the fine continuity test; FINDINGS_LOG 2026-10-30) |
@@ -37,8 +37,8 @@ Recent runs (`~/asr_remote4/trial/`):
 ## Working rules
 - All calculations on the desktop, unit tests may run on the laptop.  The SRM VPN drops every few hours:
   `timeout 60 nmcli con up id "SRM"`.  Wrap every ssh in `timeout`.
-- Code moves by git.  The desktop pulls the https remote `github` (`git pull --ff-only github main`).  Unpushed branches go over as a
-  bundle: `git bundle create x.bundle 574c467..<branch>`, `scp`, `git fetch /tmp/x.bundle <branch>:<branch>`.  Only the user pushes.
+- Code is changed only on the laptop.  Commit, `git push origin main`, then on the desktop `git pull --ff-only github main`, build,
+  and only then run (user rule, 2026-11-02).  GitHub always holds what the desktop runs.  No bundles, no edits on the desktop.
 - Build on the desktop with `source ~/asr_remote4/env.sh; asr_build` (plain `fpm build` misses the MKL link flags).  After a module
   signature change: `rm -rf build/ifx_*`.
 - Launch over ssh: `ssh -n desktop 'cd DIR && setsid -f bash run.sh < /dev/null > run.log 2>&1'`.  The redirect must sit on the

@@ -87,7 +87,7 @@ Open side issues: the k-space and ASR total energies of CuZn differ by 62 mRy pe
 1e-8 (three constraints), which is unfriendly; deriving the dependent entries would be better.
 
 ## Rules that matter here
-- All calculations on the desktop; unit tests on the laptop.  Code moves to the desktop by git (bundle or the user's push).
+- All calculations on the desktop; unit tests on the laptop.  Code changes only on the laptop: commit, push to GitHub, pull on the desktop, then run.
 - Production route `asr_ed` only.  Default tail `hull`; do not use `bp` for new runs (FINDINGS_LOG "Levels-4 SCF stall").
 - A fix or a model choice must hold in general, not only for the test system (memory `general-fixes-not-patches`).
 - Docs in simple sentences, no dashes.
