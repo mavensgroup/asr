@@ -71,10 +71,11 @@ centre of `asr_ed` makes the shell of component c uncorrelated with concentratio
 | B1/B2 formalism and code (`asr_sro`, shell class in `asr_augcls`, `[[sro]]` input) | 🟢 committed `176a727` (2026-10-30) |
 | B4.1 alpha = 0 gives the uncorrelated result (unit test and SCF gate G1) | 🟢 |
 | B4.2 brute force: ring with frozen centre and conditional shell, and reduced vs unreduced fcc | 🟢 |
-| B3 electrostatics with SRO (SIM vs explicit shell charge); no literature prescription found | 🔴 decision needed |
-| B4.3 Tarafder 2006 CuZn: SRO-induced change of the DOS | 🟠 runs at alpha 0, -0.15, -1 exist (`bp`), not analysed |
-| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🟢 done at levels 3 and 4 (`hull`); size gap of 10 open |
-| B4.5 same-model reference: reverse Monte Carlo supercells at target alpha | 🔴 |
+| B3 electrostatics with SRO: SIM unchanged is the default (decided 2026-10-31); option (b) `[scf] sro_shell` for the sensitivity test (`b963d0f`) | 🟢 default; 🟠 test runs queued (`trial/b45/asr`) |
+| B4.3 Tarafder 2006 CuZn: SRO-induced change of the DOS | 🟢 B2 limit and main Zn peak; 🟠 Cu band at moderate alpha (FINDINGS_LOG "Gate B4.3") |
+| B4.4 Alam 2009 Fig. 4 and 5: DOS shapes and the M2 ordering for the alpha triads | 🟢 done at levels 3 and 4 (`hull`); the size gap comes from the paper's random alloy (Fig. 2: about 2 e off Cr) |
+| B4.5 same-model reference: reverse Monte Carlo supercells at target alpha | 🟠 `tools/sqs.py --alpha`, k-space total energy; 128-atom CuZn cells running (`trial/b45`) |
+| SRO between two sublattices in an SCF run | 🟠 exact gate (bcc = B2 with equal sublattices) and partial B2 queued (`trial/b45/twosub`) |
 
 ### 7. v1.0 freeze and CPC paper 🔴
 From `docs/PUBLICATION_PLAN.md`: SRO gates pass, HEA SCF robust (🟢 since the `hull` fix), cost table, gfortran + OpenBLAS build, one

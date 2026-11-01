@@ -1314,6 +1314,59 @@ its own main peak.  Files: desktop `trial/sro_l4/alam_compare/` (`alam_clean.jso
   not.  The first suspect is the random alloy (the Cr band position), not the SRO model.  Next: the figure 2 comparison with the
   component DOS.
 
+### Alam 2009 figure 2: the random alloy decides the gap (2026-11-01, levels 4 `hull`, a = 3.59 A)
+Method: the three partial curves of figure 2 (top left) digitised at 300 dpi by colour.  Check: their concentration-weighted sum
+reproduces the digitised total of figure 2 within 0.01 states/Ry at every energy.  The only exceptions are the two printed labels
+("Fe" at -0.12 Ry, "Cr" at +0.07 Ry).  There the label pixels were replaced from the total (residual 0.09).  So the paper's partial
+curves are per spin and per atom of each species, like its total.  Files: desktop `trial/sro_l4/alam_compare/` (`dig2.py`, `fix2.py`,
+`cmp2.py`, `alam_fig2_fixed.json`).  Both E_F agree: -0.071 Ry in the paper, -0.0709 Ry in ours.
+| per spin | Fe paper | Fe ours | Ni paper | Ni ours | Cr paper | Cr ours |
+|---|---|---|---|---|---|---|
+| d peak (states/Ry) at E (Ry) | 17.0 at -0.21 | 13.5 at -0.18 | 24.6 at -0.28 | 19.1 at -0.21 | still rising at +0.10 (11.9) | 14.0 at +0.025 |
+| N(E_F) (states/Ry) | 8.8 | 12.1 | 4.4 | 7.9 | 6.8 | 8.9 |
+| electrons from -0.55 Ry to E_F, both spins | 8.34 | 7.41 | 10.40 | 9.27 | 3.93 | 5.49 |
+- The electron counts do not depend on the energy zero.  Relative to ours, the paper's Cr site holds 1.6 fewer electrons below E_F.
+  Its Fe and Ni sites hold 0.9 and 1.1 more.  Our states below -0.55 Ry add only 0.15 to 0.2 per site.  So the paper's Cr loses
+  about 2 electrons, and its Fe and Ni gain about 0.4 to 0.5.  Our self-consistent charges are Fe +0.027, Ni +0.147, Cr -0.192.
+  The paper's charge transfer is about ten times ours.  The paper's figure 2 text says the same in words: alloying pushes the Cr
+  band up and the Fe and Ni bands down.
+- A transfer of 2 electrons off Cr is not what a screened, charge self-consistent ASA calculation gives.  Ours, the SQS references
+  (section "SQS references" above: 0.06 to 0.1 e) keep the transfer at the 0.1 e scale.  So the paper's random alloy is the outlier.
+- This explains the SRO gap.  The paper's Cr d band sits about 0.3 Ry above its Fe d band (split band); ours sits 0.2 Ry above,
+  with a large common part.  The Fe-Cr SRO peak follows the Cr antibonding states: +0.14 Ry in the paper, -0.06 Ry in ours.  In a
+  split-band alloy, unlike-pair SRO reshapes the DOS much more than in a common-band one, so the paper's larger effects fit as well.
+- Verdict for B4.4: the SRO model and code agree with Alam where the random alloys agree (which pair matters, the grouping, the
+  signs).  The size and position gap comes from the paper's random alloy.  It is not a target for our code.  A same-model check
+  of the size needs B4.5.
+
+### Gate B4.3: bcc CuZn against Tarafder et al. 2006 (2026-11-01, levels 4 `hull`, a = 2.85 A)
+Source: `../references/SRO-cuzn_tarafder2006.pdf` is only the first 4 of 11 pages.  The arXiv source of cond-mat/0607767 (v1, the
+only version; PRB 74, 144204) has the SRO results: Fig. 6 (clustering), Fig. 7 (ordering, alpha = 0, -0.2, ..., -1), Fig. 8 (band
+energy against alpha).  Its model is ours: P(n_j = 1 | n_0 = 1) = x + alpha y, i.e. 1 - y (1 - alpha).  Digitised figures,
+scripts and our small-eta DOS: desktop `trial/sro_hull/tarafder_compare/` and `trial/sro_hull/dos_eta005/` (the three hull runs,
+2 iterations from their converged potentials, eta = 0.005 Ry, 801 points).  Tarafder's energies are relative to E_F.
+| total DOS, E - E_F | Zn d doublet (Ry, states/Ry) | Cu d peak | Cu d FWHM (Ry) |
+|---|---|---|---|
+| Tarafder alpha = 0 | -0.651 (20.0), -0.588 (42.2) | 15.7 at -0.231 | 0.22 (with a shoulder) |
+| Tarafder alpha = -0.2 | -0.649 (18.5), -0.592 (46.5) | 18.1 at -0.238 | 0.12 |
+| Tarafder alpha = -1 | one peak -0.603 (103) | 27.0 at -0.245 | 0.065 |
+| ours alpha = 0 | -0.710 (42.2), -0.646 (62.0) | 45.7 at -0.219 | 0.13 |
+| ours alpha = -0.15 | -0.706 (43.3), -0.649 (66.5) | 44.8 at -0.222 | 0.13 |
+| ours alpha = -1 | one peak -0.656 (111) | 43.3 at -0.256 | 0.092 |
+- The random alloys agree in shape.  Both show the Zn d doublet with the same splitting (0.063 Ry) and the Cu d band at the same
+  place (-0.22 vs -0.23 Ry).  Our Zn band sits 0.06 Ry deeper.  Tarafder's Cu band is broader (FWHM 0.22 vs 0.13 Ry).
+- The B2 limit (alpha = -1) agrees.  In both, the doublet merges into one narrow Zn peak at the position of its upper member.  The
+  Cu band narrows and moves down (Tarafder -0.231 to -0.245 Ry, ours -0.219 to -0.256 Ry).
+- Moderate ordering agrees on the main Zn peak: +10 % at alpha = -0.2 in Tarafder, +7 % at -0.15 in ours (the same per unit alpha).
+  It differs elsewhere.  Tarafder's lower Zn peak loses weight (-7.5 %), ours gains a little (+3 %).  Tarafder's Cu peak grows
+  by 15 % and narrows, ours does not change.  Their broader random Cu band leaves more room for narrowing.
+- Energy.  Tarafder's band energy (core removed) changes by -0.52 mRy at alpha = -0.15, about -1.3 mRy at -1 (read by eye at the
+  frame) and +0.67 mRy at +0.15; its minimum lies near -0.75.  Our total energy changes by -0.47 mRy at -0.15 and -1.56 mRy at -1.
+  The numbers are close, but the quantities differ.  Our self-consistent band energy changes by -0.97 and -10.9 mRy: it carries
+  the change of the charge transfer, which the double counting removes again.  So band energies cannot check SRO energies.
+- Verdict: 🟢 for the DOS in the B2 limit and the main Zn peak; 🟠 for the lower Zn peak and the Cu band at moderate alpha.  As
+  with Alam, the two random alloys differ (Cu band width, Zn band position).  The paper cannot check energies.  B4.5 must do that.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

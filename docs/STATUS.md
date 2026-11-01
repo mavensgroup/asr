@@ -50,8 +50,8 @@ Use these for new runs (energy-dependent ASR, `method = "asr"`):
 | item | status |
 |---|---|
 | cost: CoCrFeNi levels 4 takes 2.7 h per iteration, CoCrFeMnNi more | ⛔ for HEA levels 4 and 5, SRO series, Fe-Cr series |
-| SRO electrostatics (B3): SIM with a correlated shell, no literature prescription | 🔴 decision needed |
-| SRO gates B4.3 (Tarafder CuZn), B4.4 (Alam Fig. 4 and 5), B4.5 (RMC supercells) | 🟠 B4.4 done at levels 3 and 4 (holds with the paper's Fe and Ni labels swapped; effects 10 times smaller); B4.3 `hull` runs exist, not analysed; B4.5 🔴 |
+| SRO electrostatics (B3): SIM unchanged is the default; option (b) `sro_shell` exists for the sensitivity test | 🟠 test runs queued |
+| SRO gates B4.3 (Tarafder CuZn), B4.4 (Alam Fig. 4 and 5), B4.5 (RMC supercells) | 🟠 B4.4 done (the size gap comes from Alam's random alloy); B4.3 done (B2 limit and main Zn peak agree, Cu band differs); B4.5 runs on the desktop |
 | full unit-test suite on merged main `3986fc2` (desktop, 2026-10-30, about 75 min): 41 test programs, 306 checks, 0 failed; 6 `probe_*` programs stop because they need arguments or local reference files (not tests) | 🟢 |
 | gfortran + OpenBLAS build never tried | 🔴 (CPC requirement) |
 | FeRh Fe -4.8 % (rank 2 untested) | 🟠 low priority |
