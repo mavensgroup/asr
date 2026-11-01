@@ -1368,6 +1368,41 @@ scripts and our small-eta DOS: desktop `trial/sro_hull/tarafder_compare/` and `t
 - Verdict: 🟢 for the DOS in the B2 limit and the main Zn peak; 🟠 for the lower Zn peak and the Cu band at moderate alpha.  As
   with Alam, the two random alloys differ (Cu band width, Zn band position).  The paper cannot check energies.  B4.5 must do that.
 
+### Gate B4.5: same-model supercells against the ASR, bcc CuZn (2026-11-02, desktop `trial/b45`, binary `bin/asr_b963d0f`)
+Cells: `tools/sqs.py --alpha` (`f921c28`), 128 atoms, one potential per species (`site_classes = false`), a = 2.85 A, VBH, k-space
+with Gaussian smearing 0.005 Ry, nk = 5 (k-space energy and gates: `b963d0f`).  Achieved alpha: 0 (2 cells), -0.1484 (2 cells),
++0.1484, -0.2656 (shells 2 and 3 of this cell are not random: pair correlations 0.07 and 0.05).  ASR: levels 4, `hull`, at the
+same alpha; S = SIM unchanged (default), Z = `sim_beta = 0` + `sro_shell` (the same electrostatics as the cells), B = SIM +
+`sro_shell`.  Analysis scripts: `trial/b45/analysis/`.
+Energy change against alpha = 0 (mRy per atom) and Cu charge (e):
+| alpha | supercell | ASR S (default) | ASR Z (shell only) | ASR B (SIM + shell) |
+|---|---|---|---|---|
+| 0 (Cu charge) | 0.082 | 0.109 | 0.072 | 0.109 |
+| -0.15 | -2.08 (cells -2.01, -2.15); Cu 0.106 | -0.47; Cu 0.104 | -3.51; Cu 0.115 | -7.82; Cu 0.263 |
+| +0.15 | +1.97; Cu 0.060 | +0.56; Cu 0.115 | +2.47; Cu 0.054 | +3.43; Cu 0.071 |
+| -0.27 | -3.12 | -0.78 | -9.42; Cu 0.231 | diverged (residual 1 to 10 for 32 iterations, stopped) |
+- Noise: the two random cells differ by 0.08 mRy, the two -0.15 cells by 0.06 mRy.  nk = 4 vs 5 changes dE(-0.15) by 0.06 mRy.
+- DOS (per species, E - E_F, supercell broadened by a Lorentzian of 0.02 Ry = the ASR eta).  The two cells at the same alpha differ
+  by 0.1 states/Ry rms; the SRO changes are 1 to 3 states/Ry rms.  The SRO change splits into two parts:
+| change against alpha = 0 | alpha | supercell | ASR S | ASR Z |
+|---|---|---|---|---|
+| Zn d width (mRy) | -0.15 / +0.15 / -0.27 | -1.1 / +1.2 / -1.9 | -0.8 / +0.8 / -1.4 | -1.8 / +1.2 / -3.9 |
+| Cu d width (mRy) | same | -1.0 / +1.0 / -1.6 | -1.0 / +1.0 / -1.7 | -0.2 / +1.3 / -0.1 |
+| Zn d peak height | same | +3.9 % / -3.8 % / +6.8 % | +4.7 % / -4.0 % / +9.1 % | +3.5 % / -3.2 % / +3.1 % |
+| Zn - Cu band separation (mRy) | same | +11.0 / -9.6 / +16.7 | +3.2 / -3.4 / +5.5 | +22.4 / -14.4 / +70.0 |
+- Band shape (hopping part): the default ASR reproduces the supercell.  The widths agree within 0.3 mRy, the Zn peak within a
+  quarter of its change.  This is the part the SRO model itself controls, and it is right.
+- Band positions (electrostatic part): ordering moves the Zn and Cu d bands towards each other.  The default gives 30 % of the
+  supercell shift, the shell-only electrostatics 1.5 to 4 times the shift, with a runaway at -0.27.  Shell-only also spoils the Cu
+  width.  The energy errors follow the same pattern.  So the SRO model is right and the electrostatics are wrong: SIM unchanged
+  misses most of the shell charge, the bare explicit shell charge overshoots, and SIM plus shell counts the screening twice.
+- Random alloy, same model (Z_rand vs the alpha = 0 cells): the ASR Zn d band sits 0.057 Ry deeper relative to E_F, and the Zn - Cu
+  separation is 0.044 Ry larger (Cu charge 0.072 vs 0.082).  Tarafder's Zn band also sits 0.06 Ry above ours (gate B4.3).  The
+  ASR and k-space total energies differ by 62 mRy per atom.  This method offset is open and does not depend on SRO.
+- Verdict: B4.5 🟢 for the SRO DOS shape; 🔴 for SRO energies, charges and band positions under every current electrostatics
+  option.  Next: a screened shell term that interpolates between SIM and the bare shell charge, derived in general (not fitted to
+  CuZn), then checked against these cells and a second alloy; site-class cells (one potential per atom) as the physical reference.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

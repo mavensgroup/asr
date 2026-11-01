@@ -42,8 +42,8 @@ when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncom
 | B3 electrostatics with SRO.  Decided with the user 2026-10-31: keep SIM unchanged (option a) as the default.  Option (b) is the switch `[scf] sro_shell` (`b963d0f`): V_p gains (2/R1) sum_kappa' z sum_s (X_s^(p) - x_s) q_s, the chemical charge of the correlated shell.  The double counting is settled by the reference: a k-space supercell with one potential per species has exactly this term and no SIM, so `sim_beta = 0` + `sro_shell` is the same model as B4.5.  Runs S (SIM), B (SIM + shell), Z (shell only) at alpha = -0.1484, +0.1484, -0.2656 are queued (`trial/b45/asr`). | 🟢 decided (a); 🟠 test (b) running |
 | B4.3 Tarafder et al. 2006 bcc CuZn: PRB version in `../references` (Fig. 5 SRO DOS, Fig. 6 band energy; digitised from the arXiv source, same figures) against our eta = 0.005 DOS (FINDINGS_LOG "Gate B4.3") | 🟢 B2 limit, Zn doublet, main Zn peak; 🟠 Cu band at moderate alpha; energies not comparable |
 | B4.4 Alam 2009 Fig. 4 and 5 at levels 3 and 4: all claims hold with the paper's A and B swapped (Ni, Fe, Cr), all fail with its printed labels; our pair assignment checked; dE changes by at most 0.14 mRy from levels 3 to 4; our SRO effects about 10 times smaller at both levels.  Figure 2: the paper's Cr holds 1.6 e fewer electrons below E_F than ours (about 2 e charge transfer off Cr), so the gap comes from its random alloy (FINDINGS_LOG "Alam 2009 figure 2"). | 🟢 orderings and families; size gap explained (not ours) |
-| B4.5 same-model reference: `tools/sqs.py --alpha ... --classes species` (`f921c28`) and the k-space total energy (`b963d0f`; gate: B2 cell = 2x2x2 cell to all digits with Gaussian smearing; tetrahedra differ by 1.2 mRy under band folding, so the supercells use `bz = "gauss"`, smear 0.005).  bcc CuZn 128-atom cells at alpha 0 (2 seeds), -0.1484 (2 seeds), +0.1484, -0.2656 (shells 2, 3 not random at this alpha) running in `trial/b45/ks`, nk = 5 and an nk = 4 check | 🟠 running |
-| SRO between two sublattices in an SCF run: T1 bcc one sublattice = B2 cell with equal sublattices (exact), T2 G1 on partial B2, T3 partial B2 Cu0.7Zn0.3 / Cu0.3Zn0.7 with alpha_CuZn = -0.05 (full SCF) | 🟠 queued (`trial/b45/twosub`) |
+| B4.5 (done 2026-11-02 for CuZn; DOS shape 🟢, energies 🔴) same-model reference: `tools/sqs.py --alpha ... --classes species` (`f921c28`) and the k-space total energy (`b963d0f`; gate: B2 cell = 2x2x2 cell to all digits with Gaussian smearing; tetrahedra differ by 1.2 mRy under band folding, so the supercells use `bz = "gauss"`, smear 0.005).  bcc CuZn 128-atom cells at alpha 0 (2 seeds), -0.1484 (2 seeds), +0.1484, -0.2656 (shells 2, 3 not random at this alpha) running in `trial/b45/ks`, nk = 5 and an nk = 4 check | 🟠 running |
+| SRO between two sublattices in an SCF run (🟢 2026-11-02: T1 and T2 identical to all digits, T3 converged in 35 iterations): T1 bcc one sublattice = B2 cell with equal sublattices (exact), T2 G1 on partial B2, T3 partial B2 Cu0.7Zn0.3 / Cu0.3Zn0.7 with alpha_CuZn = -0.05 (full SCF) | 🟠 queued (`trial/b45/twosub`) |
 
 ## Runs that exist (desktop `~/asr_remote4/trial/sro_bp`, 2026-10-24)
 They were run from a plain copy `~/asr_sro`, retired on 2026-10-30.  Its binary and `SOURCE_MD5` are in `~/asr_remote4/trial/archive_clones/asr_sro`.  All runs used the
@@ -74,17 +74,13 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 (B3), so it is not yet a physical result.
 
 ## Next actions, in order
-Done 2026-11-01: steps 1 to 4 of the previous list (B4.4 figure 2, B4.3, the B3 switch, the B4.5 tools).  Running on the desktop
-(`trial/b45`, binary `bin/asr_b963d0f`, `SUMMARY.txt`): queue K = 8 k-space supercells (14 threads each, sequential), queue A2 =
-T1, T2 gates, then the ASR runs Z, B, S and T3.  Z_rand was started by the first queue A and finishes on its own.
-1. When T1 and T2 finish: compare every printed number (T1_one vs T1_two; T2_nosro vs T2_sro0).  Then T3 must converge.
-2. When the supercells finish: dE(alpha) = E(alpha) - E(0) per atom (two seeds give the noise; nk 4 vs 5 the k error), Cu and
-   Zn charges, DOS change.  Compare with ASR Z (same model), S (default) and B.  This decides how far the SIM default is off.
-3. Optional: site classes (`--classes site`, 128 potentials) to see the local-environment charges.
-4. Record in FINDINGS_LOG, update STATUS and ROADMAP.
-Open side issues: the k-space and ASR total energies of CuZn differ by 62 mRy per atom (B2 k-space -3446.7713, random ASR
--3446.8332), so only energy differences within one method are compared.  Two-sublattice `[[sro]]` needs all four entries to
-1e-8 (three constraints), which is unfriendly; deriving the dependent entries would be better.
+Done 2026-11-02: B4.5 for CuZn and the two-sublattice gates (FINDINGS_LOG "Gate B4.5").  The SRO model gives the right DOS shape;
+the electrostatics give wrong energies, charges and band positions.  SRO energies must not be quoted.
+1. B3 again: a screened first-shell charge term between SIM (too weak) and the bare shell charge (too strong, runaway at -0.27).
+   Derive it in general (screening of the shell charge itself), do not fit a factor to CuZn.  Check against the CuZn cells.
+2. A second alloy for the same test (fcc, for example Fe-Ni or Fe-Cr, the PRB target), with its own reverse Monte Carlo cells.
+3. Site-class cells (`--classes site`, one potential per atom) as the physical reference for the local screening.
+4. Open, independent of SRO: ASR vs k-space for the same random alloy (Zn d band 0.057 Ry deeper in the ASR, 62 mRy per atom).
 
 ## Rules that matter here
 - All calculations on the desktop; unit tests on the laptop.  Code changes only on the laptop: commit, push to GitHub, pull on the desktop, then run.
