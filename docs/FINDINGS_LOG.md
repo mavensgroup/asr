@@ -1403,6 +1403,35 @@ Energy change against alpha = 0 (mRy per atom) and Cu charge (e):
   option.  Next: a screened shell term that interpolates between SIM and the bare shell charge, derived in general (not fitted to
   CuZn), then checked against these cells and a second alloy; site-class cells (one potential per atom) as the physical reference.
 
+### B3: screened shell charge, and what the species-class cells really test (2026-11-02, `22366b9`)
+Check of the cells (`trial/b45/analysis/madcheck.py`: Ewald sum of the converged species charges at the 128 positions, averaged
+over each species):
+| cell | V_Cu Madelung (Ry) | first-shell part 2 z sum (X - x) q / R1 | rest |
+|---|---|---|---|
+| alpha 0, cells 1 / 2 | -0.0180 / -0.0164 | 0 | -0.0180 / -0.0164 |
+| alpha -0.15, cells 1 / 2 | -0.0498 / -0.0509 | -0.0539 / -0.0543 | +0.0040 / +0.0034 |
+| alpha +0.15 | +0.0100 | +0.0307 | -0.0207 |
+| alpha -0.27 | -0.0667 | -0.1075 | +0.0408 (shells 2, 3 ordered) |
+- The first-shell part equals the Ewald shell-1 sum to 4 digits, so `sro_shell` was implemented right.
+- The rest is a finite-size term.  In a cell of N sites with fixed composition, the charge q of a site is compensated by the other
+  N - 1 sites; with the periodic images this gives 2 q phi_self N/(N - 1), phi_self = -2.84/L for a cube of the same volume
+  (L = 4a): -0.022 Ry for q = 0.082, against -0.018 / -0.016 in the cells.  The shell excess Delta is compensated the same way:
+  predicted +0.004 Ry at alpha = -0.15, found +0.0040 / +0.0034.
+- So a species-class cell is a SIM-like model with beta' = -V_Cu R1 / (2 q_Cu) = 0.51 / 0.48 (128 atoms), and it screens the shell
+  excess with the same beta'.  It is not the "beta = 0 + shell" model.  The comparison in "Gate B4.5" mixed beta' = 0.5 (cells)
+  with beta = 1 (S) and beta = 0 (Z): its DOS-shape verdict stands, its energy and band-position verdict does not.
+Derivation: the SIM puts a fraction beta of the centre's excess charge q_p - qbar on the first shell.  With SRO the shell also
+carries the chemical excess Delta_p = sum_kappa' z sum_s (X_s^(p) - x_s) q_s.  Linear screening of the cluster puts
+-beta (q_p - qbar + Delta_p) on the shell, so
+    V_p(shell) = -beta 2 (q_p - qbar) / R1 + (1 - beta) 2 Delta_p / R1,
+    E = -beta sum_p w_p (q_p - qbar)^2 / R1 + (1 - beta) (z / R1) sum_ps w_p (X_s^(p) - x_s) q_p q_s.
+alpha = 0: the SIM.  beta = 1: complete local screening, the shell chemistry cancels (option a).  beta = 0: the bare shell charge.
+Symmetric pair form, so dE/dq_p = w_p V_p.  No new parameter.  The shell feedback shrinks by 1 - beta (no runaway).  Implemented
+as the only SRO electrostatics (`22366b9`; the `sro_shell` switch is gone; beta = 1 results unchanged).
+Tests running (`trial/b45`, binary `bin/asr_22366b9`): (1) ASR with beta = 0.495 at alpha 0, -0.1484, +0.1484, -0.2656
+(`screen/P_*`) must reproduce the species-class cells without fitting; (2) site-class cells (one potential per atom,
+`ks_site/`) at alpha 0, +-0.1484 give the physical beta and the physical SRO energies.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

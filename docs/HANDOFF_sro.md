@@ -74,12 +74,13 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 (B3), so it is not yet a physical result.
 
 ## Next actions, in order
-Done 2026-11-02: B4.5 for CuZn and the two-sublattice gates (FINDINGS_LOG "Gate B4.5").  The SRO model gives the right DOS shape;
-the electrostatics give wrong energies, charges and band positions.  SRO energies must not be quoted.
-1. B3 again: a screened first-shell charge term between SIM (too weak) and the bare shell charge (too strong, runaway at -0.27).
-   Derive it in general (screening of the shell charge itself), do not fit a factor to CuZn.  Check against the CuZn cells.
-2. A second alloy for the same test (fcc, for example Fe-Ni or Fe-Cr, the PRB target), with its own reverse Monte Carlo cells.
-3. Site-class cells (`--classes site`, one potential per atom) as the physical reference for the local screening.
+2026-11-02: B3 derived and implemented (`22366b9`, FINDINGS_LOG "B3: screened shell"): V_p(shell) = -beta 2 (q_p - qbar)/R1 +
+(1 - beta) 2 Delta_p/R1.  The species-class cells turned out to be a beta' = 0.5 model (finite size).  Running in `trial/b45`:
+queue P (ASR beta = 0.495, `screen/`) and queue S (site-class cells, `ks_site/`).
+1. Queue P vs the species-class cells: energies, Cu charge, Zn - Cu band separation at the four alpha.  Agreement tests the derivation.
+2. Queue S: beta from the random site-class cell (fit V_i against q_i, as for the SIM), then the SRO energies and charges; compare
+   with the ASR at that beta.  This sets the default sim_beta (now 1, not calibrated).
+3. A second alloy (fcc, Fe-Ni or Fe-Cr) for the same two tests.
 4. Open, independent of SRO: ASR vs k-space for the same random alloy (Zn d band 0.057 Ry deeper in the ASR, 62 mRy per atom).
 
 ## Rules that matter here
