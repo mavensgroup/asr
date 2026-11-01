@@ -17,11 +17,15 @@
 !> E_band = sum_l (M1_l + E_nu,l M0_l), v~ = v + 2Z/r (the nuclear terms -2Z int n/r of T and of the sphere electrostatics cancel),
 !> vm_p = Madelung + SIM shift from the output charges (1/2 q vm = Madelung energy of the sublattice charges + the SIM energy
 !> -sim_beta sum x (q - qbar)^2 / R1).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
-!> SRO with sro_shell (gate B3 option (b), a sensitivity test; default off): V_p gains the potential of the chemical excess
-!> charge of the correlated first shell, (2/R1) sum_kappa' z(kappa, kappa') sum_s (X_s^(p) - x_s) q_s (X: sro_cond, q: component
-!> charges).  Beyond the first shell the model is uncorrelated, so this is the full Madelung change of a species-averaged
-!> charge field.  w_p z(kappa, kappa') X_s^(p) is symmetric in the pair (f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so the
-!> term is a symmetric pair form and 1/2 q vm stays its energy.
+!> SRO electrostatics (gate B3): the first shell of a centre p carries the chemical excess charge
+!>     Delta_p = sum_kappa' z(kappa, kappa') sum_s (X_s^(p) - x_s) q_s      (X: sro_cond, q: component charges).
+!> The SIM screens a fraction sim_beta of the centre's excess charge on the first shell; the same linear screening applied to
+!> the cluster (centre + shell) puts -sim_beta (q_p - qbar + Delta_p) on the shell, so the shell potential at the centre is
+!>     V_p(shell) = -sim_beta 2 (q_p - qbar) / R1  +  (1 - sim_beta) 2 Delta_p / R1.
+!> alpha = 0: the SIM.  sim_beta = 1 (complete local screening): the shell chemistry is screened away.  sim_beta = 0: the bare
+!> shell charge.  w_p z X_s^(p) is symmetric in the pair (f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so the term is a
+!> symmetric pair form and 1/2 q vm stays its energy.  A finite species-class supercell has this form with a size-dependent
+!> beta (its centre and shell excess are compensated by the same uniform background; FINDINGS_LOG "B3: screened shell").
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
 !> per task; every thread keeps its own copy of the class operator.
 module asr_class_scf
@@ -55,8 +59,6 @@ module asr_class_scf
     logical :: sro = .false.                            !! first-shell short-range order (asr_sro)
     real(dp), allocatable :: sro_cond(:, :, :, :)       !! sro_cond(k, k', kappa, kappa') = P(species k' on a first-shell site of
                                                         !! sublattice kappa' | species k at a site of kappa)
-    logical :: sro_shell = .false.                      !! SRO electrostatics option (b): add the chemical charge of the correlated
-                                                        !! first shell, (2/R1) sum_kappa' z sum_s (X_s - x_s) q_s (gate B3)
     real(dp) :: alat = 0.0_dp                          !! graph lattice constant (Bohr)
     character(len=8) :: lattice = 'bcc', xc = 'vbh'
     real(dp) :: rcl = 1.2_dp, rinv = 0.0_dp            !! kept S^alpha range, inversion cluster radius (alat)
@@ -371,10 +373,11 @@ contains
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(p)%mesh%r)
         end if
         vm = dot_product(phimad(pcl(p), :), qbar - qcell) - inp%sim_beta * 2.0_dp * (cr(p)%qnet - qbar(pcl(p))) / r1
-        if (inp%sro .and. inp%sro_shell) then
+        if (inp%sro) then                              ! screened chemical charge of the correlated first shell
           do k = 1, ncls
             do i = 1, inp%nsc(k)
-              vm = vm + 2.0_dp * zsh(pcl(p), k) * (inp%sro_cond(pk(p), i, pcl(p), k) - inp%conc(i, k)) * cr(mdl%spc(i, k))%qnet / r1
+              vm = vm + (1.0_dp - inp%sim_beta) * 2.0_dp * zsh(pcl(p), k) * (inp%sro_cond(pk(p), i, pcl(p), k) - inp%conc(i, k)) &
+                   * cr(mdl%spc(i, k))%qnet / r1
             end do
           end do
         end if

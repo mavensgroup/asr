@@ -114,14 +114,6 @@ program test_run_input
            '[[sro]]'//nl//'pairs = [["Fe", "Co", 0.0], ["Co", "Fe", -0.1]]'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, 'twice') > 0, '[[sro]] pair given twice rejected when the first alpha is 0')
-  call put(bccfe(1:index(bccfe, '[[sublattice]]') - 1)//co//'[[sublattice]]'//nl//'name = "a"'//nl// &
-           'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.75, 0.25]'//nl// &
-           '[[sro]]'//nl//'pairs = [["Fe", "Co", -0.2]]'//nl//'[scf]'//nl//'sro_shell = true'//nl)
-  call read_run_input(f, inp, msg)
-  call check(len(msg) == 0 .and. inp%ci%sro_shell, '[scf] sro_shell with [[sro]] accepted')
-  call put(bccfe//'[scf]'//nl//'sro_shell = true'//nl)
-  call read_run_input(f, inp, msg)
-  call check(index(msg, 'sro_shell needs [[sro]]') > 0, '[scf] sro_shell without [[sro]] rejected')
   call put(b2//'[[sro]]'//nl//'pairs = [["Fe", "Co", -0.1]]'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, 'needs sublattices') > 0, '[[sro]] without sublattices on a several-sublattice structure rejected')
