@@ -20,6 +20,8 @@
 !>   [scf]          spin, xc, mixing, tolerance, max_iterations, zeta0, relativistic; method = "asr" also: sim_beta,
 !>                  save_potential (written every iteration) / start_potential, mixing_restart (linear step after an Anderson
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
+!>                  sro_shell = true (with [[sro]]; default false): add the potential of the chemical charge of the correlated
+!>                  first shell to the SIM (gate B3 option (b), a sensitivity test; asr_class_scf)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull (default) | bp | avg2; bp can put a pole of the
 !>                  terminated fraction next to the contour on complex chains, see docs/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
@@ -263,17 +265,19 @@ contains
     call section(table, 'scf', child)
     call check_keys(child, ['spin           ', 'xc             ', 'sim_beta       ', 'mixing         ', 'tolerance      ', &
                             'max_iterations ', 'zeta0          ', 'relativistic   ', 'start_potential', 'save_potential ', &
-                            'mixing_restart '], '[scf]', msg)
+                            'mixing_restart ', 'sro_shell      '], '[scf]', msg)
     if (len(msg) > 0) return
     if (kspace .and. (child%has_key('sim_beta') .or. child%has_key('start_potential') .or. child%has_key('save_potential') &
-                      .or. child%has_key('mixing_restart'))) then
-      msg = '[scf] sim_beta / start_potential / save_potential / mixing_restart are read with method = "asr" only'; return
+                      .or. child%has_key('mixing_restart') .or. child%has_key('sro_shell'))) then
+      msg = '[scf] sim_beta / start_potential / save_potential / mixing_restart / sro_shell are read with method = "asr" only'; return
     end if
     call get_value(child, 'spin', inp%ci%nspin, 1)
     call get_value(child, 'xc', xcs, 'vbh'); inp%ci%xc = xcs
     call get_value(child, 'sim_beta', inp%ci%sim_beta, 1.0_dp)
     call get_value(child, 'mixing', inp%ci%beta, 0.3_dp)
     call get_value(child, 'mixing_restart', inp%ci%beta_restart, 0.0_dp)
+    call get_value(child, 'sro_shell', inp%ci%sro_shell, .false.)
+    if (inp%ci%sro_shell .and. .not. inp%ci%sro) then; msg = '[scf] sro_shell needs [[sro]]'; return; end if
     call get_value(child, 'tolerance', inp%ci%tol, merge(1.0e-6_dp, 1.0e-5_dp, kspace))
     call get_value(child, 'max_iterations', inp%ci%maxit, merge(100, 60, kspace))
     call get_value(child, 'zeta0', inp%ci%zeta0, merge(0.4_dp, 0.1_dp, kspace))
@@ -619,7 +623,9 @@ contains
     end do
     if (inp%ci%sro) then
       write (ru, '(a)') ' first-shell short-range order (Warren-Cowley): P(neighbour species | centre species); shell sites'// &
-        ' independent given the centre, uncorrelated beyond the first shell; SIM unchanged'
+        ' independent given the centre, uncorrelated beyond the first shell; '// &
+        merge('SIM + chemical charge of the first shell (sro_shell)', 'SIM unchanged                                       ', &
+              inp%ci%sro_shell)
       do kap = 1, inp%ci%dec%ncls
         do k = 1, inp%ci%dec%ncls
           if (all(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &

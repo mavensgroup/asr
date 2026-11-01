@@ -17,6 +17,11 @@
 !> E_band = sum_l (M1_l + E_nu,l M0_l), v~ = v + 2Z/r (the nuclear terms -2Z int n/r of T and of the sphere electrostatics cancel),
 !> vm_p = Madelung + SIM shift from the output charges (1/2 q vm = Madelung energy of the sublattice charges + the SIM energy
 !> -sim_beta sum x (q - qbar)^2 / R1).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
+!> SRO with sro_shell (gate B3 option (b), a sensitivity test; default off): V_p gains the potential of the chemical excess
+!> charge of the correlated first shell, (2/R1) sum_kappa' z(kappa, kappa') sum_s (X_s^(p) - x_s) q_s (X: sro_cond, q: component
+!> charges).  Beyond the first shell the model is uncorrelated, so this is the full Madelung change of a species-averaged
+!> charge field.  w_p z(kappa, kappa') X_s^(p) is symmetric in the pair (f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so the
+!> term is a symmetric pair form and 1/2 q vm stays its energy.
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
 !> per task; every thread keeps its own copy of the class operator.
 module asr_class_scf
@@ -50,6 +55,8 @@ module asr_class_scf
     logical :: sro = .false.                            !! first-shell short-range order (asr_sro)
     real(dp), allocatable :: sro_cond(:, :, :, :)       !! sro_cond(k, k', kappa, kappa') = P(species k' on a first-shell site of
                                                         !! sublattice kappa' | species k at a site of kappa)
+    logical :: sro_shell = .false.                      !! SRO electrostatics option (b): add the chemical charge of the correlated
+                                                        !! first shell, (2/R1) sum_kappa' z sum_s (X_s - x_s) q_s (gate B3)
     real(dp) :: alat = 0.0_dp                          !! graph lattice constant (Bohr)
     character(len=8) :: lattice = 'bcc', xc = 'vbh'
     real(dp) :: rcl = 1.2_dp, rinv = 0.0_dp            !! kept S^alpha range, inversion cluster radius (alat)
@@ -116,7 +123,7 @@ contains
     real(dp) :: ef_in, r2n, denu, rdv, efshift
     integer :: npass, efmode, pdv, sgdv, kdv
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
-    integer, allocatable :: pk(:)
+    integer, allocatable :: pk(:), zsh(:, :)
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
     logical :: vb, cubic, hlo, hhi, core_ok
 
@@ -188,7 +195,7 @@ contains
     mg = 2 * inp%lsuper
     call graph_distances(g, 1, dist)
     allocate (flippable(g%n)); flippable = dist <= inp%flip_radius; flippable(1) = .false.
-    allocate (cop(ncls), res%nodes(ncls))
+    allocate (cop(ncls), res%nodes(ncls), zsh(ncls, ncls)); zsh = 0
     do kap = 1, ncls
       call decoration_classes(inp%dec, coord, mg, kap, cls)
       if (inp%sro) then                                ! first shell of the origin (site 1 at coord 0; minimum image)
@@ -197,6 +204,7 @@ contains
         do i = 2, g%n
           if (sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2) == r2min) cls(i) = ncls + cls(i)
         end do
+        do k = 1, ncls; zsh(kap, k) = count(cls == ncls + k); end do
         do k = 1, ncls                                 ! SRO with a sublattice that is not in the first shell: input error
           if (.not. any(cls == ncls + k)) then
             do i = 1, inp%nsc(kap)
@@ -363,6 +371,13 @@ contains
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(p)%mesh%r)
         end if
         vm = dot_product(phimad(pcl(p), :), qbar - qcell) - inp%sim_beta * 2.0_dp * (cr(p)%qnet - qbar(pcl(p))) / r1
+        if (inp%sro .and. inp%sro_shell) then
+          do k = 1, ncls
+            do i = 1, inp%nsc(k)
+              vm = vm + 2.0_dp * zsh(pcl(p), k) * (inp%sro_cond(pk(p), i, pcl(p), k) - inp%conc(i, k)) * cr(mdl%spc(i, k))%qnet / r1
+            end do
+          end do
+        end if
         allocate (tmp(n), cum(n))
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(p)%mesh, tmp, cum)

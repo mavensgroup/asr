@@ -64,10 +64,11 @@ module asr_asa
     type(asa_class_result_t), allocatable :: cls(:)
     real(dp) :: ef = 0.0_dp, dv = 0.0_dp
     real(dp) :: moment_cell = 0.0_dp
+    real(dp) :: etot = 0.0_dp               !! total energy per atom of the cell (Ry; Kohn-Sham form as asr_class_scf)
     integer :: iter = 0
     logical :: converged = .false.
-    !! SCF history, rows 1:iter (dV in Ry; moment in mu_B and qnet in electrons per class)
-    real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :)
+    !! SCF history, rows 1:iter (dV in Ry; moment in mu_B and qnet in electrons per class; total energy per atom in Ry)
+    real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
   end type asa_result_t
 
 contains
@@ -104,7 +105,8 @@ contains
     integer, allocatable :: offx(:)
     integer :: nx, ii
     type(anderson_t) :: mixer
-    real(dp) :: c, avw, ef, nelec, dv, dvc, e, ratio, qcore_s, qval_s
+    real(dp) :: c, avw, ef, nelec, dv, dvc, e, ratio, qcore_s, qval_s, etot
+    real(dp), allocatable :: esum(:)
     integer :: ncl, nsp, it, ic, s, l, is, k, n, ia, nod
     logical :: vb, core_ok
     type(asa_class_result_t), allocatable :: cr(:)
@@ -119,8 +121,9 @@ contains
     nelec = 0.0_dp
     do ia = 1, cell%nat; nelec = nelec + real(inp%cls(cell%isp(ia))%nval, dp); end do
     call xc_init(xf, inp%xc)
-    allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncl), res%hist_qnet(inp%maxit, ncl))
-    res%hist_dv = 0.0_dp; res%hist_ef = 0.0_dp; res%hist_moment = 0.0_dp; res%hist_qnet = 0.0_dp
+    allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncl), res%hist_qnet(inp%maxit, ncl), &
+              res%hist_etot(inp%maxit), esum(ncl))
+    res%hist_dv = 0.0_dp; res%hist_ef = 0.0_dp; res%hist_moment = 0.0_dp; res%hist_qnet = 0.0_dp; res%hist_etot = 0.0_dp
     vmad = 0.0_dp
     allocate (phimad(cell%nat, cell%nat), qatom(cell%nat), vmad_at(cell%nat))
     call madelung_phi(cell%avec, cell%tau, inp%alat, phimad)
@@ -188,10 +191,11 @@ contains
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         allocate (nval(n, nsp, 1), ncore(n, nsp, 1), tmp(n), cum(n), yc(2, 0:0, n))
-        nval = 0.0_dp; ncore = 0.0_dp
+        nval = 0.0_dp; ncore = 0.0_dp; esum(ic) = 0.0_dp
         do s = 1, nsp
           do l = 0, 2
             k = 2 * (ic - 1) + s
+            esum(ic) = esum(ic) + cr(ic)%q(1, l, s) + enu(l, s, ic) * cr(ic)%q(0, l, s)
             nval(:, s, 1) = nval(:, s, 1) &
               + cr(ic)%q(0, l, s) * (y(1, 0, 1:n, l, k)**2 + y(2, 0, 1:n, l, k)**2 / c**2) &
               + 2.0_dp * cr(ic)%q(1, l, s) * (y(1, 0, 1:n, l, k) * y(1, 1, 1:n, l, k) + y(2, 0, 1:n, l, k) * y(2, 1, 1:n, l, k) / c**2) &
@@ -203,9 +207,15 @@ contains
                              -1.6_dp * inp%cls(ic)%z**2 - 20.0_dp, cr(ic)%v(n, s) - 1.0e-6_dp, e, yc, core_ok)
             if (.not. core_ok .and. vb) print '(a,i0,a,i0)', '    warning: core state not bracketed (n,l)=', inp%cls(ic)%core(is)%n, ',', inp%cls(ic)%core(is)%l
             ncore(:, s, 1) = ncore(:, s, 1) + inp%cls(ic)%core(is)%occ / real(nsp, dp) * (yc(1, 0, :)**2 + yc(2, 0, :)**2 / c**2)
+            esum(ic) = esum(ic) + inp%cls(ic)%core(is)%occ / real(nsp, dp) * e
           end do
         end do
         cr(ic)%nrad = nval(:, :, 1) + ncore(:, :, 1)
+        do s = 1, nsp
+          tmp(1) = 0.0_dp
+          tmp(2:n) = cr(ic)%nrad(2:n, s) * (cr(ic)%v(2:n, s) + 2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n))
+          call cumint(cr(ic)%mesh, tmp, cum); esum(ic) = esum(ic) - cum(n)
+        end do
         tmp = sum(cr(ic)%nrad, dim=2); call cumint(cr(ic)%mesh, tmp, cum)
         cr(ic)%qnet = cum(n) - inp%cls(ic)%z
         if (nsp == 2) then
@@ -220,7 +230,10 @@ contains
       vmad_at = 2.0_dp * matmul(phimad, qatom)
       vmad = 0.0_dp
       do ia = 1, cell%nat; vmad(cell%isp(ia)) = vmad(cell%isp(ia)) + vmad_at(ia) / real(natc(cell%isp(ia)), dp); end do
-      ! (5) Hartree (neutral-sphere form) + Madelung shift + xc -> new potential; mix; E_nu update
+      ! (5) Hartree (neutral-sphere form) + Madelung shift + xc -> new potential; mix; E_nu update.
+      ! Total energy per atom (Kohn-Sham form, output density in the input potential, as asr_class_scf): sum over atoms of
+      ! esum + int n (V_H/2 + eps_xc) of its class, plus the Madelung energy 1/2 sum_i q_i V_i of the output charges
+      etot = 0.5_dp * dot_product(qatom, vmad_at)
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         allocate (ntot(n), vh(n), exc(n), vxc(n, 2), rho(n, 2))
@@ -233,6 +246,11 @@ contains
         else
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(ic)%mesh%r)
         end if
+        allocate (tmp(n), cum(n))
+        tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
+        call cumint(cr(ic)%mesh, tmp, cum)
+        etot = etot + natc(ic) * (esum(ic) + cum(n))
+        deallocate (tmp, cum)
         do s = 1, nsp
           vnew(2:n, s) = -2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n) + vh(2:n) + vxc(2:n, s) + vmad(ic)
           vnew(1, s) = vnew(2, s)
@@ -289,8 +307,9 @@ contains
           end do
         end do
       end do
-      res%iter = it; res%dv = dv; res%ef = ef
-      res%hist_dv(it) = dv; res%hist_ef(it) = ef
+      etot = etot / real(cell%nat, dp)
+      res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
+      res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       do ic = 1, ncl; res%hist_moment(it, ic) = cr(ic)%moment; res%hist_qnet(it, ic) = cr(ic)%qnet; end do
       if (vb) then
         write (*, '(a,i4,a,es10.3,a,f10.6)', advance='no') 'it', it, '  dV=', dv, '  EF=', ef

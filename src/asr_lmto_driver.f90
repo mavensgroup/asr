@@ -23,7 +23,7 @@ contains
     type(cell_t) :: cell
     real(dp), allocatable :: egrid(:), dos(:, :, :, :)
     real(dp) :: vcell, sa, sb
-    integer :: ic, ia, l, s, ie, u, np
+    integer :: ic, ia, l, s, ie, u, np, it
     character(len=:), allocatable :: pfile, dfile
     character(len=8), allocatable :: syms(:)
     real(dp), allocatable :: zc(:), swsc(:)
@@ -90,6 +90,7 @@ contains
     call asa_scf(ai, cell, res, verbose=.false.)
     t_scf = rep_wall() - t_scf
     print '(a,l1,a,i0,a,es9.2,a,f10.6,a)', '  SCF converged=', res%converged, '  iterations=', res%iter, '  dV=', res%dv, '  E_F=', res%ef, ' Ry'
+    print '(a,f18.8,a)', '  total energy =', res%etot, ' Ry per atom'
     if (.not. res%converged) print '(a)', '  WARNING: SCF did not converge'
     do ic = 1, ncl
       print '(a,a,a,f8.4,a,f9.5,a,f9.5)', '  class ', csym(ic), '  S(Bohr)=', ai%cls(ic)%sws, '  qnet=', res%cls(ic)%qnet, '  moment=', res%cls(ic)%moment
@@ -156,6 +157,10 @@ contains
     write (ru, '(a,a,a,i0,a,f8.4,a,f7.3)') '  BZ integration  ', trim(inp%bz), '  nk=', inp%nk, '  smear=', inp%smear, '  mixing=', inp%mixing
     call rep_structure(ru, inp%lattice, ai%alat, cell%avec, cell%tau, cell%isp, syms, swsc)
     call rep_scf_history(ru, syms, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%tolerance, res%converged)
+    write (ru, '(a)') ' total energy per atom (Ry; Kohn-Sham form, output density in the input potential, Madelung of the'// &
+      ' class charges at the atom positions), by iteration:'
+    do it = 1, res%iter; write (ru, '(i6,f20.8)') it, res%hist_etot(it); end do
+    write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per atom'
     call rep_classes(ru, syms, zc, nvc, swsc, natc, res%cls, inp%spin, res%ef, res%moment_cell, '')
     call rep_dos_at_ef(ru, syms, egrid, dos, res%ef, inp%dos_smear, inp%spin, &
                        'DOS columns per atom class (k-space tetrahedron/Gaussian, nk='//itoa(inp%dos_nk)//'); not a self-consistency quantity')
