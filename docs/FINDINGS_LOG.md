@@ -1340,9 +1340,10 @@ curves are per spin and per atom of each species, like its total.  Files: deskto
   of the size needs B4.5.
 
 ### Gate B4.3: bcc CuZn against Tarafder et al. 2006 (2026-11-01, levels 4 `hull`, a = 2.85 A)
-Source: `../references/SRO-cuzn_tarafder2006.pdf` is only the first 4 of 11 pages.  The arXiv source of cond-mat/0607767 (v1, the
-only version; PRB 74, 144204) has the SRO results: Fig. 6 (clustering), Fig. 7 (ordering, alpha = 0, -0.2, ..., -1), Fig. 8 (band
-energy against alpha).  Its model is ours: P(n_j = 1 | n_0 = 1) = x + alpha y, i.e. 1 - y (1 - alpha).  Digitised figures,
+Source: PRB 74, 144204 (2006), now `../references/SRO-cuzn_tarafder2006.pdf` (10 pages; the earlier file was the first 4 pages of
+the arXiv preprint).  Fig. 5 has the SRO DOS (left: clustering, alpha = 0 to 1; right: ordering, alpha = 0 to -1), Fig. 6 the band
+energy against alpha.  These are the figures of the arXiv source of cond-mat/0607767 (Figs. 6, 7, 8 there), which were digitised;
+the figure numbers below follow the arXiv source.  Its model is ours: P(n_j = 1 | n_0 = 1) = x + alpha y, i.e. 1 - y (1 - alpha).  Digitised figures,
 scripts and our small-eta DOS: desktop `trial/sro_hull/tarafder_compare/` and `trial/sro_hull/dos_eta005/` (the three hull runs,
 2 iterations from their converged potentials, eta = 0.005 Ry, 801 points).  Tarafder's energies are relative to E_F.
 | total DOS, E - E_F | Zn d doublet (Ry, states/Ry) | Cu d peak | Cu d FWHM (Ry) |
