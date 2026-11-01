@@ -15,6 +15,11 @@ binary search is the one of the binary-only version (same random stream, same SQ
   python3 -I tools/sqs.py --lattice fcc --n 40 --species Co Cr Fe Mn Ni --x 0.2 0.2 0.2 0.2 0.2 --out hea   (--x: all
   concentrations, or only x of the first species for a binary)
 
+Short-range order (reverse Monte Carlo reference for the ASR [[sro]] runs): --alpha s1,s2,alpha ... sets the first-shell target
+P_ss'(1) = x_s x_s' (1 - alpha_ss') (unlike pairs given, diagonal derived as in asr_sro); shells 2..npair stay at x_s x_s'.  The pair
+objective is used (no triplet).  --classes species writes site_classes = false (one potential per species, as in the ASR).
+  python3 -I tools/sqs.py --lattice bcc --n 54 --species Cu Zn --alpha Cu,Zn,-0.15 --ncells 1 --classes species --out cuzn
+
 Partial (sublattice) disorder: the SQS is built on the disordered sublattice only and every site is decorated with the ordered
 atoms at fixed offsets (cubic lattice-constant units), e.g. L2_1 Co2(Fe,Cr)Al with the Fe/Cr 4b sublattice as the fcc SQS lattice:
   python3 -I tools/sqs.py --lattice fcc --n 10 --x 0.4 --species Fe Cr --decorate Al:0.5,0.5,0.5 Co:0.25,0.25,0.25 Co:-0.25,-0.25,-0.25 --out d
@@ -125,12 +130,13 @@ def pair_probs(lab, shells, ns):
     return np.array([occ.T @ m @ occ / m.sum() for m in shells])
 
 
-def anneal(counts, shells, tri, x, w, rng, steps=20000):
-    """counts: sites per species; x: concentrations.  Returns (objective, species index per site)."""
+def anneal(counts, shells, tri, x, w, rng, steps=20000, target=None):
+    """counts: sites per species; x: concentrations; target: optional P[k, s, s'] to match instead of the random x_s x_s'
+    (short-range order; pair objective only, no triplet).  Returns (objective, species index per site)."""
     ns = len(counts)
     lab = np.concatenate([np.full(c, s) for s, c in enumerate(counts)]); rng.shuffle(lab)
-    xx = np.outer(x, x)
-    if ns == 2:
+    xx = np.outer(x, x) if target is None else target
+    if ns == 2 and target is None:
         t2, t3 = (2 * x[0] - 1) ** 2, (2 * x[0] - 1) ** 3
         def obj(l):
             p, t = correlations(1.0 - 2.0 * l, shells, tri)
@@ -155,6 +161,20 @@ def anneal(counts, shells, tri, x, w, rng, steps=20000):
     return best, blab
 
 
+def sro_target(x, species, pairs, npair):
+    """P[k, s, s'] for first-shell Warren-Cowley SRO: x_s x_s' (1 - alpha_ss') in shell 1, x_s x_s' beyond.  pairs: list of
+    (s, s', alpha) for unlike pairs (symmetric); the diagonal follows from sum_s' x_s' alpha_ss' = 0 (as asr_sro)."""
+    ns = len(x); al = np.zeros((ns, ns))
+    for s1, s2, v in pairs:
+        i, j = species.index(s1), species.index(s2)
+        if i == j: sys.exit('--alpha: give unlike pairs only (the diagonal follows)')
+        al[i, j] = al[j, i] = v
+    for i in range(ns): al[i, i] = -sum(x[j] * al[i, j] for j in range(ns) if j != i) / x[i]
+    t = np.array([np.outer(x, x)] * npair); t[0] = np.outer(x, x) * (1.0 - al)
+    if np.any(t[0] < -1e-12): sys.exit('--alpha: a pair probability is negative')
+    return t, al
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--lattice', default='bcc'); ap.add_argument('--n', type=int, default=16)
@@ -163,6 +183,10 @@ def main():
     ap.add_argument('--nsqs', type=int, default=2); ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--out', required=True)
     ap.add_argument('--decorate', nargs='*', default=[], help='symbol:dx,dy,dz atoms added at every SQS site (cubic units)')
+    ap.add_argument('--alpha', nargs='*', default=[], help='first-shell SRO targets s1,s2,alpha (unlike pairs); shells 2.. random')
+    ap.add_argument('--classes', default='site', choices=['site', 'species'],
+                    help='one potential per site (site_classes = true) or per species (false)')
+    ap.add_argument('--steps', type=int, default=20000)
     a = ap.parse_args()
     deco = []
     for d in a.decorate:
@@ -175,6 +199,11 @@ def main():
     counts = np.rint(x * a.n).astype(int)
     if np.any(np.abs(counts - x * a.n) > 1e-9): sys.exit('x_s * n must be integers')
     w = 1.0 / np.arange(1, a.npair + 1)                      # nearer shells weigh more
+    target, alpha = None, None
+    if a.alpha:
+        pairs = [(t.split(',')[0], t.split(',')[1], float(t.split(',')[2])) for t in a.alpha]
+        target, alpha = sro_target(x, a.species, pairs, a.npair)
+    ref = np.outer(x, x) if target is None else target
     cands = []
     for h in hnfs(a.n):
         sup = reduce_cell(h @ prim)
@@ -190,25 +219,31 @@ def main():
         pos = sites_of(sup, prim)
         radii, shells = shells_and_pairs(sup, pos, a.npair)
         tri = triplet_list(sup, pos, radii)
-        best, lab = anneal(counts, shells, tri, x, w, rng)
-        dp = np.abs(pair_probs(lab, shells, ns) - np.outer(x, x)).max(axis=(1, 2))   # worst pair deviation per shell
+        best, lab = anneal(counts, shells, tri, x, w, rng, a.steps, target)
+        pp = pair_probs(lab, shells, ns)
+        dp = np.abs(pp - ref).max(axis=(1, 2))                               # worst pair deviation per shell
         pt = correlations(1.0 - 2.0 * lab, shells, tri) if ns == 2 else None
-        results.append((best, sup, pos, lab, dp, pt, aspect))
+        results.append((best, sup, pos, lab, dp, pt, aspect, pp))
         print(f'cell {len(seen):3d} aspect {aspect:5.2f}  objective {best:.4f}  max |P - x x| per shell {np.round(dp, 3)}', flush=True)
     results.sort(key=lambda r: r[0])
     os.makedirs(a.out, exist_ok=True)
-    for q, (best, sup, pos, lab, dp, pt, aspect) in enumerate(results[:a.nsqs], 1):
-        fn = os.path.join(a.out, f'sqs{a.n}_{q}.toml')
+    for q, (best, sup, pos, lab, dp, pt, aspect, pp) in enumerate(results[:a.nsqs], 1):
+        fn = os.path.join(a.out, f'{"sro" if a.alpha else "sqs"}{a.n}_{q}.toml')
         with open(fn, 'w') as f:
-            f.write(f'# SQS {a.lattice} N = {a.n}, ' + ' '.join(f'{s}{c:g}' for s, c in zip(a.species, x)) +
-                    f': objective {best:.4f}, max |P_ss\' - x_s x_s\'| per shell (1..{a.npair}) {np.round(dp, 4).tolist()}\n')
+            f.write(f'# {"SRO cell" if a.alpha else "SQS"} {a.lattice} N = {a.n}, ' + ' '.join(f'{s}{c:g}' for s, c in zip(a.species, x)) +
+                    f': objective {best:.4f}, max |P_ss\' - ' + ('target' if a.alpha else 'x_s x_s\'') + f'| per shell (1..{a.npair}) {np.round(dp, 4).tolist()}\n')
             if ns == 2:
                 p, t = pt
                 f.write(f'# pair correlations {np.round(p, 4).tolist()}, triplet {t:+.4f} '
                         f'(random: {(2 * x[0] - 1) ** 2:.3f} / {(2 * x[0] - 1) ** 3:+.3f})\n')
+            if a.alpha:
+                ae = 1.0 - pp[0] / np.outer(x, x)                              # achieved first-shell alpha
+                f.write('# first-shell SRO target alpha ' + ' '.join(f'{a.species[i]}-{a.species[j]} {alpha[i, j]:+.4f}'
+                        for i in range(ns) for j in range(i, ns)) + '\n# achieved alpha     ' +
+                        ' '.join(f'{a.species[i]}-{a.species[j]} {ae[i, j]:+.4f}' for i in range(ns) for j in range(i, ns)) + '\n')
             if deco: f.write('# decorated: ' + ' '.join(a.decorate) + '\n')
             f.write('# fragment: add [[species]], [scf], [kspace] and [calculation] method = "kspace"\n')
-            f.write('[structure]\nlattice = "cell"\nsite_classes = true\nvectors = [' +
+            f.write(f'[structure]\nlattice = "cell"\nsite_classes = {"true" if a.classes == "site" else "false"}\nvectors = [' +
                     ', '.join('[' + ', '.join(f'{c:.6f}' for c in v) + ']' for v in sup) + ']\n\n')
             for r, s in zip(pos, lab):
                 f.write('[[site]]\nposition = [' + ', '.join(f'{c:.6f}' for c in r) + f']\nspecies = "{a.species[s]}"\n\n')
