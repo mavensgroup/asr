@@ -1454,7 +1454,8 @@ bcc, a = 2.85 A (`trial/b45/analysis/cef.py`; checks: B2 Madelung 1.762675 exact
 | 10 | 0.550 | 0.518 | 0.450 | 0.069 | 0.152 | 4.06 |
 | 100 | 0.226 | 0.786 | 0.774 | 0.028 | 0.192 | 6.3 |
 - a = 1.263 Ry is the hardness of our ASR (q_Cu 0.072 at beta = 0, 0.109 at beta = 1: 2/(a R1) = 0.339).  It gives beta = 1.045,
-  so the default beta = 1 is consistent with the ASR's own response.  beta cannot exceed 1.763 (instability at the B2 point).
+  so the default beta = 1 is consistent with the ASR's own response.  The model is stable for a > a_min = 1.763 * 2/R1 (the B2
+  point H); beta at a_min is about 1.39, the largest beta of bcc (G00 stays finite there).
 - lambda = 1 - beta is the weak-screening limit only (a -> infinity).  At metallic screening lambda is about 0.21; Kimi's and
   Gemini's values are rough estimates of the same G1 effect (40 to 60 % too small).
 - The B2 limit comes out within 10 % without matching.

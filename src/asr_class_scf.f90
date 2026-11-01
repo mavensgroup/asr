@@ -8,24 +8,18 @@
 !> (asr_edc_setup) -> G_p(z) on the Fermi contour, four start orbitals (s, p_z, t2g, e_g; cubic site symmetry is checked)
 !> -> moments M_k (common E_F from sum_p w_p N_p = sum_p w_p Z_val,p) -> density M0 phi^2 + 2 M1 phi phidot + M2 (phidot^2 +
 !> phi phiddot), relaxed core, Hartree, xc ->
-!>     V_p = sum_kappa' Phi(kappa, kappa') qbar_kappa'  -  sim_beta 2 (q_p - qbar_kappa) / R1,   qbar_kappa = sum_{p in kappa} x_p q_p:
-!> Madelung of the sublattice-average charges over the decoration cell (Ewald) plus the screened-impurity term for the deviation
-!> from the sublattice average (binary alloy: qbar = 0 -> the SIM of asr_alloy_scf; ordered sublattice: no SIM term)
+!>     V_p = sum_kappa' Phi(kappa, kappa') qbar_kappa'  +  sum_p' F(p, p') (q_p' - qbar_kappa'),   qbar_kappa = sum_{p in kappa} x_p q_p:
+!> Madelung of the sublattice-average charges over the decoration cell (Ewald) plus the screened potential of the deviations
+!> from the sublattice averages, F from asr_screening (charge-excess model of the graph lattice, hardness solved from sim_beta).
+!> Without SRO F = -2 sim_beta / R1 (the screened-impurity model; ordered sublattice: no deviation).  With first-shell SRO,
+!> F = (G00 + G1 Ahat)^-1 (W00 + W1 Ahat), Ahat(p, p') = z(kappa, kappa') (X_s'^(p) - x_s'): the conditional shell charge and the
+!> part of the neighbours' screening clouds on the centre (gate B3, FINDINGS_LOG "B3 re-derived").
 !> -> Anderson mixing of the smooth potentials and E_nu.
 !> Total energy per site (Ry, Kohn-Sham form: output density, input potential), E = sum_p w_p E_p with
 !>     E_p = E_band + sum eps_core - int n v~_in + 1/2 int n V_H[n] + int n eps_xc[n] + 1/2 q_p vm_p,
 !> E_band = sum_l (M1_l + E_nu,l M0_l), v~ = v + 2Z/r (the nuclear terms -2Z int n/r of T and of the sphere electrostatics cancel),
-!> vm_p = Madelung + SIM shift from the output charges (1/2 q vm = Madelung energy of the sublattice charges + the SIM energy
-!> -sim_beta sum x (q - qbar)^2 / R1).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
-!> SRO electrostatics (gate B3): the first shell of a centre p carries the chemical excess charge
-!>     Delta_p = sum_kappa' z(kappa, kappa') sum_s (X_s^(p) - x_s) q_s      (X: sro_cond, q: component charges).
-!> The SIM screens a fraction sim_beta of the centre's excess charge on the first shell; the same linear screening applied to
-!> the cluster (centre + shell) puts -sim_beta (q_p - qbar + Delta_p) on the shell, so the shell potential at the centre is
-!>     V_p(shell) = -sim_beta 2 (q_p - qbar) / R1  +  (1 - sim_beta) 2 Delta_p / R1.
-!> alpha = 0: the SIM.  sim_beta = 1 (complete local screening): the shell chemistry is screened away.  sim_beta = 0: the bare
-!> shell charge.  w_p z X_s^(p) is symmetric in the pair (f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so the term is a
-!> symmetric pair form and 1/2 q vm stays its energy.  A finite species-class supercell has this form with a size-dependent
-!> beta (its centre and shell excess are compensated by the same uniform background; FINDINGS_LOG "B3: screened shell").
+!> vm_p = Madelung + screened fluctuation shift from the output charges (1/2 q vm = Madelung energy of the sublattice charges +
+!> 1/2 sum w dq F dq; diag(w) F is symmetric, so this is variational).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
 !> per task; every thread keeps its own copy of the class operator.
 module asr_class_scf
@@ -47,6 +41,7 @@ module asr_class_scf
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
+  use asr_screening, only: screen_t, screen_lattice, screen_matrix
   implicit none
   private
   public :: class_scf_input_t, class_scf_result_t, class_scf
@@ -87,6 +82,8 @@ module asr_class_scf
     logical :: converged = .false.
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
     real(dp), allocatable :: edos_e(:), edos(:, :, :, :)   !! DOS(e, l, component, spin) per atom
+    type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
+    real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e)
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
@@ -126,6 +123,9 @@ contains
     integer :: npass, efmode, pdv, sgdv, kdv
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
     integer, allocatable :: pk(:), zsh(:, :)
+    real(dp), allocatable :: ahat(:, :)
+    character(len=:), allocatable :: smsg
+    integer :: p2
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
     logical :: vb, cubic, hlo, hhi, core_ok
 
@@ -136,6 +136,8 @@ contains
     avw = avg_ws_radius(trim(inp%lattice)) * inp%alat
     alpha = standard_alpha()
     r1 = nn_distance(trim(inp%lattice)) * inp%alat
+    call screen_lattice(trim(inp%lattice), inp%alat, inp%sim_beta, res%screen, smsg)
+    if (len(smsg) > 0) error stop smsg
     ngen = inp%nlevels
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec
     ! ---- components
@@ -231,6 +233,16 @@ contains
     end do
     if (vb) print '(a,i0,a,i0,a,i0,a,i0,a,i0)', '  class ASR: components=', ncomp, '  levels=', ngen, '  recursion steps=', nlev, &
       '  rank<=', inp%maxrank, '  nspin=', nsp
+    ! ---- screened fluctuation electrostatics: F = (G00 + G1 Ahat)^-1 (W00 + W1 Ahat)
+    allocate (ahat(ncomp, ncomp), res%fscr(ncomp, ncomp)); ahat = 0.0_dp
+    if (inp%sro) then
+      do p = 1, ncomp
+        do p2 = 1, ncomp
+          ahat(p, p2) = zsh(pcl(p), pcl(p2)) * (inp%sro_cond(pk(p), pk(p2), pcl(p), pcl(p2)) - inp%conc(pk(p2), pcl(p2)))
+        end do
+      end do
+    end if
+    call screen_matrix(res%screen, ahat, res%fscr)
     ! ---- mixing vector: per component and spin the smooth potential (n) and E_nu (3)
     allocate (offx(ncomp + 1)); offx(1) = 0
     do p = 1, ncomp; offx(p + 1) = offx(p) + (cr(p)%mesh%n + 3) * nsp; end do
@@ -372,15 +384,8 @@ contains
         else
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(p)%mesh%r)
         end if
-        vm = dot_product(phimad(pcl(p), :), qbar - qcell) - inp%sim_beta * 2.0_dp * (cr(p)%qnet - qbar(pcl(p))) / r1
-        if (inp%sro) then                              ! screened chemical charge of the correlated first shell
-          do k = 1, ncls
-            do i = 1, inp%nsc(k)
-              vm = vm + (1.0_dp - inp%sim_beta) * 2.0_dp * zsh(pcl(p), k) * (inp%sro_cond(pk(p), i, pcl(p), k) - inp%conc(i, k)) &
-                   * cr(mdl%spc(i, k))%qnet / r1
-            end do
-          end do
-        end if
+        vm = dot_product(phimad(pcl(p), :), qbar - qcell)
+        do p2 = 1, ncomp; vm = vm + res%fscr(p, p2) * (cr(p2)%qnet - qbar(pcl(p2))); end do
         allocate (tmp(n), cum(n))
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(p)%mesh, tmp, cum)

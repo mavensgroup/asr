@@ -20,7 +20,8 @@
 !>   [scf]          spin, xc, mixing, tolerance, max_iterations, zeta0, relativistic; method = "asr" also: sim_beta,
 !>                  save_potential (written every iteration) / start_potential, mixing_restart (linear step after an Anderson
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
-!>                  With [[sro]], sim_beta also screens the chemical charge of the correlated first shell (asr_class_scf)
+!>                  sim_beta (0 <= beta < lattice maximum, about 1.39 on bcc) fixes the hardness of the charge-excess screening
+!>                  model; with [[sro]] it also sets the screened potential of the correlated first shell (asr_screening)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull (default) | bp | avg2; bp can put a pole of the
 !>                  terminated fraction next to the contour on complex chains, see docs/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
@@ -41,6 +42,7 @@ module asr_driver
   use asr_lmto_driver, only: run_lmto, atom_shells
   use asr_sublattice, only: decoration_t, decoration_build
   use asr_sro, only: sro_conditional
+  use asr_screening, only: screen_t, screen_lattice
   use asr_class_scf
   use asr_report
   !$ use omp_lib, only: omp_get_max_threads
@@ -273,6 +275,13 @@ contains
     call get_value(child, 'spin', inp%ci%nspin, 1)
     call get_value(child, 'xc', xcs, 'vbh'); inp%ci%xc = xcs
     call get_value(child, 'sim_beta', inp%ci%sim_beta, 1.0_dp)
+    if (.not. kspace) then                         ! sim_beta fixes the hardness of the screening model; it has a lattice maximum
+      block
+        type(screen_t) :: scr
+        call screen_lattice(trim(inp%ci%lattice), inp%ci%alat, inp%ci%sim_beta, scr, msg)
+        if (len(msg) > 0) then; msg = '[scf] sim_beta: '//msg; return; end if
+      end block
+    end if
     call get_value(child, 'mixing', inp%ci%beta, 0.3_dp)
     call get_value(child, 'mixing_restart', inp%ci%beta_restart, 0.0_dp)
     call get_value(child, 'tolerance', inp%ci%tol, merge(1.0e-6_dp, 1.0e-5_dp, kspace))
@@ -609,7 +618,15 @@ contains
       '  max rank=', inp%ci%maxrank, '  supercell=', inp%ci%lsuper
     write (ru, '(a,*(i0,1x))') '  augmented-space nodes per sublattice: ', res%nodes
     write (ru, '(a,f6.3,a,f6.3,a,f7.4,a)') '  SIM beta=', inp%ci%sim_beta, '   mixing=', inp%ci%beta, '   fermi_kt=', inp%ci%fermi_kt, ' Ry'
-    call rep_line(ru, 'electrostatics  Madelung of the sublattice-average charges (Ewald, decoration cell) + SIM of the deviation')
+    if (res%screen%unscreened) then
+      write (ru, '(a)') '  screening: none (sim_beta = 0; fluctuations interact as bare point charges)'
+    else
+      write (ru, '(a,f8.4,a,f7.4,a,f8.4,a,f8.4,a,f7.4,a,f7.4)') '  screening (charge-excess model of the graph lattice): hardness a=', &
+        res%screen%a, ' Ry/e  G00=', res%screen%g00, '  G1=', res%screen%g1, '  W00/G00=', res%screen%w00 / res%screen%g00, &
+        '  first-shell weight lambda=', res%screen%lambda, '  beta max=', res%screen%beta_max
+    end if
+    call rep_line(ru, 'electrostatics  Madelung of the sublattice-average charges (Ewald, decoration cell) + screened deviations (SIM; with SRO'// &
+                  ' the conditional first shell, asr_screening)')
     call rep_section(ru, 'structure')
     write (ru, '(a,a,a,f12.6,a,f10.6,a)') ' graph lattice ', trim(inp%ci%lattice), '  a = ', inp%ci%alat, ' Bohr = ', inp%ci%alat * 0.529177210903_dp, ' Angstrom'
     write (ru, '(a,i0,a,i0,a,f9.5,a)') ' decoration cell ', inp%ci%dec%period, '^3 conventional cubes, ', inp%ci%dec%nsite, ' sites;  S_ws = ', avw, ' Bohr (equal spheres)'
@@ -620,8 +637,7 @@ contains
     end do
     if (inp%ci%sro) then
       write (ru, '(a)') ' first-shell short-range order (Warren-Cowley): P(neighbour species | centre species); shell sites'// &
-        ' independent given the centre, uncorrelated beyond the first shell; SIM plus the first-shell chemical charge'// &
-        ' screened by sim_beta, i.e. weight 1 - sim_beta'
+        ' independent given the centre, uncorrelated beyond the first shell; electrostatics: screened conditional shell (asr_screening)'
       do kap = 1, inp%ci%dec%ncls
         do k = 1, inp%ci%dec%ncls
           if (all(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
