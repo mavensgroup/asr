@@ -1463,6 +1463,41 @@ bcc, a = 2.85 A (`trial/b45/analysis/cef.py`; checks: B2 Madelung 1.762675 exact
   G1/G00 (q_i - q_s on the chemical shell charge; predicted -0.11) and beta, lambda (V_i on q_i and D1, D2, D3):
   `trial/b45/analysis/regress.py`.
 
+### B3 tested: site-class cells confirm the charge-excess model (2026-11-03; desktop `trial/b45/ks_site`, `cef`)
+References: the B4.5 cells with one potential per atom (`site_classes = true`, mixing 0.1), k-space, nk 5.  Each converged in 32 to
+35 iterations.  ASR: `64bda88` at the default beta = 1 (no fitting), levels 4, `hull`.  The ASR random point is `cuzn_rand`.
+Fit per cell (`analysis/regress.py`; V_i on q_i and the chemical shell charges D1, D2, D3):
+| alpha | beta | lambda | a (Ry) | G1/G00 | G2/G00 | rms residual of V (mRy) |
+|---|---|---|---|---|---|---|
+| model, a = 1.263 | 1.045 | 0.212 | 1.263 | -0.112 | -0.051 | |
+| 0 | 1.022 | 0.221 | 1.358 | -0.101 | -0.057 | 1.9 of 63 |
+| -0.148 seed 1 | 1.006 | 0.208 | 1.409 | -0.090 | -0.055 | 1.4 of 69 |
+| -0.148 seed 2 | 1.007 | 0.206 | 1.411 | -0.089 | -0.054 | 1.5 of 68 |
+| +0.148 | 1.020 | 0.252 | 1.345 | -0.114 | -0.059 | 2.4 of 55 |
+| -0.266 | 0.995 | 0.203 | 1.494 | -0.080 | -0.049 | 1.1 of 75 |
+The local q-V law holds to 0.002 e.  The cells give beta = 1.00 to 1.02 and lambda = 0.20 to 0.25.  So the default beta = 1 is right.
+The forms lambda = 1 - beta, beta/z and (1.763 - beta)/z are ruled out.  The second-shell weight D2 is about 0.11 in every cell; the
+ASR needs it only with second-shell SRO.  The hardness rises by 10 % with ordering (1.36 to 1.49).
+SRO changes from alpha = 0 (energy mRy/atom; Cu charge e; Zn d minus Cu d band-centre separation mRy):
+| alpha | quantity | per-atom cell | ASR new (beta 1) | per-species SQS | old (1 - beta), beta 0.495 | SIM only | shell only |
+|---|---|---|---|---|---|---|---|
+| -0.148 | dE | -1.44 / -1.49 | -1.28 | -2.08 | -2.10 | -0.47 | -3.51 |
+| +0.148 | dE | +1.48 | +1.55 | +1.97 | +1.97 | +0.56 | +2.47 |
+| -0.266 | dE | -2.30 | -2.16 | -3.12 | -4.25 | -0.78 | -9.42 |
+| 0 | q_Cu | 0.102 | 0.109 | 0.081 | 0.087 | 0.109 | 0.072 |
+| -0.148 | dq_Cu | +0.012 | +0.010 | +0.025 | +0.023 | -0.005 | +0.043 |
+| +0.148 | dq_Cu | -0.012 | -0.011 | -0.021 | -0.014 | +0.006 | -0.018 |
+| -0.266 | dq_Cu | +0.019 | +0.017 | +0.037 | +0.053 | -0.008 | +0.159 |
+| -0.148 | d(sep) | +6.5 / +6.6 | +9.1 | +11.0 | +14.2 | +3.2 | +22.4 |
+| +0.148 | d(sep) | -6.9 | -10.0 | -9.6 | -12.2 | -3.4 | -14.4 |
+| -0.266 | d(sep) | +10.5 | +15.9 | +16.7 | +30.3 | +5.5 | +70.0 |
+- The two per-atom seeds at -0.148 differ by 0.05 mRy.
+- The new model gives the SRO energy within 5 to 12 % and the charge change within 10 to 15 %.  It is stable at -0.266.
+- The per-species SQS overbinds by 40 %.  It lacks the local screening, as found in "B3: screened shell".  The old beta 0.495 form
+  copied that error.
+- Open: the ASR band separation changes 1.45 times faster than in the per-atom cells.  The energy and the charge agree, so the
+  cause is probably in how one species potential carries the band shift.  It is not yet diagnosed.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

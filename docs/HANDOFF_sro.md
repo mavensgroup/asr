@@ -74,6 +74,10 @@ transfer drops when the shell is ordered.  This energy trend comes with an elect
 (B3), so it is not yet a physical result.
 
 ## Next actions, in order
+2026-11-03: B3 tested (FINDINGS_LOG "B3 tested").  The site-class cells give beta 1.00 to 1.02 and lambda 0.20 to 0.25, as the
+charge-excess model predicts.  The new model (`64bda88`, beta 1) gives the SRO energy within 5 to 12 % and the charge change within
+10 to 15 % of those cells.  Next: (a) find why the ASR band separation shifts 1.45 times too much; (b) the same test on a second
+alloy (fcc Fe-Ni or bcc Fe-Cr); (c) the random-alloy ASR vs k-space gap (item 4 below).
 2026-11-02: B3 derived and implemented (`22366b9`, FINDINGS_LOG "B3: screened shell"): V_p(shell) = -beta 2 (q_p - qbar)/R1 +
 (1 - beta) 2 Delta_p/R1.  The species-class cells turned out to be a beta' = 0.5 model (finite size).  Running in `trial/b45`:
 queue P (ASR beta = 0.495, `screen/`) and queue S (site-class cells, `ks_site/`).
