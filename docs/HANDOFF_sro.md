@@ -1,5 +1,35 @@
 # HANDOFF: short-range order (new thread)
 
+## Handover 2026-11-03 (start here)
+State in one paragraph.  SRO electrostatics are solved.  The charge-excess model (`64bda88`, module `asr_screening`) gives
+V = F dq with F = a [ (G00 + z G1 Ahat)^-1 - 1 ].  At the default beta = 1 it needs no fitting.  The per-atom supercells
+(`trial/b45/ks_site`) confirm it: beta 1.00 to 1.02, lambda 0.20 to 0.25, hardness 1.27 (FINDINGS_LOG "B3 tested").  The ASR SRO
+energy is within 5 to 12 % of those cells and the charge change within 10 to 15 %.  One error is left.  The ASR SRO hopping
+(band) charge is 2.7 times too large: -0.0057 against -0.0021 e per unlike neighbour on Cu.  This makes the Zn - Cu band
+separation shift 1.45 times too much (FINDINGS_LOG "Band-separation excess traced to the SRO hopping charge").
+
+Running on the desktop (`~/asr_remote4/trial/b45/hop`, queues H1 and H2, started 2026-11-03 07:25, binary `bin/asr_64bda88`).
+Every run is one iteration.  `SUMMARY.txt` logs start and end.  The charge is the output qnet in `run.log` (line `it  1 ... qnet=`).
+| run | what it measures |
+|---|---|
+| `ks_a0_s1`, `ks_a0_s2`, `ks_a-0.15_s1`, `ks_a-0.15_s2`, `ks_a0.15_s1`, `ks_a-0.30_s1` | per-species SQS, free-atom potentials: pure hopping charge of the exact SRO structure |
+| `at_L4_{rand,m015,p015,m027}` | ASR, same free-atom potentials, levels 4, 24 steps: same quantity in the ASR SRO model |
+| `at_L4s36_{rand,m015}`, `at_L5_{rand,m015}` | the same at 36 steps and at levels 5 (truncation) |
+| `fz_L4_{rand,m015,p015,m027}`, `fz_L5_{rand,m015}` | ASR from the converged random potential: hopping charge at the physical potential (cell value -0.0012 e at -0.148) |
+How to read them.  Hopping charge = q_Cu(alpha) - q_Cu(0) at the same settings.  Per unlike neighbour divide by dn = 8 x 0.5 x
+(-alpha) (0.594 at -0.148, 1.062 at -0.266).  If `at_L4` differs from the SQS by the same 2.7, the SRO model is the cause.
+If `at_L5` or `at_L4s36` closes the gap, truncation is the cause.
+Decision tree for the new thread:
+1. Truncation is the cause: raise the defaults for SRO runs, after a cost check.
+2. The SRO model is the cause: the shell atoms need their own conditional environment.  A neighbour of a Cu centre is itself a
+   centre with an SRO shell.  Derive the next order of the Mookerjee-Prasad model (correlated second step) in general, prove its
+   limits (alpha = 0, B2 at alpha = -1, the sum rules), then implement.  Do not fit a scaling to CuZn.
+3. After that: the second alloy (fcc Fe-Ni or bcc Fe-Cr, the PRB target) for the full test; then the random-alloy ASR vs
+   k-space gap (Zn d 0.057 Ry deeper in the ASR).
+Analysis scripts (desktop `trial/b45/analysis`): `regress.py` (V and q fits), `qhop.py` (hopping fit), `cshift.py` (C_d shifts),
+`ckappa.py`, `mom3.py` (DOS band centres), `cef.py` (model constants).  Run them from `trial/` or `trial/b45` as in FINDINGS_LOG.
+Uncommitted on the laptop, on purpose: `sro_argon.md`, `sro_kimi.md`, `suggestion.md` (other models' derivations and notes).
+
 Written 2026-10-30.  This thread works on ROADMAP phase 6 (short-range order) only.
 Read first: this file, then `docs/HANDOFF.md` (working rules, desktop), `docs/STATUS.md`, `docs/ROADMAP.md` phase 6.
 The full record of the SRO work so far is `docs/FINDINGS_LOG.md`, section "Short-range order: first-shell Warren-Cowley ...".
@@ -14,7 +44,7 @@ The original plan with gates B1 to B5 is `docs/archive/HANDOFF_hea_sro.md`, Part
 - Our route gets the centre projector for free.  `asr_ed` freezes the start site to the species of component c.  So the recursion of
   component c is the uncorrelated one, except that the first shell of the origin carries X^(c) instead of x.
 - Component weights stay f_kappa x_c, because sum_c x_c X^(c) = x.
-- Electrostatics are unchanged: SIM with a random first shell (gate B3 decided 2026-10-31: this stays the default).
+- Electrostatics: the charge-excess model with the conditional first shell (`asr_screening`, `64bda88`).  Without SRO it is the SIM.
 
 ## Code (committed on main 2026-10-30: `176a727` SRO, `f2f9ca7` spin-resolved DOS, `455a069` the user's docs)
 | file | change |
@@ -39,10 +69,10 @@ when its first alpha is 0 (`test_run_input` 34/34).  `suggestion.md` stays uncom
 |---|---|
 | B4.1 alpha = 0 equals the uncorrelated run (unit test; SCF gate G1: every printed number identical) | 🟢 |
 | B4.2 brute force: ring of 5 with frozen centre and conditional shell (1.6e-15); fcc ternary D4h-reduced vs unreduced (8.3e-13) | 🟢 |
-| B3 electrostatics with SRO.  Decided with the user 2026-10-31: keep SIM unchanged (option a) as the default.  Option (b) is the switch `[scf] sro_shell` (`b963d0f`): V_p gains (2/R1) sum_kappa' z sum_s (X_s^(p) - x_s) q_s, the chemical charge of the correlated shell.  The double counting is settled by the reference: a k-space supercell with one potential per species has exactly this term and no SIM, so `sim_beta = 0` + `sro_shell` is the same model as B4.5.  Runs S (SIM), B (SIM + shell), Z (shell only) at alpha = -0.1484, +0.1484, -0.2656 are queued (`trial/b45/asr`). | 🟢 decided (a); 🟠 test (b) running |
+| B3 electrostatics with SRO: charge-excess model `64bda88` (FINDINGS_LOG "B3 re-derived", "B3 tested").  Per-atom cells confirm beta, lambda and the hardness; SRO energy within 5 to 12 %, charge change within 10 to 15 %.  The earlier options (SIM unchanged, `sro_shell`, (1 - beta) weight) are superseded. | 🟢 electrostatics; 🟠 hopping charge 2.7 times too large (test running) |
 | B4.3 Tarafder et al. 2006 bcc CuZn: PRB version in `../references` (Fig. 5 SRO DOS, Fig. 6 band energy; digitised from the arXiv source, same figures) against our eta = 0.005 DOS (FINDINGS_LOG "Gate B4.3") | 🟢 B2 limit, Zn doublet, main Zn peak; 🟠 Cu band at moderate alpha; energies not comparable |
 | B4.4 Alam 2009 Fig. 4 and 5 at levels 3 and 4: all claims hold with the paper's A and B swapped (Ni, Fe, Cr), all fail with its printed labels; our pair assignment checked; dE changes by at most 0.14 mRy from levels 3 to 4; our SRO effects about 10 times smaller at both levels.  Figure 2: the paper's Cr holds 1.6 e fewer electrons below E_F than ours (about 2 e charge transfer off Cr), so the gap comes from its random alloy (FINDINGS_LOG "Alam 2009 figure 2"). | 🟢 orderings and families; size gap explained (not ours) |
-| B4.5 (done 2026-11-02 for CuZn; DOS shape 🟢, energies 🔴) same-model reference: `tools/sqs.py --alpha ... --classes species` (`f921c28`) and the k-space total energy (`b963d0f`; gate: B2 cell = 2x2x2 cell to all digits with Gaussian smearing; tetrahedra differ by 1.2 mRy under band folding, so the supercells use `bz = "gauss"`, smear 0.005).  bcc CuZn 128-atom cells at alpha 0 (2 seeds), -0.1484 (2 seeds), +0.1484, -0.2656 (shells 2, 3 not random at this alpha) running in `trial/b45/ks`, nk = 5 and an nk = 4 check | 🟠 running |
+| B4.5 same-model references for bcc CuZn: per-species SQS (`ks/`, 6 cells) and per-atom cells (`ks_site/`, 5 cells), k-space, nk 5, gauss smear 0.005 (`tools/sqs.py --alpha ... --classes species`; site classes via `site_classes = true`).  DOS shape agrees; energies and charges agree with the per-atom cells after B3 | 🟢 done |
 | SRO between two sublattices in an SCF run (🟢 2026-11-02: T1 and T2 identical to all digits, T3 converged in 35 iterations): T1 bcc one sublattice = B2 cell with equal sublattices (exact), T2 G1 on partial B2, T3 partial B2 Cu0.7Zn0.3 / Cu0.3Zn0.7 with alpha_CuZn = -0.05 (full SCF) | 🟠 queued (`trial/b45/twosub`) |
 
 ## Runs that exist (desktop `~/asr_remote4/trial/sro_bp`, 2026-10-24)

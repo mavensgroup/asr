@@ -1498,6 +1498,27 @@ SRO changes from alpha = 0 (energy mRy/atom; Cu charge e; Zn d minus Cu d band-c
 - Open: the ASR band separation changes 1.45 times faster than in the per-atom cells.  The energy and the charge agree, so the
   cause is probably in how one species potential carries the band shift.  It is not yet diagnosed.
 
+### Band-separation excess traced to the SRO hopping charge (2026-11-03; scripts in desktop `trial/b45/analysis`)
+1. The excess is already in the species d-band centre parameter C_d (`cshift.py`).  Change of C_Zn - C_Cu from alpha = 0 (mRy):
+   per-atom cells +8.8 / -9.5 / +14.5 at -0.148 / +0.148 / -0.266; ASR new +12.2 / -13.5 / +21.0; per-species SQS +14.3 / -13.1 / +22.2.
+   The DOS band separation moves by 0.74 of the C_d shift in the cells and 0.75 in the ASR.  So the band response is the same.
+2. C_d is a small difference of two large terms: dC ~ dV_ext - U dq with U ~ 1 Ry/e.  Zn - Cu at -0.148: cell 32 - 23 = 9 mRy,
+   ASR 34 - 20 = 12 mRy.  A 15 % error in dq becomes a 40 % error in dC.
+3. Site fit over all five per-atom cells (`qhop.py`): q_i = b + k n_unlike - V_i / a, V_i the external Madelung potential.
+   Cu: a = 1.274 Ry, k = -0.0021 e per unlike neighbour (per cell -0.0007 to -0.0023); Zn: a = 1.255, k = +0.0021; rms 0.0015 e.
+   The hardness now equals the ASR's own a = 1.263.  The earlier a = 1.36 to 1.49 (regress.py) was biased by the missing n_unlike term.
+4. The ASR hopping charge from the SIM-only runs (dq (1 - 0.4288 / 1.263) at fixed hardness): -0.0057, -0.0057, -0.0055 e per unlike
+   neighbour at -0.148, +0.148, -0.266.  That is 2.7 times the cell value.
+5. Both decompositions reproduce the measured dq_Cu at -0.148: cell -0.0012 + 0.0126 = 0.0114 (measured 0.0116); ASR -0.0034 + 0.0135
+   = 0.0101 (measured 0.0099).  So the electrostatics are right and the SRO hopping charge of the ASR is too large.
+Candidate causes (untested): (i) the SRO model keeps shell sites independent given the centre, so a shell atom sees a random
+environment apart from the centre; (ii) truncation (levels 4, 24 steps).
+Test running (`trial/b45/hop`, one iteration each, binary `asr_64bda88`; queues H1, H2):
+- A, atomic start: every species potential is the free-atom one, so dq_Cu(alpha) - dq_Cu(0) is pure hopping in both methods.
+  Per-species SQS cells `ks_*` (6 cells) against the ASR `at_L4_*`, `at_L4s36_*` (36 steps), `at_L5_*` (levels 5).
+- B, frozen SCF potential: the ASR from the converged random potential (`sro_hull/cuzn_rand/pot.dat`), `fz_L4_*`, `fz_L5_*`.
+  dq_Cu here is the hopping charge at the physical potential; the cell value is k dn = -0.0012 e at -0.148.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is
