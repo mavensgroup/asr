@@ -1,6 +1,42 @@
 # HANDOFF: short-range order (new thread)
 
-## Handover 2026-11-03 (start here)
+## Handover 2026-11-03, evening (start here)
+Question now.  The `hop` test (below) shows that at identical free-atom potentials the ASR SRO hopping charge is 2.2 to 2.4 times
+the per-species SQS value.  Truncation is ruled out.  That test compares two different statistical models, though.  The ASR
+averages the Mookerjee-Prasad (MP) model exactly: centre fixed, first shell conditional, every other site random.  The SQS is a
+fully correlated SRO structure.  So two causes remain open.
+- (a) The MP model itself gives 2.2 times the hopping charge of the correlated structure.  Then the next order is needed (decision
+  tree item 2 below).
+- (b) The ASR does not reproduce its own MP model.  Then the bug is in the ASR route (class operator, frozen component, shell
+  classes), and no new derivation is needed.
+
+Method (no new Fortran).  The MP measure is the random measure times the shell weight w = prod_j X^(c)_(s_j) / x_(s_j) over the 8
+first neighbours of the centre.  So E_MP[q | c] = E_rand[q w | c] / E_rand[w | c] over all c sites of random cells.  One potential
+per site and free atoms give site-resolved charges at the same potentials as the `hop` runs.  Tool `tools/mp_reweight.py`
+(`4b02546`): `random` and `siteify` write the cells, `analyse` gives the reweighted value with a bootstrap error, the binomial
+average of a quadratic fit q = g(n_unlike), and the linear k dn.  A cell of fixed composition makes the reweighted value about 6 %
+low (hypergeometric neighbour count; checked on synthetic data).  The binomial value has no such bias.  Use it as the main number.
+
+Running on the desktop (`~/asr_remote4/trial/b45/mp`, queues M1 and M2, 14 threads each, binary `bin/asr_64bda88`, launched
+2026-11-03 16:07, about 21 min per run, so done near 17:55).  All runs: 128 sites, the cell of `hop/ks_a0_s1`, site classes, free
+atoms, one iteration.
+| run | what |
+|---|---|
+| `r1` to `r6` | random occupations (seeds 1 to 6, 64 Cu and 64 Zn): the MP average by reweighting |
+| `sq_a0_s1`, `sq_a0_s2` | the random SQS cells of `hop/ks_a0_*`, site resolved: more random samples; their mean must equal q_Cu = 0.14588 of `hop` |
+| `sq_m015_s1`, `sq_m015_s2` | the SRO cells of `hop/ks_a-0.15_*`, site resolved: g(n) in the correlated structure, for the derivation |
+
+Analysis (from `~/asr_remote4/trial/b45/mp`):
+`python3 -I ../../../tools/mp_reweight.py analyse --runs r1 r2 r3 r4 r5 r6 sq_a0_s1 sq_a0_s2 --pair Cu,Zn --alpha -0.148 0.148 -0.266`
+Compare the Cu line at -0.148 with the two `hop` numbers: ASR -0.01113, SQS -0.00499 (at -0.266: ASR -0.01990, SQS -0.00825).
+- MP value near -0.011: case (a).  Go to item 2 of the decision tree.  Compare g(n) of `sq_m015_*` with the random g(n): the
+  correlated structure should show a smaller slope, and the size of that change is what the second step must give.
+- MP value near -0.005: case (b).  Debug the ASR SRO route against this MP number first.  A useful check is a single-centre test at
+  levels 2 to 3, where the ASR and the reweighting can be compared run by run.
+- Something in between: both effects.  Report the split.
+Also check: the per-cell spread of q_Cu, and that `sq_a0_*` alone agrees with `r1` to `r6`.
+
+## Handover 2026-11-03, morning
 State in one paragraph.  SRO electrostatics are solved.  The charge-excess model (`64bda88`, module `asr_screening`) gives
 V = F dq with F = a [ (G00 + z G1 Ahat)^-1 - 1 ].  At the default beta = 1 it needs no fitting.  The per-atom supercells
 (`trial/b45/ks_site`) confirm it: beta 1.00 to 1.02, lambda 0.20 to 0.25, hardness 1.27 (FINDINGS_LOG "B3 tested").  The ASR SRO
