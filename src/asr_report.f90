@@ -145,12 +145,14 @@ contains
   end subroutine rep_scf_history
 
   !> Converged per-class results: charges, moments, E_nu and potential parameters (gamma rep), s/p/d occupations.
-  subroutine rep_classes(u, symbols, z, nval, sws, nat_class, cr, nspin, ef, moment_cell, label)
+  !> natw (optional): atoms of each class per cell as a real weight (an alloy component: concentration x sites); default nat_class.
+  subroutine rep_classes(u, symbols, z, nval, sws, nat_class, cr, nspin, ef, moment_cell, label, natw)
     integer, intent(in) :: u, nspin
     character(len=*), intent(in) :: symbols(:), label
     real(dp), intent(in) :: z(:), sws(:), ef, moment_cell
     integer, intent(in) :: nval(:), nat_class(:)
     type(asa_class_result_t), intent(in) :: cr(:)
+    real(dp), intent(in), optional :: natw(:)
     integer :: ic, s, l, ncl
     real(dp) :: qsum, qtot
     character(len=1), parameter :: lname(0:2) = ['s', 'p', 'd']
@@ -159,9 +161,13 @@ contains
     write (u, '(a,f14.8,a)') ' Fermi energy                ', ef, ' Ry'
     qsum = 0.0_dp
     do ic = 1, ncl
-      qsum = qsum + real(nat_class(ic), dp) * cr(ic)%qnet
+      if (present(natw)) then
+        qsum = qsum + natw(ic) * cr(ic)%qnet
+      else
+        qsum = qsum + real(nat_class(ic), dp) * cr(ic)%qnet
+      end if
     end do
-    write (u, '(a,es12.3,a)') ' net charge of the cell       ', qsum, ' e   (sum of class qnet x atoms; 0 = neutral)'
+    write (u, '(a,es12.3,a)') ' net charge of the cell       ', qsum, ' e   (sum of class qnet x atoms per cell; 0 = neutral)'
     if (nspin == 2) write (u, '(a,f12.5,a)') ' spin moment per cell         ', moment_cell, ' mu_B'
     do ic = 1, ncl
       write (u, '(a)') ''

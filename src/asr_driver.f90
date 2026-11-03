@@ -27,7 +27,9 @@
 !>                  terminated fraction next to the contour on complex chains, see docs/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
 !>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
-!>                  structure; default 1 = equal spheres)
+!>                  structure; default 1 = equal spheres), second_order (diagnostic, default false: the orthogonal second-order
+!>                  H^(2) = E_nu + h - h o h of the recursion route, no h p h overlap, density M0 phi^2 + 2 M1 phi phidot +
+!>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
 !>   [output]       dos_file, out_file, params_file (method = "kspace")
 !> Examples: pure bcc Fe = lattice "bcc", centering "I", one sublattice [[0,0,0]] with species ["Fe"]; B2 FeCo = "bcc", period 1,
@@ -319,7 +321,7 @@ contains
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
-                            'sphere_ratio'], '[kspace]', msg)
+                            'sphere_ratio', 'second_order'], '[kspace]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'nk', inp%li%nk, 12)
     call get_value(child, 'bz', str, 'tetra'); inp%li%bz = str
@@ -327,6 +329,7 @@ contains
     call get_value(child, 'sigma', inp%li%sigma, 0.7_dp)
     call get_value(child, 'trace', inp%li%trace, .false.)
     call get_value(child, 'dos_nk', inp%li%dos_nk, 24)
+    call get_value(child, 'second_order', inp%li%second_order, .false.)
     call get_value(child, 'sphere_ratio', ratio, 1.0_dp)
 
     call section(table, 'dos', child)
@@ -659,7 +662,8 @@ contains
       if (res%nspin == 1) then
         do p = 1, ncomp; rc(p)%q = 2.0_dp * rc(p)%q; end do
       end if
-      call rep_classes(ru, labels, zc, nvc, swsc, natc, rc, res%nspin, res%ef, mcell, ' (per component atom; cell = decoration cell)')
+      call rep_classes(ru, labels, zc, nvc, swsc, natc, rc, res%nspin, res%ef, mcell, ' (per component atom; cell = decoration cell)', &
+                       natw=res%comp_w * inp%ci%dec%nsite)
     end block
     write (ru, '(a)') ' components are (species@sublattice); qnet/moments per atom of that component; cell moment per decoration cell'
     call rep_dos_at_ef(ru, labels, res%edos_e, res%edos, res%ef, inp%eta, res%nspin, 'per-component LDOS from the recursion (eta broadening)')

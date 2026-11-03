@@ -23,6 +23,7 @@ module asr_input_lmto
     real(dp) :: smear = 0.01_dp, mixing = 0.3_dp, tolerance = 1.0e-6_dp, zeta0 = 0.4_dp, sigma = 0.7_dp
     logical :: relativistic = .true.
     logical :: trace = .false.
+    logical :: second_order = .false.   !! diagnostic: orthogonal H^(2) = E_nu + h - h o h with the recursion's density form
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, dos_smear = 0.01_dp
     integer :: npoints = 801, dos_nk = 24
     real(dp) :: cell_vec(3, 3) = 0.0_dp                !! lattice = "cell": columns a1, a2, a3 (alat units)

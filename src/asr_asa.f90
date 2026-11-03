@@ -14,6 +14,7 @@ module asr_asa
   use asr_ewald, only: madelung_phi
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_tetra, only: tetra_weights, tetra_fermi
+  use asr_strconst, only: standard_alpha
   implicit none
   private
   public :: asa_class_t, asa_input_t, asa_class_result_t, asa_result_t, asa_scf, core_shells_for, asa_dos, atomic_start, bands_moments
@@ -200,6 +201,9 @@ contains
               + cr(ic)%q(0, l, s) * (y(1, 0, 1:n, l, k)**2 + y(2, 0, 1:n, l, k)**2 / c**2) &
               + 2.0_dp * cr(ic)%q(1, l, s) * (y(1, 0, 1:n, l, k) * y(1, 1, 1:n, l, k) + y(2, 0, 1:n, l, k) * y(2, 1, 1:n, l, k) / c**2) &
               + cr(ic)%q(2, l, s) * (y(1, 1, 1:n, l, k)**2 + y(2, 1, 1:n, l, k)**2 / c**2)
+            ! second_order: the recursion's form M2 (phidot^2 + phi phiddot) (int = 0), so the sphere charge is M0, not M0 + p M2
+            if (inp%second_order) nval(:, s, 1) = nval(:, s, 1) &
+              + cr(ic)%q(2, l, s) * (y(1, 0, 1:n, l, k) * y(1, 2, 1:n, l, k) + y(2, 0, 1:n, l, k) * y(2, 2, 1:n, l, k) / c**2)
           end do
           do is = 1, size(inp%cls(ic)%core)
             nod = inp%cls(ic)%core(is)%n - inp%cls(ic)%core(is)%l - 1
@@ -598,11 +602,12 @@ contains
         end do
         q = to_alpha(pps(ic, s), alpha_sp(:, ic))
         olc(:, ic, s) = o_alpha(q, alpha_sp(:, ic)); pa(:, ic, s) = q%p
+        if (inp%second_order) then; olc(:, ic, s) = 0.0_dp; pa(:, ic, s) = 0.0_dp; end if   ! weights |z|^2 of H^(2)
       end do
     end do
     allocate (cls(cell%nat))
     do ia = 1, cell%nat; call build_cluster(cell, ia, 4.0_dp * cell%w, alpha_sp, cls(ia)); end do
-    call bands_core(cell, cls, pps, alpha_sp, nk, nsp, eb, xm)
+    call bands_core(cell, cls, pps, alpha_sp, nk, nsp, eb, xm, inp%second_order)
     nd = 9 * cell%nat; nst = nk**3 * nd; wk = 1.0_dp / real(nk**3, dp)
     fs = 1.0_dp                                    ! per spin channel
     dos = 0.0_dp

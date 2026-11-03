@@ -69,6 +69,10 @@ program test_run_input
   call check(len(msg) == 0 .and. size(inp%li%site_sp) == 1 .and. abs(inp%li%cell_vec(1, 1) + 0.5_dp) < 1.0e-12_dp, &
              'bcc Fe -> one-atom bcc primitive cell')
   call check(inp%li%tolerance == 1.0e-6_dp .and. inp%li%nk == 12 .and. inp%li%bz == 'tetra', 'kspace defaults filled')
+  call check(.not. inp%li%second_order, 'kspace second_order off by default')
+  call put(kspace//bccfe//'[kspace]'//nl//'second_order = true'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%li%second_order, '[kspace] second_order = true read')
   call put(kspace//'[structure]'//nl//'lattice = "fcc"'//nl//'alat = 4.09'//nl//'centering = "F"'//nl//fe// &
            '[[sublattice]]'//nl//'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe"]'//nl)
   call read_run_input(f, inp, msg)
