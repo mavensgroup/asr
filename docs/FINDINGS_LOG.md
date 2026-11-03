@@ -1519,6 +1519,23 @@ Test running (`trial/b45/hop`, one iteration each, binary `asr_64bda88`; queues 
 - B, frozen SCF potential: the ASR from the converged random potential (`sro_hull/cuzn_rand/pot.dat`), `fz_L4_*`, `fz_L5_*`.
   dq_Cu here is the hopping charge at the physical potential; the cell value is k dn = -0.0012 e at -0.148.
 
+Result (2026-11-03, all runs done).  Output q_Cu after one iteration; hopping charge = q_Cu(alpha) - q_Cu(0):
+| run | q_Cu(0) | -0.148 | +0.148 | -0.266 | ratio to SQS at -0.148 |
+|---|---|---|---|---|---|
+| per-species SQS, free atoms (2 seeds at 0 and -0.148) | 0.14588 | -0.00499 | +0.00500 | -0.00825 | 1 |
+| ASR free atoms, levels 4, 24 steps | 0.16870 | -0.01113 | +0.01114 | -0.01990 | 2.23 |
+| ASR free atoms, levels 5 | 0.16868 | -0.01109 | | | 2.22 |
+| ASR free atoms, levels 4, 36 steps | 0.17717 | -0.01019 | | | 2.04 |
+| ASR frozen SCF potential, levels 4 | 0.10938 | -0.01228 | +0.01232 | -0.02186 | |
+| ASR frozen SCF potential, levels 5 | 0.10987 | -0.01226 | | | |
+- SQS seed noise is 0.0002 e, against a signal of 0.005 e.
+- At identical potentials the ASR hopping charge is 2.2 to 2.4 times that of the exact SRO structure.  This matches the 2.7 found
+  from the SCF fits.
+- Truncation is not the cause.  Levels 5 changes the hopping charge by 0.4 %.  36 steps lowers it by 8 %.
+- So the cause is the SRO model of the ASR (shell sites independent given the centre).  Next: derive a correlated next order.
+- The frozen-potential runs have no supercell partner.  Their bare response includes no intra-sphere relaxation, so they are not
+  comparable with the SCF fit value k dn.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

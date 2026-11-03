@@ -8,7 +8,7 @@ energy is within 5 to 12 % of those cells and the charge change within 10 to 15 
 (band) charge is 2.7 times too large: -0.0057 against -0.0021 e per unlike neighbour on Cu.  This makes the Zn - Cu band
 separation shift 1.45 times too much (FINDINGS_LOG "Band-separation excess traced to the SRO hopping charge").
 
-Running on the desktop (`~/asr_remote4/trial/b45/hop`, queues H1 and H2, started 2026-11-03 07:25, binary `bin/asr_64bda88`).
+Done on the desktop (`~/asr_remote4/trial/b45/hop`, queues H1 and H2, started 2026-11-03 07:25, binary `bin/asr_64bda88`).
 Every run is one iteration.  `SUMMARY.txt` logs start and end.  The charge is the output qnet in `run.log` (line `it  1 ... qnet=`).
 | run | what it measures |
 |---|---|
@@ -19,6 +19,9 @@ Every run is one iteration.  `SUMMARY.txt` logs start and end.  The charge is th
 How to read them.  Hopping charge = q_Cu(alpha) - q_Cu(0) at the same settings.  Per unlike neighbour divide by dn = 8 x 0.5 x
 (-alpha) (0.594 at -0.148, 1.062 at -0.266).  If `at_L4` differs from the SQS by the same 2.7, the SRO model is the cause.
 If `at_L5` or `at_L4s36` closes the gap, truncation is the cause.
+Result (all runs done 2026-11-03 10:11; FINDINGS_LOG table under "Band-separation excess"): at identical free-atom potentials
+the ASR hopping charge is 2.2 to 2.4 times the SQS value.  Levels 5 changes nothing (0.4 %) and 36 steps only 8 %.  So branch 2
+below applies: the SRO model is the cause.
 Decision tree for the new thread:
 1. Truncation is the cause: raise the defaults for SRO runs, after a cost check.
 2. The SRO model is the cause: the shell atoms need their own conditional environment.  A neighbour of a Cu centre is itself a
