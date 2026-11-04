@@ -28,7 +28,8 @@ the same for every species.  So the screened structure constants $S = S^\alpha$ 
 - $h = c + d S d$.  It is real symmetric.
 - $\varepsilon(E) = E - E_\nu$, diagonal.
 - Generalised problem of `bands_core` (src/asr_asa.f90, `zhegv` branch):
-  $O = 1 + o h + h o + h p h$ and $H = E_\nu + (1 + E_\nu o) h + h (1 + o E_\nu) + h (o + p E_\nu) h$.
+  $O = 1 + o h + h o + h p h$ and $H = E_\nu + h + E_\nu o h + h o E_\nu + h (o + p E_\nu) h$.  In the code the linear term is
+  $(\tfrac12 + E_{\nu,i} o_i + \tfrac12 + E_{\nu,j} o_j)\, h_{ij}$: one $h$, not two.
 
 ## 3. The secular matrix and its factorisation
 **Result 1.**  $K(E) = E O - H = \varepsilon - h + \varepsilon o h + h o \varepsilon - h o h + h p \varepsilon h$.
@@ -138,6 +139,12 @@ $o_d \approx 1.0$ Ry$^{-1}$ for Cu and Zn.  So the pole sits about 1 Ry above $E
 For s, $o \approx -0.43$ Ry$^{-1}$, so the pole sits about 2.3 Ry below $E_\nu$.  Check both against the actual contour
 before using the variant.
 
+**Second-order limit in closed form.**  At $p^\gamma = 0$ Result 2 gives $K^{-1} = [\varepsilon (1 + o h) - h]^{-1} (1 + h o)^{-1}$.
+So $(1 + o h)\, G\, (1 + h o) = [\varepsilon - h (1 + o h)^{-1}]^{-1}$ exactly.  Its site-1 block is
+$G_{11} + o_1 (h G)_{11} + (G h)_{11}\, o_1 + o_1 (h G h)_{11}\, o_1$, the $q_0$ combination.  Expanding
+$h (1 + o h)^{-1} = h - h o h + \dots$ gives $[E - H^{(2)}]^{-1}$.  So $H^{(2)}$ is the second-order truncation of the
+physical-amplitude resolvent.  Checked here.
+
 ## 8. Limits
 - **Ordered limit.**  With one species per sublattice the augmented space is the reference sector only.  Then $K$ is the
   `bands_core` pencil term by term.  The ASR differs from k-space only by the $S$ range (`rcl` 1.2 alat against $4w$ in
@@ -157,11 +164,14 @@ before using the variant.
   tested (gate 4), not assumed.
 
 ## 9. Open items
-1. **The k-space oracle's own bookkeeping.**  For B2 at free atoms, $\sum_l (q_0 + p^\gamma q_2)$ from the printed table gives
-   qnet 0.1086.  The run prints 0.1193.  The gap of 0.011 e must be explained before k-space serves as a 0.01 e oracle.
-   In `second_order` mode the printed occupations add up to qnet exactly.  Suspects: the small-component terms in the
-   $\dot\phi^2$ norm, or a different $p$ in the print.
-2. **Band energy.**  `asa_scf` uses $q_1 + E_\nu q_0$ per channel.  That treats $q_1$ as an energy moment.  In `ed3` the
+1. **The k-space oracle's own bookkeeping: closed (2026-11-04).**  For B2 after one iteration, $\sum_l (q_0 + p^\gamma q_2)$
+   from the printed table gave qnet 0.1086 against the printed 0.1193.  Cause: after the SCF loop `asa_scf` recomputes the
+   printed parameters, $p$ included, at the mixed new potential and the updated $E_\nu$ (src/asr_asa.f90:327-337).  The
+   printed $q_0, q_1, q_2$ are the moments of the last iteration.  After one iteration they do not match.  In a converged
+   run they do: the 128-site cell `trial/b45/ks/a0_s1` gives Cu $\sum_l (q_0 + p^\gamma q_2)$ = 11.08176, so qnet 0.08176
+   (printed 0.08175), and Zn -0.08176 (printed -0.08175).  So the oracle is exact.  Compare qnet, not table sums, for
+   one-iteration runs.
+2. **Band energy.**  `asa_scf` uses $q_1 + E_\nu q_0$ per channel.  At convergence $q_1 = 0$ ($E_\nu$ at the band centre).  That treats $q_1$ as an energy moment.  In `ed3` the
    band energy should be the occupied sum of $E_\alpha z_\alpha^T O z_\alpha$, a contour integral of
    $E\,[G_{11} + 2 o (h G)_{11} + p (h G h)_{11}]$.  Decide which form to use.  The total energy must match the k-space
    form for the oracle.
@@ -169,22 +179,29 @@ before using the variant.
    as $G_{uu}$.  The two chains give $G_{wu}$ twice; their difference measures this.
 4. **E_F search.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
 5. **Cost.**  Two chains per energy.  Measure against `asr_edc`.
+6. **Storage of $w$.**  $|w\rangle = S' |1 L\rangle$ covers the whole $S'$ range (bcc with `rcl` 1.2 alat: 8 + 6 sites), not
+   only the first shell.  The D4h-reduced operator stores vectors in normalised orbit coordinates (`asr_augsym`).  Map $w$
+   into them before the projection of step 2.
 
 ## 10. Gates
 1. **Unit test (laptop).**  A small ring or cluster with random species, unequal $E_\nu$ and SRO
    ($\alpha$ = -0.2, 0, +0.2).  Brute-force configuration average of $G_{11}$, $(h G)_{11}$, $(h G h)_{11}$ from dense
    $K = E O - H$ against the augmented-space chains run to full length.  Target $10^{-12}$.  The same test measures the
    error of the single-site variant (section 7).  A second check: the canonical form equals the factored matrix-vector
-   product to machine precision.
+   product to machine precision.  A third check: with $u = 0$, $p = 0$ and $q \to -q$, $K'$ is the `asr_edc` operator,
+   so the chain must reproduce `asr_edc` to machine precision.
 2. **Ordered B2 \ce{CuZn} at free atoms** (desktop).  Against k-space full ASA: $q_\mathrm{Cu}$ 0.1193, $E_F$ -0.1623 Ry.
-   The agreement should be as good as $H^{(2)}$ against k-space $H^{(2)}$ (0.007 e per channel).  Match the $S$ range.
+   The agreement should be as good as $H^{(2)}$ against k-space $H^{(2)}$ (0.010 e in qnet, 0.007 e per channel).  Match
+   the $S$ range.  Compare qnet, not table sums (open item 1).
 3. **128-site SQS at free atoms** (desktop, `trial/b45/hop/ks_*`).  $q_\mathrm{Cu}(0)$ near 0.146 and the hopping charge near
    -0.0050 e at $\alpha = -0.148$.  Also the Zn d band position against the k-space DOS.
 4. **Representation and SCF.**  Shift $\alpha$ by 20 %: the charges should not move beyond the $S$ cut-off effect.  A full
    \ce{CuZn} SCF should converge as well as the current route.  Report the cost per iteration.
 
 ## 11. Provenance
-The first draft was written by another model from a prompt of this thread.  Checked here: Results 1 to 4, the canonical
+The first draft was written by another model from a prompt of this thread.  A second draft by the same model took over the
+corrections below and added the closed form of the second-order limit and the $q \to -q$ regression check; both are checked
+here.  The $H$ of section 2 in the prompt had a doubled linear $h$; it is fixed above.  Checked here: Results 1 to 4, the canonical
 form, the matrix-vector product, Result 5, Result 6 and the limits.  Corrected: the factor $\tfrac12$ in $V$ (the draft had
 1); the second-order limit (the draft forced a sign to match `asr_edc`); the one-chain claim (not shown for $p^\gamma \ne 0$);
 the size of $p^\gamma$ for d bands (the draft assumed 0.05 or less); the pole of the dressing factor (the draft placed it
