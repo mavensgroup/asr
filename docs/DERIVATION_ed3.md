@@ -1,8 +1,8 @@
 # Full-ASA energy-dependent recursion (route `ed3`): derivation
 
-Branch `ed3`, written 2026-11-04.  Status: the operator algebra is proven.  The moment extraction is specified.  Nothing is
-implemented.  Open items are listed in section 9.  Main stays on the production route (`asr_edc`) until the gates of
-section 10 pass.
+Branch `ed3`, written 2026-11-04.  Status: the operator algebra is proven.  The moment extraction is specified.  Gate 1 is
+passed (2026-11-04, `test/test_asr_ed3.f90` 14/14, `test/test_asr_ed3_cls.f90` 9/9).  The production routine is not written
+yet.  Open items are listed in section 9.  Main stays on the production route (`asr_edc`) until gates 2 to 4 pass.
 
 ## 1. Why
 The production route `asr_edc` is exactly the orthogonal second-order Hamiltonian $H^{(2)} = E_\nu + h - h o h$.  It has no
@@ -179,11 +179,21 @@ physical-amplitude resolvent.  Checked here.
    as $G_{uu}$.  The two chains give $G_{wu}$ twice; their difference measures this.
 4. **E_F search.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
 5. **Cost.**  Two chains per energy.  Measure against `asr_edc`.
-6. **Storage of $w$.**  $|w\rangle = S' |1 L\rangle$ covers the whole $S'$ range (bcc with `rcl` 1.2 alat: 8 + 6 sites), not
-   only the first shell.  The D4h-reduced operator stores vectors in normalised orbit coordinates (`asr_augsym`).  Map $w$
-   into them before the projection of step 2.
+6. **Storage of $w$: closed.**  $|w\rangle = S' |1 L\rangle$ covers the whole $S'$ range (bcc with `rcl` 1.2 alat: 8 + 6
+   sites), not only the first shell.  Build it as $h'|u\rangle - g_c |u\rangle$ with the operator itself.  Then it is in the
+   normalised orbit coordinates of the reduced operator.  Gate 1 B2 confirms it: reduced and unreduced agree for all four
+   blocks to 6e-11 relative, and $|w|$ agrees to 2e-16.
 
 ## 10. Gates
+Gate 1 results (2026-11-04).  Part A (`test_asr_ed3`, binary ring, `asr_augorb`): complex symmetry 8e-17; the three blocks
+against the exact average of $K = E O - H$ 8e-15, 2e-15, 3e-16; two chains against the dense solve 2e-15; the
+$q \to -q$ regression against $\langle [E - H^{(2)}]^{-1}_{11} \rangle$ 2e-15; canonical form 9e-16 (with $V$ starting at 1
+instead of $\tfrac12$ it fails at 8e-2); single-site dressing exact at $p^\gamma = 0$ (3e-16), and 2.5 to 5 % off at
+$p^\gamma \varepsilon^2 \approx 0.055$.  Part B (`test_asr_ed3_cls`, `asr_augcls`): ring of 5 with four species, ordered,
+binary and ternary classes and two conditional shell classes (zero weights included): all checks at 1e-13 or better;
+fcc ternary with the conditional shell class, D4h-reduced against unreduced: 6e-11 relative.  Zero-weight local states
+have empty rows and columns (`class_mt`); a dense check must put 1 on their diagonal.
+
 1. **Unit test (laptop).**  A small ring or cluster with random species, unequal $E_\nu$ and SRO
    ($\alpha$ = -0.2, 0, +0.2).  Brute-force configuration average of $G_{11}$, $(h G)_{11}$, $(h G h)_{11}$ from dense
    $K = E O - H$ against the augmented-space chains run to full length.  Target $10^{-12}$.  The same test measures the
