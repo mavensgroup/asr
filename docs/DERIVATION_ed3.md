@@ -22,7 +22,21 @@ correlated cells.  So the recursion needs the full generalised problem.
 The last row compares two structures.  The ASR column uses the first-shell Mookerjee-Prasad model.  The k-space columns use the
 correlated cells.  So its agreement between -0.0102 and -0.0103 does not show that the model is exact.  The exact model value in
 the full ASA is -0.0072 +- 0.0006 e (FINDINGS_LOG "MP reweighting"), 1.45 times the correlated value.  The route here keeps that
-model, so it cannot remove this factor.  The exact model value with $H^{(2)}$ is being measured (`trial/b45/mp2`).
+model, so it cannot remove this factor.
+
+The exact model value with $H^{(2)}$ is now measured (2026-11-06, `trial/b45/mp2`; the same 10 cells as `trial/b45/mp`, with
+`second_order = true`).  It is the binomial average of a quadratic fit, with a statistical error of about 10 %.
+
+| $\alpha_\mathrm{CuZn}$ | exact model, $H^{(2)}$ | ASR (levels 4, 24 steps) | exact model, full ASA | correlated cells, full ASA |
+|---|---|---|---|---|
+| -0.148 | -0.0112 | -0.0111 | -0.0072 | -0.0050 |
+| +0.148 | +0.0111 | +0.0111 | +0.0071 | +0.0050 |
+| -0.266 | -0.0201 | -0.0199 | -0.0131 | -0.0083 |
+
+So the ASR reproduces its own model at $H^{(2)}$ within 1 % at all three $\alpha$.  The old factor of 1.55 between the ASR and
+the full-ASA model is therefore all $H^{(2)}$.  The route has no hidden error here.  The target of this route is -0.0072.  The
+correlated cells with $H^{(2)}$ give -0.0103, so the ratio of model to correlated value is 1.08 at $H^{(2)}$ and 1.45 in the full
+ASA.  So $H^{(2)}$ hides most of the model error, and this route will expose it.
 
 ## 2. Notation (as in the code)
 All potential parameters are diagonal in site $R$ and orbital $L$.  The screening $\alpha$ is the standard TB-LMTO set.  It is
@@ -178,8 +192,8 @@ physical-amplitude resolvent.  Checked here.
    one-iteration runs.
 2. **Band energy.**  `asa_scf` uses $q_1 + E_\nu q_0$ per channel.  At convergence $q_1 = 0$ ($E_\nu$ at the band centre).  That treats $q_1$ as an energy moment.  In `ed3` the
    band energy should be the occupied sum of $E_\alpha z_\alpha^T O z_\alpha$, a contour integral of
-   $E\,[G_{11} + 2 o (h G)_{11} + p (h G h)_{11}]$.  Decide which form to use.  The total energy must match the k-space
-   form for the oracle.
+   $E\,[G_{11} + 2 o (h G)_{11} + p (h G h)_{11}]$.  Decided (user, 2026-11-05): use the k-space form, $q_1 + E_\nu q_0$ per
+   channel, so that the total energy matches the oracle.
 3. **Tail of the cross term.**  $G_{wu}$ uses the full column $[J^{-1}]_{m1}$.  Check that the `hull` tail treats it as well
    as $G_{uu}$.  The two chains give $G_{wu}$ twice; their difference measures this.
 4. **E_F search.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
