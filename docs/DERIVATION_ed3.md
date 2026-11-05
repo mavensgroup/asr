@@ -16,8 +16,13 @@ one iteration; FINDINGS_LOG and `trial/b45/h2`):
 | 128-site SQS: $q_\mathrm{Cu}(0)$ | 0.1459 | 0.1776 | 0.1687 (24 steps), 0.1772 (36 steps) |
 | SRO hopping charge at $\alpha_\mathrm{CuZn} = -0.148$ | -0.0050 | -0.0103 | -0.0111 (24), -0.0102 (36) |
 
-The augmented space reproduces $H^{(2)}$ to about 1 %.  The error is $H^{(2)}$ itself.  It doubles the SRO hopping response.
-So the recursion needs the full generalised problem.
+At $\alpha = 0$ the augmented space reproduces $H^{(2)}$ to about 1 %.  $H^{(2)}$ doubles the SRO hopping response of the
+correlated cells.  So the recursion needs the full generalised problem.
+
+The last row compares two structures.  The ASR column uses the first-shell Mookerjee-Prasad model.  The k-space columns use the
+correlated cells.  So its agreement between -0.0102 and -0.0103 does not show that the model is exact.  The exact model value in
+the full ASA is -0.0072 +- 0.0006 e (FINDINGS_LOG "MP reweighting"), 1.45 times the correlated value.  The route here keeps that
+model, so it cannot remove this factor.  The exact model value with $H^{(2)}$ is being measured (`trial/b45/mp2`).
 
 ## 2. Notation (as in the code)
 All potential parameters are diagonal in site $R$ and orbital $L$.  The screening $\alpha$ is the standard TB-LMTO set.  It is
@@ -203,8 +208,9 @@ have empty rows and columns (`class_mt`); a dense check must put 1 on their diag
 2. **Ordered B2 \ce{CuZn} at free atoms** (desktop).  Against k-space full ASA: $q_\mathrm{Cu}$ 0.1193, $E_F$ -0.1623 Ry.
    The agreement should be as good as $H^{(2)}$ against k-space $H^{(2)}$ (0.010 e in qnet, 0.007 e per channel).  Match
    the $S$ range.  Compare qnet, not table sums (open item 1).
-3. **128-site SQS at free atoms** (desktop, `trial/b45/hop/ks_*`).  $q_\mathrm{Cu}(0)$ near 0.146 and the hopping charge near
-   -0.0050 e at $\alpha = -0.148$.  Also the Zn d band position against the k-space DOS.
+3. **128-site SQS at free atoms** (desktop, `trial/b45/hop/ks_*`).  $q_\mathrm{Cu}(0)$ near 0.146.  The hopping charge at
+   $\alpha = -0.148$ near the exact first-shell model value, -0.0072 +- 0.0006 e.  The correlated value -0.0050 e is not the
+   target, because this route keeps the first-shell model.  Also the Zn d band position against the k-space DOS.
 4. **Representation and SCF.**  Shift $\alpha$ by 20 %: the charges should not move beyond the $S$ cut-off effect.  A full
    \ce{CuZn} SCF should converge as well as the current route.  Report the cost per iteration.
 
