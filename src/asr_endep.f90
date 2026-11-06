@@ -214,7 +214,7 @@ contains
     character(len=8) :: tl
     external :: zgeev
     tl = ed_tail; if (present(tail_in)) tl = tail_in
-    if (m >= 2) then
+    if (m >= 2 .and. trim(tl) /= 'none') then
       tm = (0.0_dp, 0.0_dp)
       do j = 1, m
         tm(j, j) = a(j)
@@ -234,6 +234,7 @@ contains
     if (trim(tl) == 'avg2' .and. m >= 3) then
       aa = 0.5_dp * (a(m) + a(m - 1)); bb = sqrt(0.5_dp * (b(m - 1)**2 + b(m - 2)**2))
     end if
+    if (trim(tl) == 'none') then; aa = (0.0_dp, 0.0_dp); bb = (0.0_dp, 0.0_dp); end if   ! exact finite spectra (unit tests)
     if (present(edges)) edges = [aa, bb]
     d = z - aa
     if (abs(bb) < 1.0e-14_dp) then

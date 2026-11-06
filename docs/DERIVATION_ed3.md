@@ -3,6 +3,7 @@
 Branch `ed3`, written 2026-11-04.  Status: the operator algebra is proven.  The moment extraction is specified.  Gate 1 is
 passed (2026-11-04, `test/test_asr_ed3.f90` 14/14, `test/test_asr_ed3_cls.f90` 9/9).  The production routine is not written
 yet.  Open items are listed in section 9.  Main stays on the production route (`asr_edc`) until gates 2 to 4 pass.
+Update 2026-11-06: the production routine is `src/asr_ed3.f90` with `[asr] route = "ed3"`.  The default route stays `edc`.
 
 ## 1. Why
 The production route `asr_edc` is exactly the orthogonal second-order Hamiltonian $H^{(2)} = E_\nu + h - h o h$.  It has no
@@ -136,6 +137,31 @@ Recipe per (central species, start orbital, contour energy):
 
 Cost: two chains instead of one, each with two $S'$ applications per step.  So about twice the current route.
 
+**Production choice (2026-11-06): chains from $|a\rangle$ and $|v\rangle$.**  The recipe above is exact, but its sphere charge
+depends on the cross term.  A diagonal Lanczos element has an error of second order in the residual.  A projected off-diagonal
+element has an error of first order.  With $|a\rangle = |u\rangle + o_c |v\rangle$ the gamma-representation moments are
+$$q_0 = \langle a | K'^{-1} | a \rangle, \qquad q_1 = \langle v | K'^{-1} | a \rangle, \qquad q_2 = \langle v | K'^{-1} | v \rangle .$$
+Both vectors lie in the reference sector, as in Result 5.  So $q_0$ and $q_2$ are diagonal elements of two chains.  The sphere
+charge $q_0 + p^\gamma q_2$ needs no cross term, and it is a positive sum of two Herglotz functions.  Only $q_1$ needs the
+projection.  The two chains give it twice, and the code uses the mean.  The cost is the same two chains.
+
+Measured before any gate run, on the d channels of bcc CuZn parameters with a conditional shell (levels 4, 1414 nodes, 20 energies).
+Mean relative error of the charge combination against 240-step chains:
+
+| steps | $\mathrm{Im}\,z$ | chains $u, w$ | chains $a, v$ |
+|---|---|---|---|
+| 24 | 0.03 | 6.8e-3 | 5.4e-3 |
+| 24 | 0.10 | 8.1e-4 | 1.5e-4 |
+| 24 | 0.30 | 8.2e-5 | 1.4e-7 |
+| 36 | 0.03 | 1.9e-3 | 1.1e-3 |
+| 36 | 0.10 | 1.7e-4 | 2.0e-5 |
+| 36 | 0.30 | 4.4e-7 | 2.0e-10 |
+
+The two choices agree at 240 steps to 6e-7.  With chains from $u, w$ the block matrix of $-\mathrm{Im}\,G$ failed to be positive
+semidefinite on terminated chains at 8 of 72 energies at $\mathrm{Im}\,z = 0.01$ and 24 steps.  With chains from $a, v$ it held at
+all 20 test energies from $\mathrm{Im}\,z = 0.01$ to 0.3 (`test_asr_ed3_prod`).  The two sets of energies differ, so this is
+not a strict comparison.
+
 Why one chain is not enough.  Row 1 of $K' G' = 1$ reads
 $\tilde\varepsilon_1 G_{11} - (1 - u_1)(h' G')_{11} - (h' u G')_{11} + (h' \tilde Q h' G')_{11} = 1$.
 The last two terms carry $u_R$ and $\tilde Q_R$ of the neighbours.  They are new unknowns.  So this identity does not fix
@@ -194,8 +220,9 @@ physical-amplitude resolvent.  Checked here.
    band energy should be the occupied sum of $E_\alpha z_\alpha^T O z_\alpha$, a contour integral of
    $E\,[G_{11} + 2 o (h G)_{11} + p (h G h)_{11}]$.  Decided (user, 2026-11-05): use the k-space form, $q_1 + E_\nu q_0$ per
    channel, so that the total energy matches the oracle.
-3. **Tail of the cross term.**  $G_{wu}$ uses the full column $[J^{-1}]_{m1}$.  Check that the `hull` tail treats it as well
-   as $G_{uu}$.  The two chains give $G_{wu}$ twice; their difference measures this.
+3. **Tail of the cross term: closed for the charge.**  `cf_species` already gives the projection with the tail.  The cross term is
+   weak near the axis, so the production chains use $|a\rangle, |v\rangle$ (section 6) and the charge does not need it.  Only
+   $q_1$ does.  The two chains give it twice, and each SCF iteration prints the largest difference.
 4. **E_F search.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
 5. **Cost.**  Two chains per energy.  Measure against `asr_edc`.
 6. **Storage of $w$: closed.**  $|w\rangle = S' |1 L\rangle$ covers the whole $S'$ range (bcc with `rcl` 1.2 alat: 8 + 6
