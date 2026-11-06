@@ -255,6 +255,29 @@ have empty rows and columns (`class_mt`); a dense check must put 1 on their diag
 4. **Representation and SCF.**  Shift $\alpha$ by 20 %: the charges should not move beyond the $S$ cut-off effect.  A full
    \ce{CuZn} SCF should converge as well as the current route.  Report the cost per iteration.
 
+## 10a. Gate 2 result (2026-11-06): not passed as set
+Binary `ab50499`, desktop `~/asr_ed3/trial/gate2`, `gate2d`, `gate2e`, `gate2f`.  B2 \ce{CuZn} at free atoms, one iteration.
+The cleanest oracle is k-space full ASA at nk 32, Gaussian 1 mRy: qnet 0.1193, E_F -0.1617 Ry, E -3446.74519 Ry.
+
+| run | qnet Cu | E_F (Ry) | E + 3446 (Ry) |
+|---|---|---|---|
+| `ed3`, supercell 8, 36 steps, 32 contour points (gate input) | 0.1217 | -0.1833 | -0.74669 |
+| `ed3`, supercell 16, 96 steps, 32 points | 0.1310 | -0.1608 | -0.74367 |
+| `ed3`, supercell 16, 96 steps, 64 points | 0.1292 | -0.1623 | -0.74457 |
+| `ed3`, supercell 16, 96 steps, 128 points | 0.1295 | -0.1622 | -0.74455 |
+| k-space, nk 32, Gaussian 1 mRy | 0.1193 | -0.1617 | -0.74519 |
+| k-space, nk 32, tetrahedra | 0.1183 | -0.1610 | -0.74458 |
+
+Against the limits: E_F passes at the converged settings (0.5 mRy), and the total energy agrees to 0.6 mRy.  The charge does not pass: qnet is 0.0102 high (limit 0.010), and the channels at 128 points are Cu s -0.0042, p -0.0063, d +0.0206, Zn s -0.0042, p -0.0102, d +0.0042 (limit 0.007).
+
+What the diagnostics fixed:
+1. Representation is not the cause.  k-space full ASA at standard alpha against sigma 0.7 ($\alpha_d$ differs by 57 %): E_F 0.02 mRy, qnet 0.0001 e, E 0.04 mRy.  The same change in k-space $H^{(2)}$: E_F 1.3 mRy, qnet 0.005 e, E 3.8 mRy.
+2. The E_F gap of the gate input is finite size.  An ordered run on a periodic graph has a discrete spectrum, like a Gamma-centred k-mesh of the supercell.  E_F moved from -0.1833 to -0.1608 with supercell 8 to 16.  k-space at nk 8 is off by 11 mRy in the same way.  `edc` closes from about 36 mRy to about 3 mRy.
+3. 32 contour points are too few for ordered cells.  With 128 points the weighted sum rule at 6 Ry is 1.0000 (0.9991 at 64, 0.953 at 32).  This confirms the electron count of section 8 in the production code.
+4. Steps, tail, depth tolerance and Fermi smearing do not explain the charge: 96 and 160 steps agree to 1e-4 e at supercell 16.
+
+Open: the residual transfer of about 0.01 e from Zn to Cu.  `edc` has the same sign, +0.006 e against k-space $H^{(2)}$ at standard alpha.  So the origin may be shared by both routes, but this is not shown.  The unit tests exclude the operator algebra.  Untested suspect: $S$ range and inversion cluster at the converged settings (`rcl` 2.0 was only run at supercell 8 with 32 points).
+
 ## 11. Provenance
 The first draft was written by another model from a prompt of this thread.  A second draft by the same model took over the
 corrections below and added the closed form of the second-order limit and the $q \to -q$ regression check; both are checked
