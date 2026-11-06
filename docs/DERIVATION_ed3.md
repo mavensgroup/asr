@@ -278,6 +278,13 @@ What the diagnostics fixed:
 
 Open: the residual transfer of about 0.01 e from Zn to Cu.  `edc` has the same sign, +0.006 e against k-space $H^{(2)}$ at standard alpha.  So the origin may be shared by both routes, but this is not shown.  The unit tests exclude the operator algebra.  Untested suspect: $S$ range and inversion cluster at the converged settings (`rcl` 2.0 was only run at supercell 8 with 32 points).
 
+**Update 2026-11-07: the residual is the kept $S$ range, and gate 2 passes at converged settings** (`trial/gate2g`; supercell 16,
+96 steps, 64 contour points).  `ed3` at `rcl` 2.0: qnet 0.1186, E_F -0.1621 Ry, E -3446.74575 Ry, channels Cu -0.0007, +0.0002,
+-0.0002, Zn -0.0010, +0.0025, -0.0009.  All meet the limits.  A larger inversion radius at `rcl` 1.2 changes nothing (qnet
+0.1293), so the kept range matters and the inversion cluster does not.  `edc` at `rcl` 2.0: qnet 0.1221 against 0.1219 in k-space
+$H^{(2)}$ at standard alpha.  So the residual was shared by both routes.  `rcl` 1.2 is not converged for this charge: it
+moves about 0.01 e from Zn to Cu.  The cost at `rcl` 2.0 is 7.4 times that of `rcl` 1.2 for `ed3` and 4.4 times for `edc`.
+
 ## 11. Provenance
 The first draft was written by another model from a prompt of this thread.  A second draft by the same model took over the
 corrections below and added the closed form of the second-order limit and the $q \to -q$ regression check; both are checked
