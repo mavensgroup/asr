@@ -1,7 +1,81 @@
 # HANDOFF: short-range order (new thread)
 
-## Handover 2026-11-03, evening (start here)
-Question now.  The `hop` test (below) shows that at identical free-atom potentials the ASR SRO hopping charge is 2.2 to 2.4 times
+## Handover 2026-11-06 (start here)
+Read this section first.  It replaces the "Next, in order" list of the 2026-11-03 evening handover.  The questions of that list are
+now answered.  Current branch: `ed3` (pushed).  Main stays on the production route `asr_edc`.
+
+### Instruction for the `ed3` thread
+The `ed3` production routine is not started.  The user will open it in a new thread at higher effort.  Do not start it elsewhere.
+Should `ed3` replace the literal AMscf form?  That is still the user's decision, after gates 2 to 4 (`docs/ROADMAP.md`).
+
+### What is settled
+1. CuZn hopping charge.  At free atoms the ASR reproduces its own first-shell model at H^(2).  The exact model comes from
+   `tools/mp_reweight.py` on `trial/b45/mp2` (same 10 cells as `mp`, with `second_order = true`).  Cu hopping charge in e, with a
+   statistical error of about 10 %:
+   | alpha | exact model, H^(2) | ASR levels 4, 24 steps | exact model, full ASA | correlated, full ASA | correlated, H^(2) |
+   |---|---|---|---|---|---|
+   | -0.148 | -0.0112 | -0.0111 | -0.0072 | -0.0050 | -0.0103 |
+   | +0.148 | +0.0111 | +0.0111 | +0.0071 | +0.0050 | |
+   | -0.266 | -0.0201 | -0.0199 | -0.0131 | -0.0083 | |
+   So the factor 1.55 of the older notes is all H^(2).  The ASR route has no hidden error here.
+2. Two errors remain, and they are separate.  H^(2) is the first, and `ed3` should remove it.  The first-shell model is the second:
+   it gives 1.45 times the correlated value in the full ASA, and `ed3` does not touch it.  The correlated second step would be
+   needed for that.  At H^(2) the model ratio is only 1.08.  So H^(2) hides most of the model error, and `ed3` will expose it.
+   The match -0.0102 against -0.0103 compares two structures.  Do not quote it as proof that the model is exact.
+3. `ed3` targets.  Gate 2, ordered B2 at free atoms: q_Cu 0.1193, E_F -0.1623 Ry.  Gate 3, SQS at free atoms: q_Cu(0) near 0.146, and
+   the hopping charge -0.0072 +- 0.0006 at alpha -0.148.  The correlated -0.0050 is not a target.  Band energy: the k-space form,
+   q1 + E_nu q0 per channel (user, 2026-11-05).  Gate 1 passed on `asr_augorb` and `asr_augcls`.  Details: `docs/DERIVATION_ed3.md`.
+4. Fe-Cr electrostatics.  The per-species SQS has beta' about 0.46 (Madelung shift on Cr +0.026 Ry against about +0.079 Ry in the
+   ASR).  So it is not a reference for charges or energies.  The ASR with `sim_beta = 0.46` gives Cr charge -0.135, against -0.132 in
+   the SQS.  So the old Cr charge gap (-0.181 against -0.132) comes from the comparison, not from the ASR.
+5. Fe-Cr H^(2) is a small effect, unlike CuZn.  Random cell, Cr charge and moment: SQS H^(2) -0.131 / -0.968, full ASA -0.132 / -0.955.
+6. Fe-Cr recursion settings.  Levels 4 is converged: levels 5 changes the Cr moment by 0.0006 and the energy by 0.02 mRy.  Steps
+   are not: 24 steps is too few for Cr.  Use at least 48 for Cr in Fe.
+   | random cell, beta 1 | Cr charge | Cr moment | E_F (Ry) | E - E(24 steps) (mRy) |
+   |---|---|---|---|---|
+   | 24 steps | -0.185 | -1.055 | -0.0697 | 0 |
+   | 36 steps | -0.181 | -0.938 | -0.0674 | -0.74 |
+   | 48 steps | -0.181 | -0.953 | -0.0682 | -0.68 |
+
+### Fe-Cr SRO numbers so far (not a benchmark yet)
+| alpha | ASR 48 steps: charge, moment, dE (mRy) | ASR 24 steps: dE (mRy) | SQS H^(2): charge, moment, dE | SQS full ASA: charge, moment, dE |
+|---|---|---|---|---|
+| -0.1 | -0.213, -1.248, -0.004 | -0.07 | -0.183, -1.219, -0.26 | -0.186, -1.206, -0.31 |
+| 0 | -0.181, -0.953, 0 | 0 | -0.131, -0.968, 0 | -0.132, -0.955, 0 |
+| +0.1 | -0.154, -0.747, -0.120 | -0.07 | -0.104, -0.791, -0.07 | -0.106, -0.776, -0.03 |
+The SQS rows are means of 2 seeds, and the achieved alpha is -0.107 and +0.107.  Seed noise in dE is 0.09 to 0.17 mRy.  The ASR dE
+moved by 0.06 mRy between 24 and 48 steps.  The "missing linear term of +1.3 mRy per unit alpha" is unproven, because the SQS has
+the wrong screening.  Do not quote it.  The per-atom cells decide this.
+
+### Running on the desktop
+Queue F6 (`~/asr_remote4/trial/fecr/queue_F6.sh`, binary `trial/b45/bin/asr_59b00fc`, log `trial/fecr/SUMMARY.txt`): six per-atom cells in
+`trial/fecr/ks_site/` (`site_classes = true`, full ASA, mixing 0.1), two lanes of 14 threads, started 2026-11-05 17:57.  These runs
+print nothing per iteration (`trace` is off), so only the first finished cell gives the timing.  Expected Friday evening to Saturday.
+
+### Next actions
+1. When `ks_site` finishes: take dE, charges and moments per alpha, and compare with the ASR at 48 steps.  Also fit V against q as in
+   FINDINGS_LOG "B3 tested" (`trial/b45/analysis/regress.py`), to get beta and lambda for Fe-Cr.  CuZn gave beta 1.00 to 1.02.
+2. The `ed3` production routine, in the new thread (see the instruction above).  Plan: an `edc_green` variant with two chains, charge
+   assembly in `asr_class_scf` (Q = xm0 + 2 o xm1 + p xm2), the k-space density, and the E_F search with all three blocks.  Use a
+   separate desktop clone, not `~/asr_remote4`, so that the running queues keep their binary.
+3. Decide with the user about the correlated second step.  It is the only route to the 1.45.
+
+## Handover 2026-11-03, evening
+Result (runs done 18:12; FINDINGS_LOG "MP reweighting").  Both causes act.  Cu hopping charge at alpha -0.148, free atoms: correlated
+SQS -0.0050, exact MP model -0.0072 +- 0.0006, ASR -0.0111.  So the MP model is 1.45 times the correlated structure, and the ASR is
+1.55 times its own MP model.  The same split holds at -0.266 and +0.148.  The correlated cells show the missing second step
+directly.  At the same n_unlike a Cu centre holds 0.004 to 0.005 e more than in random cells, because its shell atoms have more Cu
+neighbours.
+Next, in order.
+1. The ASR factor 1.55 first, because it is a route question and not a model question.  Queue M3 (`hop/at_L4_m100`, `at_L4_p100`,
+   launched 22:18) gives the ASR at alpha -1 and +1.  In the MP model these are a Cu centre with an all-Zn and an all-Cu shell,
+   which the random cells give as g(8) and g(0).  Fit value: g(8) - g(4) = -0.049, g(0) - g(4) = +0.049 (k = -0.0122 per
+   neighbour).  Compare with the ASR q_Cu(alpha) - q_Cu(0), with q_Cu(0) = 0.16870 from `at_L4_rand`.  If the ASR gives 1.5 times
+   this too, test whether the factor comes from the random-alloy medium (the ASR q_Cu(0) is 16 % above k-space) before suspecting
+   the shell classes.
+2. Then the correlated second step (decision tree item 2 below).  Its target is the g(n) shift above: the MP model must move from
+   -0.0072 to -0.0050.
+The test design follows.  Question before the test.  The `hop` test (below) shows that at identical free-atom potentials the ASR SRO hopping charge is 2.2 to 2.4 times
 the per-species SQS value.  Truncation is ruled out.  That test compares two different statistical models, though.  The ASR
 averages the Mookerjee-Prasad (MP) model exactly: centre fixed, first shell conditional, every other site random.  The SQS is a
 fully correlated SRO structure.  So two causes remain open.
