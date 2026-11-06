@@ -30,6 +30,7 @@
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
+!>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
 !>                  second_order (diagnostic, default false: the orthogonal second-order
 !>                  H^(2) = E_nu + h - h o h of the recursion route, no h p h overlap, density M0 phi^2 + 2 M1 phi phidot +
 !>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion)
@@ -328,7 +329,7 @@ contains
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
-                            'sphere_ratio', 'second_order', 'alpha_scale '], '[kspace]', msg)
+                            'sphere_ratio', 'second_order', 'alpha_scale ', 'std_alpha   '], '[kspace]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'nk', inp%li%nk, 12)
     call get_value(child, 'bz', str, 'tetra'); inp%li%bz = str
@@ -338,6 +339,7 @@ contains
     call get_value(child, 'dos_nk', inp%li%dos_nk, 24)
     call get_value(child, 'second_order', inp%li%second_order, .false.)
     call get_value(child, 'alpha_scale', inp%li%alpha_scale, 1.0_dp)
+    call get_value(child, 'std_alpha', inp%li%std_alpha, .false.)
     if (inp%li%alpha_scale <= 0.0_dp) then; msg = '[kspace] alpha_scale must be positive'; return; end if
     call get_value(child, 'sphere_ratio', ratio, 1.0_dp)
 

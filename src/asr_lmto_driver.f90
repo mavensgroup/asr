@@ -39,7 +39,7 @@ contains
     ai%xc = inp%xc; ai%sigma = inp%sigma; ai%nspin = inp%spin; ai%nk = inp%nk; ai%bz = inp%bz
     ai%smear = inp%smear; ai%beta = inp%mixing; ai%maxit = inp%maxit; ai%tol = inp%tolerance
     ai%relativistic = inp%relativistic; ai%zeta0 = inp%zeta0; ai%trace = inp%trace
-    ai%second_order = inp%second_order; ai%alpha_scale = inp%alpha_scale
+    ai%second_order = inp%second_order; ai%alpha_scale = inp%alpha_scale; ai%std_alpha = inp%std_alpha
     ! classes: one per species, or (lattice = "cell", site_classes) one per site
     if (inp%lattice == 'cell' .and. inp%site_classes) then
       ncl = size(inp%site_sp); csp = inp%site_sp
