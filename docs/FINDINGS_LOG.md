@@ -1536,6 +1536,14 @@ Result (2026-11-03, all runs done).  Output q_Cu after one iteration; hopping ch
 - The frozen-potential runs have no supercell partner.  Their bare response includes no intra-sphere relaxation, so they are not
   comparable with the SCF fit value k dn.
 
+### MP reweighting corrected: the model target lacked neutrality (2026-11-07; desktop `trial/gate3`, `tools/mp_reweight.py --dos-fraction`)
+The numbers in the next section are at fixed E_F.  Cu -0.00724 and Zn +0.00317 do not sum to zero at x = 1/2, so the model cell is not
+neutral.  The ASR fixes E_F by neutrality.  With the first-order E_F response and f = N_Cu / (N_Cu + N_Zn) = 0.514 the Cu hopping charge
+is -0.00515, +0.00505, -0.00932 in the full ASA, and -0.01025, +0.01015, -0.01850 in H^(2) (f = 0.5).  `edc` at supercell 16 gave
+-0.01041 after this was predicted.  `ed3` at supercell 16 gives -0.00530, +0.00513, -0.00941.  The model/correlated ratio is 1.03 to
+1.13 in the full ASA.  Supercell 8 overstated the ASR hopping charge by 3 % in `edc` and 21 % in `ed3`.  Open: the E_F shift of the ASR is
+about half of what the neutral model needs.
+
 ### MP reweighting: both the SRO model and the ASR route contribute (2026-11-03; desktop `trial/b45/mp`, `tools/mp_reweight.py`)
 The ASR averages the Mookerjee-Prasad (MP) model: centre fixed, first shell conditional, all other sites random.  The MP measure is
 the random measure times w = prod_j X^(c)_(s_j) / x_(s_j) over the first shell of the centre.  So random cells with site-resolved

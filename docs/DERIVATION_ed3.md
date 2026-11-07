@@ -285,6 +285,42 @@ Open: the residual transfer of about 0.01 e from Zn to Cu.  `edc` has the same s
 $H^{(2)}$ at standard alpha.  So the residual was shared by both routes.  `rcl` 1.2 is not converged for this charge: it
 moves about 0.01 e from Zn to Cu.  The cost at `rcl` 2.0 is 7.4 times that of `rcl` 1.2 for `ed3` and 4.4 times for `edc`.
 
+## 10b. Gate 3 result (2026-11-07): failed as set, passes against the neutral target
+Binary `ab50499`, desktop `~/asr_ed3/trial/gate3`.  Random \ce{CuZn}, levels 4, free atoms, one iteration, 64 contour points, `rcl` 1.2.
+
+The limit was the first-shell model value -0.0072 +- 10 %.  The base charge passes at supercell 16: $q_\mathrm{Cu}(0)$ 0.14680 and E_F
+-0.1630 Ry against 0.14581 and -0.1638 Ry in the SQS.  The hopping charge fails as set.
+
+| $\alpha$ | old target | neutral target | `ed3` supercell 8 | `ed3` supercell 16 | correlated SQS |
+|---|---|---|---|---|---|
+| -0.148 | -0.0072 | -0.00515 | -0.00643 | -0.00530 | -0.00499 |
+| +0.148 | +0.0071 | +0.00505 | +0.00623 | +0.00513 | +0.00500 |
+| -0.266 | -0.0131 | -0.00932 | -0.01147 | -0.00941 | -0.00825 |
+
+Step sensitivity at supercell 8, $\alpha = -0.148$: -0.00576 (24), -0.00643 (36), -0.00663 (48).  The block matrix is positive at all
+nodes at 36 steps.
+
+**The old target was not a neutral quantity.**  The reweighting of `tools/mp_reweight.py` holds each cell at its own E_F.  It gives
+-0.00724 on Cu and +0.00317 on Zn at $\alpha = -0.148$.  So the model cell loses 0.0020 e per atom.  The ASR imposes neutrality through
+E_F, so its Cu value cannot be compared with that number.  The first-order E_F response gives
+$\delta q_\mathrm{Cu} - f(\delta q_\mathrm{Cu} + \delta q_\mathrm{Zn})$ with $f = N_\mathrm{Cu}/(N_\mathrm{Cu}+N_\mathrm{Zn})$.  The k-space DOS at
+E_F gives $f = 0.514$ with no fit (1.417 and 1.340 states/Ry).  The range 0.45 to 0.55 gives -0.00541 to -0.00500.  The eight random
+cells are the same as in the old number, and the bootstrap error is 0.00007, because cell noise cancels between Cu and Zn.
+
+**Independent test.**  The correction was found after the `ed3` result, so `edc` was predicted first.  The neutral $H^{(2)}$ model gives
+-0.01025 from `trial/b45/mp2`, and the fixed-E_F value is -0.0112.  `edc` at supercell 16, 36 steps gave -0.01041 (`rand` 0.17466, `m015`
+0.16425); at supercell 8 it gave -0.01074.  This is 1.6 % from the neutral value.  The ratio `ed3`/`edc` is 0.51, against 0.50 for the models.
+
+Decision (user, 2026-11-07, conditional on that test): the neutral target replaces -0.0072.  Gate 3 therefore passes at changed settings,
+supercell 16 and 64 contour points, at +2.9, +1.6 and +1.0 %.  The first-shell model is 1.03 times the correlated value at -0.148 and
+1.13 times at -0.266, not 1.45 and 1.59.  At $H^{(2)}$ it is 1.00 at -0.148.
+
+Open:
+1. The E_F shift is not reproduced.  `ed3` shifts by +0.00064 Ry, while the neutral model needs about +0.0015 Ry and the SQS cells show
+   +0.0010 Ry.  `edc` shifts by +0.00036 Ry.  So the Cu charge agrees, but the split between site response and E_F is not shown.
+2. The k-space table sums miss qnet by 0.012 e (item 1 of section 9), so per-channel model values from the table are not usable.
+3. These runs use `rcl` 1.2.  Gate 2 showed about 0.01 e from the kept $S$ range.
+
 ## 11. Provenance
 The first draft was written by another model from a prompt of this thread.  A second draft by the same model took over the
 corrections below and added the closed form of the second-order limit and the $q \to -q$ regression check; both are checked

@@ -12,6 +12,9 @@ prints the binomial average of a quadratic fit q = g(n_unlike), which has no suc
 Random cells with one potential per site (site_classes = true) therefore give the exact MP average without a new cell per alpha.
 The hopping charge of the MP model is E_MP[q | c](alpha) - E_rand[q | c].  At identical (free-atom) potentials this is the quantity
 the ASR [[sro]] run computes for component c, up to the ASR truncation.
+The reweighting holds every cell at its own E_F, so the model cell is not neutral: dq_A + dq_B != 0 at x = 1/2.  The ASR fixes E_F by
+neutrality.  The comparable number therefore adds the first-order E_F response, dq_A - f (dq_A + dq_B) with f = N_A / (N_A + N_B) at E_F.
+Pass f as --dos-fraction; a cell of equal concentrations is assumed, and f comes from the k-space DOS at E_F of a random cell.
 
   python3 -I tools/mp_reweight.py random  --template in.toml --seed 3 --out cell/in.toml   (shuffled species, site_classes = true)
   python3 -I tools/mp_reweight.py siteify --template in.toml --out cell/in.toml            (same occupation, site_classes = true)
@@ -73,6 +76,7 @@ def write_cell(txt, spc, out, name):
 def analyse(a):
     sA, sB = a.pair.split(',')
     rows = []                                       # (run, species, q, n_unlike)
+    bino_all = {}                                   # (species, alpha) -> binomial hopping charge at fixed E_F
     for d in a.runs:
         txt, sup, pos, spc = read_cell(f'{d}/in.toml')
         nb = first_shell(sup, pos)
@@ -106,8 +110,14 @@ def analyse(a):
             from math import comb                           # binomial estimate from a quadratic fit g(n): no fixed-composition bias
             g = np.poly1d(np.polyfit(n, q, 2))
             bino = sum(comb(z, m) * (xu ** m * (1 - xu) ** (z - m) - x[u] ** m * (1 - x[u]) ** (z - m)) * g(m) for m in range(z + 1))
+            bino_all[(c, al)] = bino
             print(f'  alpha {al:+.3f}: reweighted {mp - q.mean():+.5f} +- {np.std(bs):.5f} e (Neff {np.sum(w) ** 2 / np.sum(w * w):.0f}); '
                   f'binomial with quadratic g(n) {bino:+.5f}; linear k dn {k * dn:+.5f} (dn = {dn:+.3f})')
+    if a.dos_fraction is not None and a.x is None:
+        for al in a.alpha:
+            qa, qb = bino_all[(sA, al)], bino_all[(sB, al)]
+            print(f'neutral alpha {al:+.3f}: {sA} {qa - a.dos_fraction * (qa + qb):+.5f}, cell imbalance at fixed E_F {qa + qb:+.5f} '
+                  f'(f = {a.dos_fraction:.3f})')
 
 
 def main():
@@ -119,6 +129,7 @@ def main():
     s.add_argument('--name', default=None)
     n = sub.add_parser('analyse'); n.add_argument('--runs', nargs='+', required=True); n.add_argument('--pair', required=True)
     n.add_argument('--alpha', type=float, nargs='+', default=[-0.148]); n.add_argument('--x', type=float, default=None)
+    n.add_argument('--dos-fraction', type=float, default=None, help='N_A / (N_A + N_B) at E_F: also print the neutral hopping charge')
     a = ap.parse_args()
     if a.cmd == 'analyse': return analyse(a)
     txt, sup, pos, spc = read_cell(a.template)

@@ -1,6 +1,6 @@
 # ASR roadmap
 
-Updated 2026-11-05.  Status per item: 🟢 done · 🟠 in progress · 🔴 not started · ⛔ blocker (holds up later items).
+Updated 2026-11-08.  Status per item: 🟢 done · 🟠 in progress · 🔴 not started · ⛔ blocker (holds up later items).
 Evidence for every 🟢 is in `docs/STATUS.md` and `docs/FINDINGS_LOG.md`.  Publication details: `docs/PUBLICATION_PLAN.md`.
 
 ## Goal
@@ -46,10 +46,11 @@ and partially ordered alloys, short-range order, local environments.  First outp
 |---|---|
 | N-species SQS tool (`tools/sqs.py`) | 🟢 |
 | Fe66Ni14Cr20 levels 3 (NM and spin) and levels 4 (NM, `hull` tail) converged | 🟢 |
-| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin) vs 40-atom SQS: Fe, Cr, Mn within the bar; Co, Ni 9 to 27 % low (levels 3 resolution) | 🟢 |
+| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin), 24 steps, vs 40-atom SQS: CoCrFeNi Fe -3.6 %, Co -9.6 %, Ni -10 %, Cr +27 %; CoCrFeMnNi Fe -10 %, Co -28 %, Ni -13 %, Cr +7.5 %, Mn -2.3 %.  The Co and Ni cause is not shown, and the Cr error is a separate problem | 🟢 |
 | `hull` as the default tail in the code, Nevanlinna-bound test, merge branch `l4stall` | 🟢 |
 | Alam and Mookerjee 2009 Fig. 2 comparison (Ni-Fe splitting, Cr spikes) at levels 4 | 🔴 |
-| HEA at levels 4 or 5 for the weak Co and Ni moments | ⛔ needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
+| test first: CoCrFeNi levels 3 at 36 and 48 steps, because every HEA run used 24 steps and weak moments follow the chain length elsewhere (`trial/hea_steps`) | 🟠 |
+| HEA at levels 4 or 5 for the weak Co and Ni moments, only if the steps test leaves them low | ⛔ needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
 | more SQS cells for error bars | 🔴 |
 | Cr d sum rule (A5): looks harmless in the HEAs (0.97 to 1.02) | 🟢 |
 
@@ -86,8 +87,8 @@ SQS cell.  SRO is the real difference, but its numbers are not final.  Rough est
 | item | why it blocks | status |
 |---|---|---|
 | decide the production Hamiltonian (see the pending decision below) | H^(2) doubles the SRO hopping charge in bcc CuZn (-0.0103 vs -0.0050 e for full ASA) | ⛔ user decision |
-| `ed3` gates 2 to 4 and the production routine (`docs/DERIVATION_ed3.md`), with a time limit | it changes every validation number and costs about twice as much per energy | 🟠 gate 1 passed |
-| state the first-shell model error in the paper | the model gives 1.45 to 1.6 times the hopping charge of the correlated cells, and `ed3` does not remove this | 🔴 |
+| `ed3` gates 2 to 4 and the production routine (`docs/DERIVATION_ed3.md`), with a time limit | it changes every validation number and costs about 3.5 times as much per iteration | 🟠 routine on branch `ed3`; gates 1 to 3 passed, gates 2 and 3 at changed settings; `rcl` 1.2 moves charges by about 0.01 e; gate 4 open |
+| state the first-shell model error in the paper | with neutrality imposed the model gives 1.03 to 1.13 times the hopping charge of the correlated cells.  The older 1.45 to 1.6 came from a value at fixed E_F (`docs/DERIVATION_ed3.md` section 10b) | 🔴 |
 | speed: short E_F arc, then O_h (phase 5) | CoCrFeNi takes 10 to 13 h at levels 3 against 40 to 65 min for one 40-atom SQS cell | ⛔ |
 | per-atom cells (`site_classes = true`) as the charge and energy reference | per-species SQS has beta' about 0.46 against 1 in the ASR, so it cannot be the charge or energy reference for Fe-Cr; test F5 still running | 🟠 |
 | same-model CPA comparison | no CPA run with the same LMTO-ASA model exists; FeRh vs SPR-KKR differs in functional and potential.  Questaal's source mentions CPA (untested) | 🔴 |

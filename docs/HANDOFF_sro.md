@@ -8,6 +8,11 @@ now answered.  Current branch: `ed3` (pushed).  Main stays on the production rou
 The `ed3` production routine is not started.  The user will open it in a new thread at higher effort.  Do not start it elsewhere.
 Should `ed3` replace the literal AMscf form?  That is still the user's decision, after gates 2 to 4 (`docs/ROADMAP.md`).
 
+### Correction 2026-11-07
+The Cu values of the "exact model" columns below are at fixed E_F, so the model cell is not neutral.  The neutral values are -0.00515,
++0.00505, -0.00932 (full ASA) and -0.01025, +0.01015, -0.01850 (H^(2)).  So the model factor of item 2 is 1.03 to 1.13, not 1.45 to 1.6.
+The -0.0072 target of item 3 is replaced.  Details: `docs/DERIVATION_ed3.md` section 10b.
+
 ### What is settled
 1. CuZn hopping charge.  At free atoms the ASR reproduces its own first-shell model at H^(2).  The exact model comes from
    `tools/mp_reweight.py` on `trial/b45/mp2` (same 10 cells as `mp`, with `second_order = true`).  Cu hopping charge in e, with a
