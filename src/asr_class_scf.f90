@@ -76,6 +76,7 @@ module asr_class_scf
     character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
     real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
     integer :: eblock = 8                               !! contour energies per chain block (asr_augblk); 0: one energy per chain, real kernels
+    real(dp) :: ef_linear_max = 0.0_dp                  !! E_F steps up to this size (Ry) are first order, without a new contour; 0: off
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
     character(len=256) :: ef_scan_dump = ''            !! diagnostic: file for the chain coefficients of every scan energy
@@ -323,6 +324,12 @@ contains
         end if
         npass = jf
         if (abs(nn - nelec) < max(2.0e-4_dp, 1.0e-3_dp * dvc) .or. jf == nfe) exit
+        ! one contour per iteration (ef_linear_max > 0): a first-order step up to ef_linear_max replaces the next contour.  The
+        ! electron count stays exact (below); the moments carry an error O(step^2), which vanishes at self-consistency, where E_F
+        ! no longer moves between iterations.  So the fixed point is unchanged; only the path towards it differs.
+        if (jf == 1 .and. inp%ef_linear_max > 0.0_dp) then
+          if (abs(nelec - nn) / max(dvc, 0.1_dp) <= inp%ef_linear_max) exit
+        end if
         if (hlo .and. hhi) then
           e = (elo * fhi - ehi * flo) / (fhi - flo)
           if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
