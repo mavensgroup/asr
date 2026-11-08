@@ -46,15 +46,18 @@ and partially ordered alloys, short-range order, local environments.  First outp
 |---|---|
 | N-species SQS tool (`tools/sqs.py`) | 🟢 |
 | Fe66Ni14Cr20 levels 3 (NM and spin) and levels 4 (NM, `hull` tail) converged | 🟢 |
-| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin), 24 steps, vs 40-atom SQS: CoCrFeNi Fe -3.6 %, Co -9.6 %, Ni -10 %, Cr +27 %; CoCrFeMnNi Fe -10 %, Co -28 %, Ni -13 %, Cr +7.5 %, Mn -2.3 %.  The Co and Ni cause is not shown, and the Cr error is a separate problem | 🟢 |
+| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin), 24 steps, converged.  Against the per-species 40-atom SQS: CoCrFeNi Fe -3.6 %, Co -9.6 %, Ni -10 %, Cr +27 %; CoCrFeMnNi Fe -10 %, Co -28 %, Ni -13 %, Cr +7.5 %, Mn -2.3 %.  That reference is superseded (next row) | 🟢 |
+| CoCrFeNi reference with one potential per site (`site_classes = true`, same 40-atom cell, desktop `~/asr_ed3/trial/hea_sqs`).  H^(2): Co 0.967, Cr -0.490, Fe 1.793, Ni 0.282 muB.  Full ASA: Co 0.972, Cr -0.487, Fe 1.745, Ni 0.303 muB.  ASR `edc` levels 3, 24 steps, against the H^(2) cell: Co -4.2 %, Fe -2.8 %, Ni -3.7 %, Cr +22 %.  So Co, Fe and Ni meet the bar at levels 3.  The per-species cell was the wrong reference: its charges are about 1.4 times smaller than per-site charges (beta' about 0.46, as in Fe-Cr).  The ASR charges lie about 10 % below the per-site charges | 🟢 |
+| Hamiltonian effect on HEA moments: full ASA against H^(2) in the per-site cell changes them by less than 3 %, Ni by 7 %.  So `ed3` is not needed for random HEA moments | 🟢 |
 | `hull` as the default tail in the code, Nevanlinna-bound test, merge branch `l4stall` | 🟢 |
 | Alam and Mookerjee 2009 Fig. 2 comparison (Ni-Fe splitting, Cr spikes) at levels 4 | 🔴 |
-| test first: CoCrFeNi levels 3 at 36 and 48 steps, because every HEA run used 24 steps and weak moments follow the chain length elsewhere (`trial/hea_steps`) | 🟠 |
-| HEA at levels 4 or 5 for the weak Co and Ni moments, only if the steps test leaves them low | ⛔ needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
-| more SQS cells for error bars | 🔴 |
+| CoCrFeNi levels 3 at 36 and 48 steps (`~/asr_ed3/trial/hea_steps`).  36 steps (converged): Co 1.034, Cr -0.685, Fe 1.935, Ni 0.266, so Co +7 %, Fe +8 %, Cr +40 %, Ni -6 % against the H^(2) cell.  48 steps keeps rising (Co 1.17 at iteration 14).  At fixed levels 3 the moments do not converge in steps.  A guess, not tested: long chains reach the edge of the levels-3 augmented space.  Keep 24 steps for HEAs at levels 3 until this is understood | 🟠 48 steps running |
+| HEA at levels 4 or 5: not needed for Co and Ni.  Still useful to check steps against levels jointly, and for the Alam Fig. 2 comparison | 🔴 low priority; needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
+| more SQS cells for error bars, one potential per site.  The site spread is 0.15 to 0.45 muB, so one 40-atom cell gives each species mean about 10 % sampling error.  The Cr +22 % cannot be judged before this | 🔴 next HEA item |
+| CoCrFeMnNi with one potential per site | 🔴 |
 | Cr d sum rule (A5): looks harmless in the HEAs (0.97 to 1.02) | 🟢 |
 
-### 5. Speed ⛔ (blocks HEA levels 4 and 5, SRO series, Fe-Cr series)
+### 5. Speed ⛔ (blocks the SRO series and the Fe-Cr series; HEA levels 4 and 5 are now low priority)
 | item | status |
 |---|---|
 | OpenMP over the independent chains (bit identical) | 🟢 |
@@ -117,5 +120,5 @@ Recommended order from the readiness check of 2026-11-05 (phase 7).
 3. Same-model CPA comparison.
 4. Frozen shell around the centre, and q(n) against the random CuZn cells.
 5. Validation rerun from one tagged binary, with per-atom references for charges and energies.
-6. HEA levels 4 or 5 and more SQS cells.
+6. More HEA SQS cells with one potential per site; HEA levels 4 or 5 only for the steps question.
 7. Update the paper, then the CPC preprint and the Fe-Cr paper.
