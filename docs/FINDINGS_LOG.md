@@ -1536,6 +1536,54 @@ Result (2026-11-03, all runs done).  Output q_Cu after one iteration; hopping ch
 - The frozen-potential runs have no supercell partner.  Their bare response includes no intra-sphere relaxation, so they are not
   comparable with the SCF fit value k dn.
 
+### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
+The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA
+converged in 185 iterations, H^(2) (`second_order = true`) in 180.  Species means over 10 sites each, moments in muB, charges in e:
+| run | Co | Cr | Fe | Ni |
+|---|---|---|---|---|
+| per-site, H^(2) | 0.967 | -0.490 | 1.793 | 0.282 |
+| per-site, full ASA | 0.972 (q +0.089) | -0.487 (q -0.239) | 1.745 (q -0.005) | 0.303 (q +0.155) |
+| per-species, full ASA (old reference) | 1.025 (q +0.065) | -0.471 (q -0.175) | 1.809 (q +0.006) | 0.302 (q +0.105) |
+| ASR `edc` levels 3, 24 steps | 0.927 (q +0.083) | -0.599 (q -0.211) | 1.743 (q -0.008) | 0.272 (q +0.137) |
+| ASR `edc` levels 3, 36 steps | 1.034 | -0.685 | 1.935 | 0.266 |
+- Against the per-site H^(2) cell, 24 steps gives Co -4.2 %, Fe -2.8 %, Ni -3.7 %, Cr +22 %.
+- The site spread is 0.15 (Ni) to 0.45 (Fe) muB.  With 10 sites per species the sampling error of a mean is about 10 %.
+- Per-species charges are about 1.4 times smaller than per-site charges, as for Fe-Cr (beta' about 0.46).
+- Full ASA against H^(2): below 3 % except Ni (7 %).
+- 36 steps converged in 24 iterations from the 24-step potential.  48 steps rises further (Co 1.17 at iteration 14, not converged).
+  The current binary reproduces the old 24-step moments to 1e-4 in one iteration (`ctl_s24`).
+
+### MP reweighting corrected: the model target lacked neutrality (2026-11-07; desktop `trial/gate3`, `tools/mp_reweight.py --dos-fraction`)
+The numbers in the next section are at fixed E_F.  Cu -0.00724 and Zn +0.00317 do not sum to zero at x = 1/2, so the model cell is not
+neutral.  The ASR fixes E_F by neutrality.  With the first-order E_F response and f = N_Cu / (N_Cu + N_Zn) = 0.514 the Cu hopping charge
+is -0.00515, +0.00505, -0.00932 in the full ASA, and -0.01025, +0.01015, -0.01850 in H^(2) (f = 0.5).  `edc` at supercell 16 gave
+-0.01041 after this was predicted.  `ed3` at supercell 16 gives -0.00530, +0.00513, -0.00941.  The model/correlated ratio is 1.03 to
+1.13 in the full ASA.  Supercell 8 overstated the ASR hopping charge by 3 % in `edc` and 21 % in `ed3`.  Open: the E_F shift of the ASR is
+about half of what the neutral model needs.
+
+### MP reweighting: both the SRO model and the ASR route contribute (2026-11-03; desktop `trial/b45/mp`, `tools/mp_reweight.py`)
+The ASR averages the Mookerjee-Prasad (MP) model: centre fixed, first shell conditional, all other sites random.  The MP measure is
+the random measure times w = prod_j X^(c)_(s_j) / x_(s_j) over the first shell of the centre.  So random cells with site-resolved
+charges give the exact MP average.  Runs: 8 random cells of 128 sites (6 random occupations, the 2 random SQS), one potential per
+site, free atoms, one iteration (512 Cu centres).  The SQS cells give q_Cu = 0.14588, the same as `hop/ks_a0_*`.  The main number is
+the binomial average of a quadratic fit q = g(n_unlike).  The plain reweighted value is about 6 % low (fixed composition).
+Cu hopping charge q_Cu(alpha) - q_Cu(0), free atoms (e):
+| alpha | correlated SQS | MP model, exact (k-space) | ASR levels 4 | MP / SQS | ASR / MP |
+|---|---|---|---|---|---|
+| -0.148 | -0.00499 | -0.0072 +- 0.0006 | -0.01113 | 1.45 | 1.54 |
+| -0.266 | -0.00825 | -0.0131 +- 0.0012 | -0.01990 | 1.59 | 1.52 |
+| +0.148 | +0.00500 | +0.0071 | +0.01114 | 1.42 | 1.57 |
+- Both causes act.  The MP model gives 1.45 to 1.6 times the correlated value.  The ASR gives about 1.55 times its own MP model.
+  The product is the 2.2 to 2.4 of the `hop` test.
+- Random cells: g(n) per n (Cu centres, count): n1 0.1797 (12), n2 0.1699 (50), n3 0.1583 (113), n4 0.1461 (163), n5 0.1337 (104),
+  n6 0.1215 (56), n7 0.1082 (13), n8 0.0910 (1).  Slope k = -0.0122 e per unlike neighbour, rms 0.0053, nearly linear.
+- Correlated SRO cells (alpha -0.15, 128 Cu centres): n4 0.1466, n5 0.1375, n6 0.1263.  At n = 5 and 6 a Cu holds 0.004 to 0.005 e
+  more than in the random cells.  Slope -0.0102.  The shell atoms of a Cu centre have more Cu neighbours of their own in the
+  correlated structure.  This second-step effect cancels about a third of the first-shell effect.  The next-order model must give it.
+- Zn centres (random cells): k = +0.0053, MP hopping charge +0.0032 at -0.148.  The response is not symmetric between Cu and Zn.
+- Open: why the ASR gives 1.55 times its own MP model at the same potentials.  The random-alloy ASR also differs from k-space
+  (q_Cu(0) 0.1687 against 0.1456, 16 % larger).  So part of the factor may be the random-alloy medium, not the SRO route.
+
 ## Levels-4 SCF stall: cause found and fixed by the `hull` tail (2026-10-28 to 2026-10-30; desktop, binary `~/asr_l4` at 03ac4e5)
 Problem: Fe66Ni14Cr20 fcc levels 4 NM (`bp` tail) did not converge in 72 iterations.  dV stayed at 4e-3 to 6e-3, the SCF jumped between two
 states (Cr qnet -0.185 / -0.200) with a full Anderson history.  Earlier diagnostics (archive/HANDOFF_hea_l4_stall.md): the map is

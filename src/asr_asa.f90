@@ -34,6 +34,8 @@ module asr_asa
     real(dp) :: alat = 0.0_dp               !! lattice constant (Bohr)
     character(len=8) :: xc = 'vbh'
     real(dp) :: sigma = 0.7_dp              !! hard-core screening
+    real(dp) :: alpha_scale = 1.0_dp        !! diagnostic: screening constants times this factor
+    logical :: std_alpha = .false.          !! diagnostic: the recursion's standard_alpha() instead of the hard-core alpha of sigma
     integer :: nspin = 1
     integer :: nk = 12
     character(len=8) :: bz = 'tetra'        !! BZ integration: 'tetra' (linear tetrahedra) | 'gauss'
@@ -133,7 +135,8 @@ contains
       call make_radmesh(inp%cls(ic)%z, inp%cls(ic)%sws, 0.012_dp, cr(ic)%mesh, c)
       n = cr(ic)%mesh%n
       allocate (cr(ic)%v(n, nsp), cr(ic)%nrad(n, nsp))
-      alpha_sp(:, ic) = alpha_from_sigma(inp%sigma, inp%cls(ic)%sws / avw)
+      alpha_sp(:, ic) = inp%alpha_scale * alpha_from_sigma(inp%sigma, inp%cls(ic)%sws / avw)
+      if (inp%std_alpha) alpha_sp(:, ic) = inp%alpha_scale * standard_alpha()
     end do
     allocate (cls(cell%nat))
     do ia = 1, cell%nat
@@ -593,7 +596,8 @@ contains
     ncl = size(inp%cls); nsp = inp%nspin; avw = cell%w * inp%alat
     allocate (alpha_sp(0:2, ncl), pps(ncl, nsp), olc(0:2, ncl, nsp), pa(0:2, ncl, nsp))
     do ic = 1, ncl
-      alpha_sp(:, ic) = alpha_from_sigma(inp%sigma, inp%cls(ic)%sws / avw)
+      alpha_sp(:, ic) = inp%alpha_scale * alpha_from_sigma(inp%sigma, inp%cls(ic)%sws / avw)
+      if (inp%std_alpha) alpha_sp(:, ic) = inp%alpha_scale * standard_alpha()
       do s = 1, nsp
         do l = 0, 2
           pps(ic, s)%enu(l) = res%cls(ic)%pp(l, s)%enu; pps(ic, s)%c(l) = res%cls(ic)%pp(l, s)%c

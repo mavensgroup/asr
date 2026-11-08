@@ -24,7 +24,7 @@ module asr_augcls
   implicit none
   private
   public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c, augcls_set_class_conc
+            augcls_rand_c, augcls_set_class_conc, augcls_hp_c
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -203,6 +203,29 @@ contains
     end do
     !$omp end parallel do
   end subroutine augcls_apply
+
+  !> y = h x = (c + D S D) x for complex x in normalised coordinates, one application of S per real part (route ed3; augcls_apply
+  !> always runs apply_h twice, also for o = 0).  The term e of apply is not included.
+  subroutine augcls_hp_c(self, x, y)
+    class(augcls_op), intent(in) :: self
+    complex(dp), intent(in) :: x(:)
+    complex(dp), intent(out) :: y(:)
+    integer :: i
+    if (.not. associated(self%wk)) error stop 'augcls_hp_c: work space not allocated'
+    !$omp parallel do
+    do i = 1, self%nn
+      self%wk(9 * (i - 1) + 1:9 * i, 7) = real(x(9 * (i - 1) + 1:9 * i), dp) / self%sq(i)
+      self%wk(9 * (i - 1) + 1:9 * i, 8) = aimag(x(9 * (i - 1) + 1:9 * i)) / self%sq(i)
+    end do
+    !$omp end parallel do
+    call apply_h(self, self%wk(:, 7), self%wk(:, 1), self%wk(:, 4), self%wk(:, 5), self%wk(:, 6))
+    call apply_h(self, self%wk(:, 8), self%wk(:, 2), self%wk(:, 4), self%wk(:, 5), self%wk(:, 6))
+    !$omp parallel do
+    do i = 1, self%nn
+      y(9 * (i - 1) + 1:9 * i) = self%sq(i) * cmplx(self%wk(9 * (i - 1) + 1:9 * i, 1), self%wk(9 * (i - 1) + 1:9 * i, 2), dp)
+    end do
+    !$omp end parallel do
+  end subroutine augcls_hp_c
 
   !> local weights wt(l, k, k', class) = sum_s par(l, spc(s)) mt(k, k', s, class)
   pure subroutine local_weights(self, par, wt)

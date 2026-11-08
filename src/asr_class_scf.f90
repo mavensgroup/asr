@@ -22,19 +22,26 @@
 !> 1/2 sum w dq F dq; diag(w) F is symmetric, so this is variational).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
 !> per task; every thread keeps its own copy of the class operator.
+!>
+!> route = 'ed3' (docs/DERIVATION_ed3.md, asr_ed3): the full generalised ASA problem instead of H^(2).  The chains give the central
+!> blocks xm0 = G_11, xm1 = (hG)_11, xm2 = (hGh)_11 and the moments are those of k-space (bands_moments): q0 = xm0 + 2 o xm1 + o^2 xm2,
+!> q1 = xm1 + o xm2, q2 = xm2, density q0 phi^2 + 2 q1 phi phidot + q2 phidot^2, channel charge q0 + p^gamma q2 = xm0 + 2 o xm1 + p xm2.
+!> E_band = sum_l (q1 + E_nu,l q0) as in asa_scf.  E_F comes from the channel charges.  gz(...) then holds G + 2 o hG + p hGh, whose
+!> -Im / pi is the DOS of the sphere charge, so dos_final and ef_scan need no other change.
 module asr_class_scf
   use asr_kinds, only: dp, pi
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree
   use asr_potpar, only: potpar_l_t, potpar_at_enu, clamp_enu
-  use asr_lmto_ham, only: potpar_t
+  use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start
   use asr_strconst, only: avg_ws_radius, standard_alpha
   use asr_augspace, only: graph_t, graph_distances
   use asr_augorb, only: orb_alloy_t
   use asr_augcls
   use asr_edc
+  use asr_ed3
   use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy
@@ -65,6 +72,8 @@ module asr_class_scf
     real(dp) :: ed_eta = 0.01_dp, fermi_kt = 0.001_dp, depth_tol = 1.0e-5_dp
     integer :: fermi_poles = 0
     character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
+    character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
+    real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
     character(len=256) :: ef_scan_dump = ''            !! diagnostic: file for the chain coefficients of every scan energy
@@ -84,6 +93,7 @@ module asr_class_scf
     real(dp), allocatable :: edos_e(:), edos(:, :, :, :)   !! DOS(e, l, component, spin) per atom
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e)
+    real(dp), allocatable :: qch(:, :, :)                  !! qch(component, spin, l): sphere charge per channel, one spin channel
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
@@ -127,14 +137,20 @@ contains
     character(len=:), allocatable :: smsg
     integer :: p2
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
-    logical :: vb, cubic, hlo, hhi, core_ok
+    logical :: vb, cubic, hlo, hhi, core_ok, ed3
+    real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
+    real(dp) :: phi2, asym_max, psd_max
+    integer :: npsd, nnode
 
+    ed3 = trim(inp%route) == 'ed3'
+    if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
+    phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
     ncls = inp%dec%ncls
     avw = avg_ws_radius(trim(inp%lattice)) * inp%alat
-    alpha = standard_alpha()
+    alpha = standard_alpha() * inp%alpha_scale
     r1 = nn_distance(trim(inp%lattice)) * inp%alat
     call screen_lattice(trim(inp%lattice), inp%alat, inp%sim_beta, res%screen, smsg)
     if (len(smsg) > 0) error stop smsg
@@ -249,7 +265,7 @@ contains
     nx = offx(ncomp + 1)
     allocate (xin(nx), xout(nx), xnext(nx))
     call anderson_init(mixer, nx, inp%mix_history)
-    allocate (mom(ncomp, 2, 0:2, 0:2), dosef(ncomp, 2, 0:2))
+    allocate (mom(ncomp, 2, 0:2, 0:2), dosef(ncomp, 2, 0:2), qch(ncomp, 2, 0:2), dsm(ncomp, 2, 0:2, 0:2))
     ed_depth_tol = inp%depth_tol; ed_tail = inp%ed_tail
     ef = maxval(enu(2, 1:nsp, :)) + 0.35_dp
     if (ef_in < huge(1.0_dp)) ef = ef_in                 ! E_F of the start potential's run
@@ -270,10 +286,13 @@ contains
       end do
       call all_params()
       if (vb .and. it == 1) then
-        call ed_moments(6.0_dp, mom, dosef)
+        call ed_moments(6.0_dp, mom, dosef, qch, dsm)
         do p = 1, ncomp
-          print '(a,i0,a,3f9.4)', '  sum rule (E_F=6 Ry), component ', p, ': M0(s,p,d)/(1,3,5) =', (mom(p, 1, 0, l) / real(2 * l + 1, dp), l=0, 2)
+          print '(a,i0,a,3f9.4)', '  sum rule (E_F=6 Ry), component ', p, ': M0(s,p,d)/(1,3,5) =', (qch(p, 1, l) / real(2 * l + 1, dp), l=0, 2)
+          if (ed3) print '(a,i0,a,3f10.5)', '  ed3 component ', p, ': p^gamma(s,p,d) of this potential =', pps(p, 1)%p
         end do
+        if (ed3) print '(a,f9.4,a)', '  ed3 sum rule: weighted channel charge per orbital =', &
+          sum([(w(p) * sum(qch(p, 1, :)) / 9.0_dp, p=1, ncomp)]), ' (1 only if all pencil eigenvalues lie below 6 Ry; single channels differ from 1)'
       end if
       if (inp%ef_scan > 0) then
         call ef_scan_run()
@@ -287,18 +306,18 @@ contains
       nfe = 16
       hlo = .false.; hhi = .false.; side = 0
       do jf = 1, nfe
-        call ed_moments(ef, mom, dosef)
-        nn = fs * sum([(w(p) * sum(mom(p, 1:nsp, 0, :)), p=1, ncomp)])
+        call ed_moments(ef, mom, dosef, qch, dsm)
+        nn = fs * sum([(w(p) * sum(qch(p, 1:nsp, :)), p=1, ncomp)])
         dvc = fs * sum([(w(p) * sum(dosef(p, 1:nsp, :)), p=1, ncomp)])
         if (vb .and. it == 1) print '(a,i2,a,f10.6,a,f9.5,a,f9.4)', '    E_F search ', jf, ': E_F=', ef, '  N-nelec=', nn - nelec, '  DOS(E_F)=', dvc
         if (nn < nelec) then
           if (side == -1 .and. hhi) fhi = 0.5_dp * fhi
           elo = ef; flo = nn - nelec; hlo = .true.; side = -1
-          rlo = nn - nelec; molo = mom; dslo = dosef
+          rlo = nn - nelec; molo = mom; dslo = dosef; qclo = qch; dmlo = dsm
         else
           if (side == 1 .and. hlo) flo = 0.5_dp * flo
           ehi = ef; fhi = nn - nelec; hhi = .true.; side = 1
-          rhi = nn - nelec; mohi = mom; dshi = dosef
+          rhi = nn - nelec; mohi = mom; dshi = dosef; qchi = qch; dmhi = dsm
         end if
         npass = jf
         if (abs(nn - nelec) < max(2.0e-4_dp, 1.0e-3_dp * dvc) .or. jf == nfe) exit
@@ -322,11 +341,17 @@ contains
         efshift = elo + e * (ehi - elo) - ef; efmode = 1
         ef = elo + e * (ehi - elo)
         mom = molo + e * (mohi - molo); dosef = dslo + e * (dshi - dslo)
+        qch = qclo + e * (qchi - qclo); dsm = dmlo + e * (dmhi - dmlo)
       else if (abs(nn - nelec) > 0.0_dp) then
         e = max(-0.15_dp, min(0.15_dp, (nelec - nn) / max(dvc, 0.1_dp)))
-        do p = 1, ncomp; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
-          mom(p, sg, k, l) = mom(p, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, p))**k * dosef(p, sg, l)
-        end do; end do; end do; end do
+        if (ed3) then                                  ! the q_k are matrix elements, not energy moments: each has its own DOS
+          mom = mom + e * dsm; qch = qch + e * dosef
+        else
+          do p = 1, ncomp; do sg = 1, nsp; do l = 0, 2; do k = 0, 2
+            mom(p, sg, k, l) = mom(p, sg, k, l) + e * (ef + 0.5_dp * e - enu(l, sg, p))**k * dosef(p, sg, l)
+          end do; end do; end do; end do
+          qch = mom(:, :, 0, :)
+        end if
         ef = ef + e; efshift = e; efmode = 2
       end if
       ! densities, core, charges; esum = band + core eigenvalue sums - int n v~_in (kinetic energy + int n 2Z/r)
@@ -342,7 +367,7 @@ contains
                 mom(p, sg, 0, l) * (y(1, 0, 1:n, l, p, sg)**2 + y(2, 0, 1:n, l, p, sg)**2 / c**2) &
               + 2.0_dp * mom(p, sg, 1, l) * (y(1, 0, 1:n, l, p, sg) * y(1, 1, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 1, 1:n, l, p, sg) / c**2) &
               + mom(p, sg, 2, l) * (y(1, 1, 1:n, l, p, sg)**2 + y(2, 1, 1:n, l, p, sg)**2 / c**2 &
-                                    + y(1, 0, 1:n, l, p, sg) * y(1, 2, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 2, 1:n, l, p, sg) / c**2))
+                                    + phi2 * (y(1, 0, 1:n, l, p, sg) * y(1, 2, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 2, 1:n, l, p, sg) / c**2)))
           end do
           do is = 1, size(inp%spec(psp(p))%core)
             nod = inp%spec(psp(p))%core(is)%n - inp%spec(psp(p))%core(is)%l - 1
@@ -448,6 +473,14 @@ contains
         print '(a,f18.8,a)', '      E_total =', etot, ' Ry/site'
         if (ed_nchain > 0) print '(a,f6.1,a,i0,a)', '      mean recursion depth used ', real(ed_nlev, dp) / real(ed_nchain, dp), ' of ', nlev, ' levels'
         if (ed_nfall > 0) print '(a,i0,a,i0,a)', '      bp tail fixed point failed (hull used) in ', ed_nfall, ' of ', ed_nchain, ' chains'
+        if (ed3) then
+          do p = 1, ncomp
+            print '(a,i0,a,*(3f10.5,2x))', '      channel charge q0 + p q2, component ', p, ' (s p d per spin):', (qch(p, sg, :), sg=1, nsp)
+            print '(a,i0,a,*(3f10.5,2x))', '      q0 q1 q2 of the d channel, component ', p, ':', (mom(p, sg, :, 2), sg=1, nsp)
+          end do
+          print '(a,es9.2,a,i0,a,i0,a,es9.2)', '      ed3: max |dq1| / sqrt(|q0| |q2|) ', asym_max, ';  block -Im G not positive at ', npsd, ' of ', nnode, &
+            ' node chains, max b^2/(a c) ', psd_max
+        end if
         print '(a,i0,a,i0)', '      Anderson history ', mixer%nh, '  restarts so far ', mixer%nrestart
         print '(a,i0,a,a,a,es9.2,a,es10.3,a,i0,a,i0,a,f8.4,a,es10.3)', '      E_F passes ', npass, ' final ', &
           trim(merge('bracket', 'dos    ', efmode == 1)), ' shift ', efshift, '  |r|_2=', r2n, '  max dV: comp ', pdv, ' spin ', sgdv, &
@@ -471,6 +504,7 @@ contains
     res%comp_cls = pcl; res%comp_spec = psp; res%comp_w = w; res%comp_x = xp
     res%comp = cr
     res%moment_site = sum(w * cr(:)%moment)
+    res%qch = qch
 
   contains
 
@@ -490,25 +524,76 @@ contains
       end do
     end subroutine all_params
 
-    !> occupied moments mo(component, spin, k, l) on the contour to efv and the DOS at E_F (node nq + 1)
-    subroutine ed_moments(efv, mo, dosv)
+    !> occupied moments mo(component, spin, k, l) on the contour to efv, the DOS at E_F (node nq + 1), the channel charges qc
+    !> (edc: M0; ed3: q0 + p^gamma q2, dosv is their DOS) and with ed3 the DOS dm(component, spin, k, l) of each q_k
+    subroutine ed_moments(efv, mo, dosv, qc, dm)
       real(dp), intent(in) :: efv
-      real(dp), intent(out) :: mo(:, :, 0:, 0:), dosv(:, :, 0:)
-      complex(dp), allocatable :: zq(:), wq(:), gz(:, :, :, :)
+      real(dp), intent(out) :: mo(:, :, 0:, 0:), dosv(:, :, 0:), qc(:, :, 0:), dm(:, :, 0:, 0:)
+      complex(dp), allocatable :: zq(:), wq(:), gz(:, :, :, :), gb(:, :, :, :, :)
+      real(dp) :: xm(0:2), xd(0:2), oa(0:2), a_, b_, c_, t_
+      complex(dp) :: q0z
+      type(potpar_t) :: qa
       integer :: j, o, gg, kk, ll, nq, pp_
       call contour(efv, zq, wq, nq)
       allocate (gz(nq + 1, 4, ncomp, nsp))
-      call chain_greens(zq, gz)
-      mo = 0.0_dp; dosv = 0.0_dp
+      mo = 0.0_dp; dosv = 0.0_dp; dm = 0.0_dp
+      if (.not. ed3) then
+        call chain_greens(zq, gz)
+        do gg = 1, nsp
+          do pp_ = 1, ncomp
+            do o = 1, 4
+              ll = lorb(o)
+              dosv(pp_, gg, ll) = dosv(pp_, gg, ll) - worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
+              do j = 1, nq
+                do kk = 0, 2
+                  mo(pp_, gg, kk, ll) = mo(pp_, gg, kk, ll) - worb(o) * aimag(wq(j) * (zq(j) - enu(ll, gg, pp_))**kk * gz(j, o, pp_, gg)) / pi
+                end do
+              end do
+            end do
+          end do
+        end do
+        qc = mo(:, :, 0, :)
+        return
+      end if
+      allocate (gb(nq + 1, 4, ncomp, nsp, 0:3))
+      call chain_greens(zq, gz, gb)
+      asym_max = 0.0_dp; psd_max = 0.0_dp; npsd = 0; nnode = 0
+      qc = 0.0_dp
       do gg = 1, nsp
         do pp_ = 1, ncomp
+          qa = to_alpha(pps(pp_, gg), alpha); oa = o_alpha(qa, alpha)
           do o = 1, 4
             ll = lorb(o)
-            dosv(pp_, gg, ll) = dosv(pp_, gg, ll) - worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
-            do j = 1, nq
-              do kk = 0, 2
-                mo(pp_, gg, kk, ll) = mo(pp_, gg, kk, ll) - worb(o) * aimag(wq(j) * (zq(j) - enu(ll, gg, pp_))**kk * gz(j, o, pp_, gg)) / pi
+            xm = 0.0_dp
+            do kk = 0, 2
+              do j = 1, nq
+                xm(kk) = xm(kk) - worb(o) * aimag(wq(j) * gb(j, o, pp_, gg, kk)) / pi
               end do
+              xd(kk) = -worb(o) * aimag(gb(nq + 1, o, pp_, gg, kk)) / pi
+            end do
+            mo(pp_, gg, 0, ll) = mo(pp_, gg, 0, ll) + xm(0) + 2.0_dp * oa(ll) * xm(1) + oa(ll)**2 * xm(2)
+            mo(pp_, gg, 1, ll) = mo(pp_, gg, 1, ll) + xm(1) + oa(ll) * xm(2)
+            mo(pp_, gg, 2, ll) = mo(pp_, gg, 2, ll) + xm(2)
+            dm(pp_, gg, 0, ll) = dm(pp_, gg, 0, ll) + xd(0) + 2.0_dp * oa(ll) * xd(1) + oa(ll)**2 * xd(2)
+            dm(pp_, gg, 1, ll) = dm(pp_, gg, 1, ll) + xd(1) + oa(ll) * xd(2)
+            dm(pp_, gg, 2, ll) = dm(pp_, gg, 2, ll) + xd(2)
+            qc(pp_, gg, ll) = qc(pp_, gg, ll) + xm(0) + 2.0_dp * oa(ll) * xm(1) + qa%p(ll) * xm(2)
+            dosv(pp_, gg, ll) = dosv(pp_, gg, ll) + xd(0) + 2.0_dp * oa(ll) * xd(1) + qa%p(ll) * xd(2)
+            ! physics bound at every node: -Im of the block matrix (q0, q1; q1, q2) is positive semidefinite in the upper half plane
+            do j = 1, nq + 1
+              if (aimag(zq(j)) <= 0.0_dp) cycle
+              q0z = gb(j, o, pp_, gg, 0) + 2.0_dp * oa(ll) * gb(j, o, pp_, gg, 1) + oa(ll)**2 * gb(j, o, pp_, gg, 2)
+              a_ = -aimag(q0z); c_ = -aimag(gb(j, o, pp_, gg, 2))
+              b_ = -aimag(gb(j, o, pp_, gg, 1) + oa(ll) * gb(j, o, pp_, gg, 2))
+              t_ = abs(gb(j, o, pp_, gg, 3)) / max(sqrt(abs(q0z) * abs(gb(j, o, pp_, gg, 2))), tiny(1.0_dp))
+              asym_max = max(asym_max, t_)
+              nnode = nnode + 1
+              if (a_ <= 0.0_dp .or. c_ <= 0.0_dp) then
+                npsd = npsd + 1
+              else
+                psd_max = max(psd_max, b_**2 / (a_ * c_))
+                if (b_**2 > a_ * c_) npsd = npsd + 1
+              end if
             end do
           end do
         end do
@@ -593,37 +678,49 @@ contains
       close (u)
     end subroutine dump_chains
 
-    !> G(z) of every chain gz(energy, start orbital, component, spin) at the energies zs, the chains in parallel
-    subroutine chain_greens(zs, gz)
+    !> G(z) of every chain gz(energy, start orbital, component, spin) at the energies zs, the chains in parallel.  ed3: gz is
+    !> G + 2 o hG + p hGh, and gb(.., 0:3) gets the blocks of ed3_blocks.
+    subroutine chain_greens(zs, gz, gb)
       complex(dp), intent(in) :: zs(:)
       complex(dp), intent(out) :: gz(:, :, :, :)
+      complex(dp), intent(out), optional :: gb(:, :, :, :, 0:)
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
+      type(ed3_t), allocatable :: e3(:, :)
       integer :: gg, pp_
-      allocate (ms(ncomp, nsp), es(ncomp, nsp))
+      allocate (ms(ncomp, nsp), es(ncomp, nsp), e3(ncomp, nsp))
       do gg = 1, nsp
         do pp_ = 1, ncomp
-          call edc_setup(mdl, pps(:, gg), alpha, pp_, es(pp_, gg))
+          if (ed3) then
+            call ed3_setup(mdl, pps(:, gg), alpha, pp_, e3(pp_, gg))
+          else
+            call edc_setup(mdl, pps(:, gg), alpha, pp_, es(pp_, gg))
+          end if
           ms(pp_, gg) = mdl
         end do
       end do
       !$omp parallel
-      call chain_worker(zs, ms, es, gz)
+      call chain_worker(zs, ms, es, e3, gz, gb)
       !$omp end parallel
     end subroutine chain_greens
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
     !> operator per sublattice with its own work space, re-parametrised / re-frozen / re-started only when the chain needs it
-    subroutine chain_worker(zs, ms, es, gz)
+    subroutine chain_worker(zs, ms, es, e3, gz, gb)
       complex(dp), intent(in) :: zs(:)
       type(class_alloy_t), intent(in) :: ms(:, :)
       type(edn_t), intent(in) :: es(:, :)
+      type(ed3_t), intent(in) :: e3(:, :)
       complex(dp), intent(inout) :: gz(:, :, :, :)
+      complex(dp), intent(inout), optional :: gb(:, :, :, :, 0:)
       type(augcls_op), allocatable :: lop(:)
       type(edn_work_t), allocatable :: lwk(:)
+      type(ed3_work_t), allocatable :: lw3(:)
+      logical :: newstart(ncls)
+      complex(dp) :: bk(0:3)
       integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks
       nz = size(zs)
-      allocate (lop(ncls), lwk(ncls)); cur = -1
+      allocate (lop(ncls), lwk(ncls), lw3(ncls)); cur = -1; newstart = .true.
       !$omp do schedule(dynamic)
       do t = 1, nz * 4 * ncomp * nsp
         j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, 4) + 1
@@ -632,7 +729,12 @@ contains
         if (cur(1, kp) < 0) then
           lop(kp) = cop(kp)%op
           nullify (lop(kp)%wk); allocate (lop(kp)%wk(size(cop(kp)%op%wk, 1), size(cop(kp)%op%wk, 2)))
-          call edn_work_init(lwk(kp), lop(kp)%dim()); cur(:, kp) = 0
+          if (ed3) then
+            call ed3_work_init(lw3(kp), lop(kp)%dim())
+          else
+            call edn_work_init(lwk(kp), lop(kp)%dim())
+          end if
+          cur(:, kp) = 0
         end if
         if (cur(1, kp) /= pp_ .or. cur(2, kp) /= gg) then
           call augcls_set_params(lop(kp), ms(pp_, gg)); call augcls_freeze_site(lop(kp), 1, pp_)
@@ -641,10 +743,15 @@ contains
               call augcls_set_class_conc(lop(kp), ncls + ks, inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks))
             end do
           end if
-          cur(1, kp) = pp_; cur(2, kp) = gg
+          cur(1, kp) = pp_; cur(2, kp) = gg; newstart(kp) = .true.
         end if
-        if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; end if
-        if (allocated(dmp_a)) then
+        if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; newstart(kp) = .true.; end if
+        if (ed3) then
+          if (newstart(kp)) then; call ed3_start(lop(kp), lw3(kp), e3(pp_, gg), iorb(o)); newstart(kp) = .false.; end if
+          call ed3_blocks(lop(kp), lw3(kp), e3(pp_, gg), zs(j), iorb(o), nlev, bk)
+          gz(j, o, pp_, gg) = bk(0) + 2.0_dp * e3(pp_, gg)%o(iorb(o), pp_) * bk(1) + e3(pp_, gg)%p(iorb(o), pp_) * bk(2)
+          if (present(gb)) gb(j, o, pp_, gg, :) = bk
+        else if (allocated(dmp_a)) then
           call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg), &
                          acoef=dmp_a(:, j, o, pp_, gg), bcoef=dmp_b(:, j, o, pp_, gg), mused=dmp_m(j, o, pp_, gg))
         else

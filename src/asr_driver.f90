@@ -25,9 +25,13 @@
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull (default) | bp | avg2; bp can put a pole of the
 !>                  terminated fraction next to the contour on complex chains, see docs/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
-!>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop)
+!>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop),
+!>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, docs/DERIVATION_ed3.md),
+!>                  alpha_scale (diagnostic: screening constants times this factor; default 1)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
-!>                  structure; default 1 = equal spheres), second_order (diagnostic, default false: the orthogonal second-order
+!>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
+!>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
+!>                  second_order (diagnostic, default false: the orthogonal second-order
 !>                  H^(2) = E_nu + h - h o h of the recursion route, no h p h overlap, density M0 phi^2 + 2 M1 phi phidot +
 !>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
@@ -299,7 +303,7 @@ contains
     call check_keys(child, ['levels          ', 'recursion_steps ', 'rank            ', 'supercell       ', 'flip_radius     ', &
                             'contour_points  ', 'cluster_radius  ', 'inversion_radius', 'ed_terminator   ', 'fermi_kt        ', &
                             'fermi_poles     ', 'depth_tol       ', 'ef_scan         ', 'ef_scan_step    ', 'ef_scan_center  ', &
-                            'ef_scan_dump    '], &
+                            'ef_scan_dump    ', 'route           ', 'alpha_scale     '], &
                    '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ci%nlevels, 4)
@@ -318,10 +322,14 @@ contains
     call get_value(child, 'ef_scan_step', inp%ci%ef_scan_step, inp%ci%ef_scan_step)
     call get_value(child, 'ef_scan_center', inp%ci%ef_scan_center, inp%ci%ef_scan_center)
     call get_value(child, 'ef_scan_dump', xcs, ''); inp%ci%ef_scan_dump = xcs
+    call get_value(child, 'route', xcs, 'edc'); inp%ci%route = xcs
+    if (xcs /= 'edc' .and. xcs /= 'ed3') then; msg = "[asr] route must be 'edc' or 'ed3'"; return; end if
+    call get_value(child, 'alpha_scale', inp%ci%alpha_scale, 1.0_dp)
+    if (inp%ci%alpha_scale <= 0.0_dp) then; msg = '[asr] alpha_scale must be positive'; return; end if
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
-                            'sphere_ratio', 'second_order'], '[kspace]', msg)
+                            'sphere_ratio', 'second_order', 'alpha_scale ', 'std_alpha   '], '[kspace]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'nk', inp%li%nk, 12)
     call get_value(child, 'bz', str, 'tetra'); inp%li%bz = str
@@ -330,6 +338,9 @@ contains
     call get_value(child, 'trace', inp%li%trace, .false.)
     call get_value(child, 'dos_nk', inp%li%dos_nk, 24)
     call get_value(child, 'second_order', inp%li%second_order, .false.)
+    call get_value(child, 'alpha_scale', inp%li%alpha_scale, 1.0_dp)
+    call get_value(child, 'std_alpha', inp%li%std_alpha, .false.)
+    if (inp%li%alpha_scale <= 0.0_dp) then; msg = '[kspace] alpha_scale must be positive'; return; end if
     call get_value(child, 'sphere_ratio', ratio, 1.0_dp)
 
     call section(table, 'dos', child)
@@ -616,7 +627,12 @@ contains
     call rep_open(ru, inp%workdir//inp%out_file, 'Sublattice alloy, augmented-space recursion + TB-LMTO-ASA: '//inp%name, inp%infile, nthr)
     call rep_echo_input(ru, inp%infile)
     call rep_section(ru, 'method')
-    call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, energy-dependent ASR (asr_ed form), one potential per (sublattice, species) component')
+    if (trim(inp%ci%route) == 'ed3') then
+      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, full generalised ASA problem (route ed3, two chains per energy), one potential per (sublattice, species) component')
+    else
+      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, energy-dependent ASR (asr_ed form), one potential per (sublattice, species) component')
+    end if
+    if (inp%ci%alpha_scale /= 1.0_dp) write (ru, '(a,f7.4)') '  screening constants scaled by ', inp%ci%alpha_scale
     write (ru, '(a,i0,a,i0,a,i0,a,i0)') '  levels=', inp%ci%nlevels, '  recursion steps=', merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0), &
       '  max rank=', inp%ci%maxrank, '  supercell=', inp%ci%lsuper
     write (ru, '(a,*(i0,1x))') '  augmented-space nodes per sublattice: ', res%nodes
@@ -665,6 +681,12 @@ contains
       call rep_classes(ru, labels, zc, nvc, swsc, natc, rc, res%nspin, res%ef, mcell, ' (per component atom; cell = decoration cell)', &
                        natw=res%comp_w * inp%ci%dec%nsite)
     end block
+    if (trim(inp%ci%route) == 'ed3') then
+      write (ru, '(a)') ' route ed3: sphere charge per channel, s p d, per spin channel (q0 + p q2; the table above lists q0 alone)'
+      do p = 1, ncomp
+        write (ru, '(3x,a12,*(3f10.5,2x))') labels(p), (2.0_dp / res%nspin * res%qch(p, sg, :), sg=1, res%nspin)
+      end do
+    end if
     write (ru, '(a)') ' components are (species@sublattice); qnet/moments per atom of that component; cell moment per decoration cell'
     call rep_dos_at_ef(ru, labels, res%edos_e, res%edos, res%ef, inp%eta, res%nspin, 'per-component LDOS from the recursion (eta broadening)')
     call rep_section(ru, 'timing')

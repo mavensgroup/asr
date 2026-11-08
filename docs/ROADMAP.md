@@ -1,6 +1,6 @@
 # ASR roadmap
 
-Updated 2026-10-30.  Status per item: 🟢 done · 🟠 in progress · 🔴 not started · ⛔ blocker (holds up later items).
+Updated 2026-11-08.  Status per item: 🟢 done · 🟠 in progress · 🔴 not started · ⛔ blocker (holds up later items).
 Evidence for every 🟢 is in `docs/STATUS.md` and `docs/FINDINGS_LOG.md`.  Publication details: `docs/PUBLICATION_PLAN.md`.
 
 ## Goal
@@ -46,14 +46,18 @@ and partially ordered alloys, short-range order, local environments.  First outp
 |---|---|
 | N-species SQS tool (`tools/sqs.py`) | 🟢 |
 | Fe66Ni14Cr20 levels 3 (NM and spin) and levels 4 (NM, `hull` tail) converged | 🟢 |
-| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin) vs 40-atom SQS: Fe, Cr, Mn within the bar; Co, Ni 9 to 27 % low (levels 3 resolution) | 🟢 |
+| CoCrFeNi, CoCrFeMnNi levels 3 (NM, spin), 24 steps, converged.  Against the per-species 40-atom SQS: CoCrFeNi Fe -3.6 %, Co -9.6 %, Ni -10 %, Cr +27 %; CoCrFeMnNi Fe -10 %, Co -28 %, Ni -13 %, Cr +7.5 %, Mn -2.3 %.  That reference is superseded (next row) | 🟢 |
+| CoCrFeNi reference with one potential per site (`site_classes = true`, same 40-atom cell, desktop `~/asr_ed3/trial/hea_sqs`).  H^(2): Co 0.967, Cr -0.490, Fe 1.793, Ni 0.282 muB.  Full ASA: Co 0.972, Cr -0.487, Fe 1.745, Ni 0.303 muB.  ASR `edc` levels 3, 24 steps, against the H^(2) cell: Co -4.2 %, Fe -2.8 %, Ni -3.7 %, Cr +22 %.  So Co, Fe and Ni meet the bar at levels 3.  The per-species cell was the wrong reference: its charges are about 1.4 times smaller than per-site charges (beta' about 0.46, as in Fe-Cr).  The ASR charges lie about 10 % below the per-site charges | 🟢 |
+| Hamiltonian effect on HEA moments: full ASA against H^(2) in the per-site cell changes them by less than 3 %, Ni by 7 %.  So `ed3` is not needed for random HEA moments | 🟢 |
 | `hull` as the default tail in the code, Nevanlinna-bound test, merge branch `l4stall` | 🟢 |
 | Alam and Mookerjee 2009 Fig. 2 comparison (Ni-Fe splitting, Cr spikes) at levels 4 | 🔴 |
-| HEA at levels 4 or 5 for the weak Co and Ni moments | ⛔ needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
-| more SQS cells for error bars | 🔴 |
+| CoCrFeNi levels 3 at 36 and 48 steps (`~/asr_ed3/trial/hea_steps`).  36 steps (converged): Co 1.034, Cr -0.685, Fe 1.935, Ni 0.266, so Co +7 %, Fe +8 %, Cr +40 %, Ni -6 % against the H^(2) cell.  48 steps keeps rising (Co 1.17 at iteration 14).  At fixed levels 3 the moments do not converge in steps.  A guess, not tested: long chains reach the edge of the levels-3 augmented space.  Keep 24 steps for HEAs at levels 3 until this is understood | 🟠 48 steps running |
+| HEA at levels 4 or 5: not needed for Co and Ni.  Still useful to check steps against levels jointly, and for the Alam Fig. 2 comparison | 🔴 low priority; needs phase 5 (2.7 h per iteration for CoCrFeNi l4) |
+| more SQS cells for error bars, one potential per site.  The site spread is 0.15 to 0.45 muB, so one 40-atom cell gives each species mean about 10 % sampling error.  The Cr +22 % cannot be judged before this | 🔴 next HEA item |
+| CoCrFeMnNi with one potential per site | 🔴 |
 | Cr d sum rule (A5): looks harmless in the HEAs (0.97 to 1.02) | 🟢 |
 
-### 5. Speed ⛔ (blocks HEA levels 4 and 5, SRO series, Fe-Cr series)
+### 5. Speed ⛔ (blocks the SRO series and the Fe-Cr series; HEA levels 4 and 5 are now low priority)
 | item | status |
 |---|---|
 | OpenMP over the independent chains (bit identical) | 🟢 |
@@ -81,6 +85,26 @@ centre of `asr_ed` makes the shell of component c uncorrelated with concentratio
 From `docs/PUBLICATION_PLAN.md`: SRO gates pass, HEA SCF robust (🟢 since the `hull` fix), cost table, gfortran + OpenBLAS build, one
 documented route, validation rerun with the tagged binary, short tests with reference outputs, known discrepancies documented.
 
+Readiness check of 2026-11-05: not ready for submission.  For random alloys the code is still a slow CPA.  For HEAs it is slower than one
+SQS cell.  SRO is the real difference, but its numbers are not final.  Rough estimate: 4 to 6 weeks of work with a frozen scope.
+| item | why it blocks | status |
+|---|---|---|
+| decide the production Hamiltonian (see the pending decision below) | H^(2) doubles the SRO hopping charge in bcc CuZn (-0.0103 vs -0.0050 e for full ASA) | ⛔ user decision |
+| `ed3` gates 2 to 4 and the production routine (`docs/DERIVATION_ed3.md`), with a time limit | it changes every validation number and costs about 3.5 times as much per iteration | 🟠 routine on branch `ed3`; gates 1 to 3 passed, gates 2 and 3 at changed settings; `rcl` 1.2 moves charges by about 0.01 e; gate 4 open |
+| state the first-shell model error in the paper | with neutrality imposed the model gives 1.03 to 1.13 times the hopping charge of the correlated cells.  The older 1.45 to 1.6 came from a value at fixed E_F (`docs/DERIVATION_ed3.md` section 10b) | 🔴 |
+| speed: short E_F arc, then O_h (phase 5) | CoCrFeNi takes 10 to 13 h at levels 3 against 40 to 65 min for one 40-atom SQS cell | ⛔ |
+| per-atom cells (`site_classes = true`) as the charge and energy reference | per-species SQS has beta' about 0.46 against 1 in the ASR, so it cannot be the charge or energy reference for Fe-Cr; test F5 still running | 🟠 |
+| same-model CPA comparison | no CPA run with the same LMTO-ASA model exists; FeRh vs SPR-KKR differs in functional and potential.  Questaal's source mentions CPA (untested) | 🔴 |
+| charge against the number of unlike neighbours, q(n), with the shell frozen with the centre | a result CPA cannot give; the random CuZn cells already give the reference g(n) | 🔴 |
+| validation rerun from one tagged binary | many numbers predate `hull`, the charge-excess model and the items above | 🔴 |
+| gfortran + OpenBLAS: explicit interface for `dgesv` in `asr_mixing.f90:95` and `asr_screening.f90:165` | fpm forces `-Werror=implicit-interface`.  With that flag dropped in a scratch copy, source, app and tests build, and 16 fast suites pass (174 checks).  `test_augcls` and `test_asr_ed3_cls` hit a 40 s limit, and no physics run was compared | 🟠 |
+| production settings: more steps for Cr in Fe | Cr moment -1.055 at 24 steps, -0.953 at 48, -0.955 in the full-ASA SQS; the charge stays flat | 🔴 |
+| update `../cpc/body.tex` | it says levels 4 does not converge, it says the M2 ordering cannot be confirmed, and its cost table mislabels the levels-4 Fe66Ni14Cr20 run.  17 `\todo` items and about 47 `% VERIFY` entries remain | 🔴 |
+
+Pending decision: should `ed3` replace the literal AMscf form as the production method?  This would reverse the fixed decision above.
+Recommendation: yes, if gates 2 to 4 pass.  A known factor of two in the main selling point is hard to defend.  The alternative is to
+ship H^(2) and state the limit.  That is faster, but it gives a weaker paper.
+
 ### 8. First PRB: bcc Fe-Cr, Fe-rich 🔴
 Needs phase 6 and an environment-frozen embedding (centre and first shell frozen inside the averaged medium) for moments vs the number of
 Cr neighbours.  Novelty check of the literature first.
@@ -90,9 +114,11 @@ Exchange J_ij (`docs/JIJ_PLAN.md`), Bloch spectral function A(k,E), optical cond
 magnetism, Wannier front end.
 
 ## Order of work (next items)
-1. Commit the SRO work that sits uncommitted in the main working tree, after review (`docs/HANDOFF_sro.md`).
-2. Alam and Mookerjee comparison with the converged levels-4 Fe66Ni14Cr20 DOS.
-3. Speed work (phase 5), measured before and after.
-4. SRO gates B3 and B4.3 to B4.5.
-5. HEA levels 4 or 5 and more SQS cells.
-6. v1.0 checklist, then the CPC preprint and the Fe-Cr paper.
+Recommended order from the readiness check of 2026-11-05 (phase 7).
+1. Take `ed3` through gates 2 to 4, with a time limit, and settle the pending decision.
+2. Speed work (phase 5), measured before and after: the short E_F arc and O_h.
+3. Same-model CPA comparison.
+4. Frozen shell around the centre, and q(n) against the random CuZn cells.
+5. Validation rerun from one tagged binary, with per-atom references for charges and energies.
+6. More HEA SQS cells with one potential per site; HEA levels 4 or 5 only for the steps question.
+7. Update the paper, then the CPC preprint and the Fe-Cr paper.
