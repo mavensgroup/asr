@@ -1536,6 +1536,23 @@ Result (2026-11-03, all runs done).  Output q_Cu after one iteration; hopping ch
 - The frozen-potential runs have no supercell partner.  Their bare response includes no intra-sphere relaxation, so they are not
   comparable with the SCF fit value k dn.
 
+### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
+The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA
+converged in 185 iterations, H^(2) (`second_order = true`) in 180.  Species means over 10 sites each, moments in muB, charges in e:
+| run | Co | Cr | Fe | Ni |
+|---|---|---|---|---|
+| per-site, H^(2) | 0.967 | -0.490 | 1.793 | 0.282 |
+| per-site, full ASA | 0.972 (q +0.089) | -0.487 (q -0.239) | 1.745 (q -0.005) | 0.303 (q +0.155) |
+| per-species, full ASA (old reference) | 1.025 (q +0.065) | -0.471 (q -0.175) | 1.809 (q +0.006) | 0.302 (q +0.105) |
+| ASR `edc` levels 3, 24 steps | 0.927 (q +0.083) | -0.599 (q -0.211) | 1.743 (q -0.008) | 0.272 (q +0.137) |
+| ASR `edc` levels 3, 36 steps | 1.034 | -0.685 | 1.935 | 0.266 |
+- Against the per-site H^(2) cell, 24 steps gives Co -4.2 %, Fe -2.8 %, Ni -3.7 %, Cr +22 %.
+- The site spread is 0.15 (Ni) to 0.45 (Fe) muB.  With 10 sites per species the sampling error of a mean is about 10 %.
+- Per-species charges are about 1.4 times smaller than per-site charges, as for Fe-Cr (beta' about 0.46).
+- Full ASA against H^(2): below 3 % except Ni (7 %).
+- 36 steps converged in 24 iterations from the 24-step potential.  48 steps rises further (Co 1.17 at iteration 14, not converged).
+  The current binary reproduces the old 24-step moments to 1e-4 in one iteration (`ctl_s24`).
+
 ### MP reweighting corrected: the model target lacked neutrality (2026-11-07; desktop `trial/gate3`, `tools/mp_reweight.py --dos-fraction`)
 The numbers in the next section are at fixed E_F.  Cu -0.00724 and Zn +0.00317 do not sum to zero at x = 1/2, so the model cell is not
 neutral.  The ASR fixes E_F by neutrality.  With the first-order E_F response and f = N_Cu / (N_Cu + N_Zn) = 0.514 the Cu hopping charge
