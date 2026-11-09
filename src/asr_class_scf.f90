@@ -76,7 +76,7 @@ module asr_class_scf
     character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
     character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
     real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
-    integer :: eblock = 8                               !! contour energies per chain block (asr_augblk); 0: one energy per chain, real kernels
+    integer :: eblock = 0                               !! contour energies per chain block (asr_augblk); 0 (default): one energy per chain, real kernels
     real(dp) :: ef_linear_max = 0.0_dp                  !! E_F steps up to this size (Ry) are first order, without a new contour; 0: off
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)

@@ -28,8 +28,9 @@
 !>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop),
 !>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, docs/DERIVATION_ed3.md),
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
-!>                  energy_block (contour energies per chain block, default 8, capped by memory; 0 = one energy per chain with the
-!>                  older real kernels, for checks), ef_linear_max (Ry; E_F steps up to this size are taken to first order without
+!>                  energy_block (contour energies per chain block, capped by memory; default 0 = one energy per chain with the
+!>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; default 0 until the 1e-4 block difference
+!>                  in B2 ed3 is explained), ef_linear_max (Ry; E_F steps up to this size are taken to first order without
 !>                  a new contour, exact at self-consistency; default 0 = off)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
@@ -330,7 +331,7 @@ contains
     if (xcs /= 'edc' .and. xcs /= 'ed3') then; msg = "[asr] route must be 'edc' or 'ed3'"; return; end if
     call get_value(child, 'alpha_scale', inp%ci%alpha_scale, 1.0_dp)
     if (inp%ci%alpha_scale <= 0.0_dp) then; msg = '[asr] alpha_scale must be positive'; return; end if
-    call get_value(child, 'energy_block', inp%ci%eblock, 8)
+    call get_value(child, 'energy_block', inp%ci%eblock, 0)
     if (inp%ci%eblock < 0) then; msg = '[asr] energy_block must be >= 0'; return; end if
     call get_value(child, 'ef_linear_max', inp%ci%ef_linear_max, 0.0_dp)
     if (inp%ci%ef_linear_max < 0.0_dp) then; msg = '[asr] ef_linear_max must be >= 0'; return; end if
