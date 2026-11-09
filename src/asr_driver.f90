@@ -54,6 +54,7 @@ module asr_driver
   use asr_screening, only: screen_t, screen_lattice
   use asr_class_scf
   use asr_report
+  use asr_mpi, only: par_root, par_size
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
@@ -546,7 +547,10 @@ contains
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
     if (inp%method == 'kspace') then
-      call run_lmto(inp%li, ok)
+      ! k space has no MPI split: rank 0 runs it, the other ranks wait at the end
+      ok = .true.
+      if (par_size() > 1) print '(a,i0,a)', '  kspace: no MPI split, rank 0 of ', par_size(), ' runs the calculation'
+      if (par_root()) call run_lmto(inp%li, ok)
     else
       call run_asr(inp, ok)
     end if
@@ -602,6 +606,10 @@ contains
     end do
     print '(a,i0,a,f9.5,a,es10.2)', '  per decoration cell (', inp%ci%dec%nsite, ' sites): moment=', mcell, '  net charge=', qcell
 
+    ! every rank holds the full result (asr_class_scf); rank 0 alone writes the files
+    if (.not. par_root()) then
+      ok = res%converged; return
+    end if
     dfile = inp%workdir//inp%dos_file
     open (newunit=u, file=dfile, status='replace', action='write')
     write (u, '(a)') '# '//inp%name//'   states/Ry per atom of each component, summed over spin; total = per site (weighted)'
@@ -632,6 +640,7 @@ contains
     nthr = 1
     !$ nthr = omp_get_max_threads()
     call rep_open(ru, inp%workdir//inp%out_file, 'Sublattice alloy, augmented-space recursion + TB-LMTO-ASA: '//inp%name, inp%infile, nthr)
+    if (par_size() > 1) write (ru, '(a,i0,a)') ' MPI ranks: ', par_size(), ' (the recursion chains of each energy pass are split over the ranks)'
     call rep_echo_input(ru, inp%infile)
     call rep_section(ru, 'method')
     if (trim(inp%ci%route) == 'ed3') then

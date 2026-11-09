@@ -50,6 +50,7 @@ module asr_class_scf
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_screening, only: screen_t, screen_lattice, screen_matrix
+  use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
   implicit none
   private
   public :: class_scf_input_t, class_scf_result_t, class_scf
@@ -665,6 +666,7 @@ contains
       real(dp), intent(in) :: ev
       complex(dp), intent(in) :: zq(:), wq(:)
       integer :: u, j, o, pp_, gg, k
+      if (.not. par_root()) return
       if (js == -inp%ef_scan) then
         open (newunit=u, file=trim(inp%ef_scan_dump), status='replace', action='write')
         write (u, '(a,es25.16,f6.1,3i6)') 'H ', nelec, fs, ncomp, nsp, nlev
@@ -688,7 +690,9 @@ contains
     end subroutine dump_chains
 
     !> G(z) of every chain gz(energy, start orbital, component, spin) at the energies zs, the chains in parallel.  ed3: gz is
-    !> G + 2 o hG + p hGh, and gb(.., 0:3) gets the blocks of ed3_blocks.
+    !> G + 2 o hG + p hGh, and gb(.., 0:3) gets the blocks of ed3_blocks.  With MPI each rank computes its share of the chain
+    !> tasks (chain_worker) and holds zeros elsewhere; one sum over the ranks then gives every rank the full arrays.  Each entry
+    !> has one non-zero term, so the sum is exact and the same on every rank in any reduction order.
     subroutine chain_greens(zs, gz, gb)
       complex(dp), intent(in) :: zs(:)
       complex(dp), intent(out) :: gz(:, :, :, :)
@@ -697,6 +701,7 @@ contains
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
       integer :: gg, pp_, nbe, kp
+      integer(8) :: cnt0(3), cnt(3)
       allocate (ms(ncomp, nsp), es(ncomp, nsp), e3(ncomp, nsp))
       do gg = 1, nsp
         do pp_ = 1, ncomp
@@ -717,9 +722,24 @@ contains
           nbe = min(nbe, blk_nbmax(inp%eblock, cop(kp)%op%dim(), 10, 400.0_dp))
         end do
       end if
+      if (par_size() > 1) then
+        gz = (0.0_dp, 0.0_dp)
+        if (present(gb)) gb = (0.0_dp, 0.0_dp)
+        cnt0 = [ed_nchain, ed_nlev, ed_nfall]
+      end if
       !$omp parallel
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
+      if (par_size() > 1) then
+        call par_sum_z(gz, size(gz))
+        if (present(gb)) call par_sum_z(gb, size(gb))
+        if (allocated(dmp_a)) then
+          call par_sum_z(dmp_a, size(dmp_a)); call par_sum_z(dmp_b, size(dmp_b)); call par_sum_i(dmp_m, size(dmp_m))
+        end if
+        cnt = [ed_nchain, ed_nlev, ed_nfall] - cnt0
+        call par_sum_i8(cnt, 3)
+        ed_nchain = cnt0(1) + cnt(1); ed_nlev = cnt0(2) + cnt(2); ed_nfall = cnt0(3) + cnt(3)
+      end if
     end subroutine chain_greens
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
@@ -739,13 +759,18 @@ contains
       logical :: newstart(ncls)
       complex(dp) :: bk(0:3)
       complex(dp), allocatable :: bkb(:, :)
-      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks, nbk, jb, j1, j2, iv
+      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks, nbk, jb, j1, j2, iv, ntg, rk, nr
       nz = size(zs)
       nbk = 1; if (nbe > 0) nbk = (nz + nbe - 1) / nbe        ! blocks per (start orbital, component, spin)
+      ntg = merge(nz, nbk, nbe == 0)                          ! tasks per (start orbital, component, spin)
+      rk = par_rank(); nr = par_size()
       allocate (lop(ncls), lwk(ncls), lw3(ncls), lbw(ncls)); cur = -1; newstart = .true.
       if (nbe > 0) allocate (bkb(0:3, nbe))
       !$omp do schedule(dynamic)
-      do t = 1, merge(nz, nbk, nbe == 0) * 4 * ncomp * nsp
+      do t = 1, ntg * 4 * ncomp * nsp
+        ! MPI: this rank's share, cyclic in t; the shift by the group index rotates the energies over the ranks, so that no
+        ! rank keeps the same energies (whose cost differs) in every group.  One rank: every task.
+        if (mod(t - 1 + (t - 1) / ntg, nr) /= rk) cycle
         if (nbe == 0) then
           j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, 4) + 1
           pp_ = mod((t - 1) / (4 * nz), ncomp) + 1; gg = (t - 1) / (4 * nz * ncomp) + 1
@@ -850,6 +875,7 @@ contains
     !> component potentials (with the nucleus) and E_nu: nspin, ncomp; per component z n r(n), E_nu(0:2) per spin, v(r_k, spin)
     subroutine write_potentials()
       integer :: u, pp_, gg, kk
+      if (.not. par_root()) return
       open (newunit=u, file=trim(inp%pot_out), status='replace', action='write')
       write (u, '(a,es25.16)') '# asr sublattice component potentials (Ry): nspin ncomp; per component: z n r(n); E_nu(0:2) per spin; &
                              &v(r_k, spin);  E_F= ', ef
