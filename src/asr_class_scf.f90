@@ -42,6 +42,7 @@ module asr_class_scf
   use asr_augcls
   use asr_edc
   use asr_ed3
+  use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
   use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy
@@ -74,6 +75,8 @@ module asr_class_scf
     character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
     character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
     real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
+    integer :: eblock = 8                               !! contour energies per chain block (asr_augblk); 0: one energy per chain, real kernels
+    real(dp) :: ef_linear_max = 0.0_dp                  !! E_F steps up to this size (Ry) are first order, without a new contour; 0: off
     integer :: ef_scan = 0                             !! diagnostic: N(E) on 2 ef_scan + 1 energies at the start potential, then stop
     real(dp) :: ef_scan_step = 2.0e-5_dp, ef_scan_center = huge(1.0_dp)   !! scan step (Ry), centre (default: start E_F)
     character(len=256) :: ef_scan_dump = ''            !! diagnostic: file for the chain coefficients of every scan energy
@@ -321,6 +324,12 @@ contains
         end if
         npass = jf
         if (abs(nn - nelec) < max(2.0e-4_dp, 1.0e-3_dp * dvc) .or. jf == nfe) exit
+        ! one contour per iteration (ef_linear_max > 0): a first-order step up to ef_linear_max replaces the next contour.  The
+        ! electron count stays exact (below); the moments carry an error O(step^2), which vanishes at self-consistency, where E_F
+        ! no longer moves between iterations.  So the fixed point is unchanged; only the path towards it differs.
+        if (jf == 1 .and. inp%ef_linear_max > 0.0_dp) then
+          if (abs(nelec - nn) / max(dvc, 0.1_dp) <= inp%ef_linear_max) exit
+        end if
         if (hlo .and. hhi) then
           e = (elo * fhi - ehi * flo) / (fhi - flo)
           if (.not. (e > min(elo, ehi) + 1.0e-3_dp * abs(ehi - elo) .and. e < max(elo, ehi) - 1.0e-3_dp * abs(ehi - elo))) e = 0.5_dp * (elo + ehi)
@@ -687,7 +696,7 @@ contains
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
-      integer :: gg, pp_
+      integer :: gg, pp_, nbe, kp
       allocate (ms(ncomp, nsp), es(ncomp, nsp), e3(ncomp, nsp))
       do gg = 1, nsp
         do pp_ = 1, ncomp
@@ -699,41 +708,63 @@ contains
           ms(pp_, gg) = mdl
         end do
       end do
+      ! block size: energies per chain block, the same on every thread, capped so that one thread's block work space (10 vectors
+      ! per member) stays below 400 MB on the largest class operator; the ef_scan dump keeps one energy per chain
+      nbe = 0
+      if (inp%eblock > 0 .and. .not. allocated(dmp_a)) then
+        nbe = min(inp%eblock, size(zs))
+        do kp = 1, ncls
+          nbe = min(nbe, blk_nbmax(inp%eblock, cop(kp)%op%dim(), 10, 400.0_dp))
+        end do
+      end if
       !$omp parallel
-      call chain_worker(zs, ms, es, e3, gz, gb)
+      call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
     end subroutine chain_greens
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
     !> operator per sublattice with its own work space, re-parametrised / re-frozen / re-started only when the chain needs it
-    subroutine chain_worker(zs, ms, es, e3, gz, gb)
+    subroutine chain_worker(zs, ms, es, e3, nbe, gz, gb)
       complex(dp), intent(in) :: zs(:)
       type(class_alloy_t), intent(in) :: ms(:, :)
       type(edn_t), intent(in) :: es(:, :)
       type(ed3_t), intent(in) :: e3(:, :)
+      integer, intent(in) :: nbe                     !! energies per block; 0: one energy per chain (real kernels)
       complex(dp), intent(inout) :: gz(:, :, :, :)
       complex(dp), intent(inout), optional :: gb(:, :, :, :, 0:)
       type(augcls_op), allocatable :: lop(:)
       type(edn_work_t), allocatable :: lwk(:)
       type(ed3_work_t), allocatable :: lw3(:)
+      type(blk_work_t), allocatable :: lbw(:)
       logical :: newstart(ncls)
       complex(dp) :: bk(0:3)
-      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks
+      complex(dp), allocatable :: bkb(:, :)
+      integer :: cur(3, ncls), t, nz, j, o, gg, pp_, kp, ks, nbk, jb, j1, j2, iv
       nz = size(zs)
-      allocate (lop(ncls), lwk(ncls), lw3(ncls)); cur = -1; newstart = .true.
+      nbk = 1; if (nbe > 0) nbk = (nz + nbe - 1) / nbe        ! blocks per (start orbital, component, spin)
+      allocate (lop(ncls), lwk(ncls), lw3(ncls), lbw(ncls)); cur = -1; newstart = .true.
+      if (nbe > 0) allocate (bkb(0:3, nbe))
       !$omp do schedule(dynamic)
-      do t = 1, nz * 4 * ncomp * nsp
-        j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, 4) + 1
-        pp_ = mod((t - 1) / (4 * nz), ncomp) + 1; gg = (t - 1) / (4 * nz * ncomp) + 1
+      do t = 1, merge(nz, nbk, nbe == 0) * 4 * ncomp * nsp
+        if (nbe == 0) then
+          j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, 4) + 1
+          pp_ = mod((t - 1) / (4 * nz), ncomp) + 1; gg = (t - 1) / (4 * nz * ncomp) + 1
+          j1 = j; j2 = j
+        else
+          jb = mod(t - 1, nbk) + 1; o = mod((t - 1) / nbk, 4) + 1
+          pp_ = mod((t - 1) / (4 * nbk), ncomp) + 1; gg = (t - 1) / (4 * nbk * ncomp) + 1
+          j1 = (jb - 1) * nbe + 1; j2 = min(nz, jb * nbe)
+        end if
         kp = pcl(pp_)
         if (cur(1, kp) < 0) then
           lop(kp) = cop(kp)%op
           nullify (lop(kp)%wk); allocate (lop(kp)%wk(size(cop(kp)%op%wk, 1), size(cop(kp)%op%wk, 2)))
           if (ed3) then
             call ed3_work_init(lw3(kp), lop(kp)%dim())
-          else
+          else if (nbe == 0) then
             call edn_work_init(lwk(kp), lop(kp)%dim())
           end if
+          if (nbe > 0) call blk_work_init(lbw(kp), nbe, lop(kp)%dim())
           cur(:, kp) = 0
         end if
         if (cur(1, kp) /= pp_ .or. cur(2, kp) /= gg) then
@@ -746,16 +777,28 @@ contains
           cur(1, kp) = pp_; cur(2, kp) = gg; newstart(kp) = .true.
         end if
         if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; newstart(kp) = .true.; end if
+        iv = iorb(o)
         if (ed3) then
-          if (newstart(kp)) then; call ed3_start(lop(kp), lw3(kp), e3(pp_, gg), iorb(o)); newstart(kp) = .false.; end if
-          call ed3_blocks(lop(kp), lw3(kp), e3(pp_, gg), zs(j), iorb(o), nlev, bk)
-          gz(j, o, pp_, gg) = bk(0) + 2.0_dp * e3(pp_, gg)%o(iorb(o), pp_) * bk(1) + e3(pp_, gg)%p(iorb(o), pp_) * bk(2)
-          if (present(gb)) gb(j, o, pp_, gg, :) = bk
+          if (newstart(kp)) then; call ed3_start(lop(kp), lw3(kp), e3(pp_, gg), iv); newstart(kp) = .false.; end if
+          if (nbe == 0) then
+            call ed3_blocks(lop(kp), lw3(kp), e3(pp_, gg), zs(j1), iv, nlev, bk)
+            gz(j1, o, pp_, gg) = bk(0) + 2.0_dp * e3(pp_, gg)%o(iv, pp_) * bk(1) + e3(pp_, gg)%p(iv, pp_) * bk(2)
+            if (present(gb)) gb(j1, o, pp_, gg, :) = bk
+          else
+            call ed3_blocks_blk(lop(kp), lw3(kp), lbw(kp), e3(pp_, gg), zs(j1:j2), iv, nlev, bkb(:, 1:j2 - j1 + 1))
+            gz(j1:j2, o, pp_, gg) = bkb(0, 1:j2 - j1 + 1) + 2.0_dp * e3(pp_, gg)%o(iv, pp_) * bkb(1, 1:j2 - j1 + 1) &
+                                    + e3(pp_, gg)%p(iv, pp_) * bkb(2, 1:j2 - j1 + 1)
+            if (present(gb)) then
+              do j = j1, j2; gb(j, o, pp_, gg, :) = bkb(:, j - j1 + 1); end do
+            end if
+          end if
         else if (allocated(dmp_a)) then
-          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg), &
-                         acoef=dmp_a(:, j, o, pp_, gg), bcoef=dmp_b(:, j, o, pp_, gg), mused=dmp_m(j, o, pp_, gg))
+          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j1), iv, nlev, gz(j1, o, pp_, gg), &
+                         acoef=dmp_a(:, j1, o, pp_, gg), bcoef=dmp_b(:, j1, o, pp_, gg), mused=dmp_m(j1, o, pp_, gg))
+        else if (nbe == 0) then
+          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j1), iv, nlev, gz(j1, o, pp_, gg))
         else
-          call edc_green(lop(kp), lwk(kp), es(pp_, gg), zs(j), iorb(o), nlev, gz(j, o, pp_, gg))
+          call edc_green_blk(lop(kp), lbw(kp), es(pp_, gg), zs(j1:j2), iv, nlev, gz(j1:j2, o, pp_, gg))
         end if
       end do
       !$omp end do

@@ -15,9 +15,10 @@ module asr_ed3
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species
+  use asr_augblk, only: blk_work_t, blk_kmul3
   implicit none
   private
-  public :: ed3_t, ed3_work_t, ed3_work_init, ed3_setup, ed3_start, ed3_blocks, ed3_kmul, ed3_coefs
+  public :: ed3_t, ed3_work_t, ed3_work_init, ed3_setup, ed3_start, ed3_blocks, ed3_kmul, ed3_coefs, ed3_blocks_blk
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
@@ -220,4 +221,125 @@ contains
     bk(0) = q0 - 2.0_dp * oc * fm + oc**2 * q2
     bk(3) = q1a - q1b
   end subroutine ed3_blocks
+
+  !> ed3_blocks for a block of energies zs(1:nb) in lock step (asr_augblk).  ws holds the start vectors of ed3_start, bw the block
+  !> work space (bw%nb >= nb); bk(0:3, j) as ed3_blocks at zs(j).
+  subroutine ed3_blocks_blk(op, ws, bw, ed, zs, iv, nlev, bk)
+    type(augcls_op), intent(in) :: op
+    type(ed3_work_t), intent(in) :: ws
+    type(blk_work_t), intent(inout) :: bw
+    type(ed3_t), intent(in) :: ed
+    complex(dp), intent(in) :: zs(:)
+    integer, intent(in) :: iv, nlev
+    complex(dp), intent(out) :: bk(0:, :)
+    real(dp) :: cf(9, ed%ns, 6), oc
+    complex(dp) :: gt(size(zs)), fm(size(zs)), q0(size(zs)), q1a(size(zs)), q1b(size(zs)), q2(size(zs))
+    integer :: l, s, nb
+    nb = size(zs)
+    if (bw%nb < nb) error stop 'ed3_blocks_blk: block work space too small'
+    oc = ed%o(iv, ed%central)
+    do s = 1, ed%ns                                   ! et = z ea + eb, u = z ua + ub, Qt = z qa + qb (ed3_coefs)
+      do l = 1, 9
+        cf(l, s, 1) = ed%dc(l) / ed%del(l, s); cf(l, s, 2) = -cf(l, s, 1) * ed%enu(l, s)
+        cf(l, s, 3) = ed%o(l, s);              cf(l, s, 4) = -ed%o(l, s) * ed%enu(l, s)
+        cf(l, s, 5) = -ed%del(l, s) / ed%dc(l) * ed%p(l, s)
+        cf(l, s, 6) = ed%del(l, s) / ed%dc(l) * (ed%o(l, s) + ed%p(l, s) * ed%enu(l, s))
+      end do
+    end do
+    call chain_blk(op, bw, cf, zs, nlev, ws%av / ws%na, ws%vv, ws%nv, gt, fm)
+    q0 = ws%na**2 * gt; q1a = ws%na * fm
+    call chain_blk(op, bw, cf, zs, nlev, ws%vv / ws%nv, ws%av, ws%na, gt, fm)
+    q2 = ws%nv**2 * gt; q1b = ws%nv * fm
+    fm = 0.5_dp * (q1a + q1b)
+    bk(2, 1:nb) = q2
+    bk(1, 1:nb) = fm - oc * q2
+    bk(0, 1:nb) = q0 - 2.0_dp * oc * fm + oc**2 * q2
+    bk(3, 1:nb) = q1a - q1b
+  end subroutine ed3_blocks_blk
+
+  !> chain for a block of energies: every member starts from s0 (s0^T s0 = 1); g_j = <s0|(z_j - H_eff)^-1|s0>,
+  !> f_j = <tv|(z_j - H_eff)^-1|s0>, depth test and closure as in chain
+  subroutine chain_blk(op, bw, cf, zs, nlev, s0, tv, tnorm, g, f)
+    type(augcls_op), intent(in) :: op
+    type(blk_work_t), intent(inout) :: bw
+    real(dp), intent(in) :: cf(:, :, :), tnorm
+    complex(dp), intent(in) :: zs(:), s0(:), tv(:)
+    integer, intent(in) :: nlev
+    complex(dp), intent(out) :: g(:), f(:)
+    complex(dp) :: a(nlev, bw%nb), b(nlev, bw%nb), c(nlev, bw%nb), gtry, ftry, gprev(bw%nb), fprev(bw%nb), acc(bw%nb), zp(bw%nb)
+    real(dp) :: keep(bw%nb)
+    integer :: k, nb, j, i, m(bw%nb)
+    logical :: act(bw%nb), closed(bw%nb)
+    nb = size(zs)
+    zp(1:nb) = zs; zp(nb + 1:) = zs(nb)                       ! idle members pad a short block (zero rows throughout)
+    a = (0.0_dp, 0.0_dp); b = (0.0_dp, 0.0_dp); c = (0.0_dp, 0.0_dp)
+    gprev = (0.0_dp, 0.0_dp); fprev = (0.0_dp, 0.0_dp)
+    m = nlev; closed = .false.; act = .false.; act(1:nb) = .true.
+    associate (u => bw%u, up => bw%up, w => bw%w)
+      do i = 1, size(u, 2); u(1:nb, i) = s0(i); u(nb + 1:, i) = (0.0_dp, 0.0_dp); end do
+      up = (0.0_dp, 0.0_dp)
+      do k = 1, nlev
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(u, 2); acc = acc + tv(i) * u(:, i); end do
+        do j = 1, nb
+          if (act(j)) c(k, j) = acc(j)
+        end do
+        call blk_kmul3(op, bw, cf(:, :, 1), cf(:, :, 2), cf(:, :, 3), cf(:, :, 4), cf(:, :, 5), cf(:, :, 6), zp, u, w)
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(u, 2)
+          w(:, i) = zp * u(:, i) - w(:, i)
+          acc = acc + u(:, i) * w(:, i)
+        end do
+        do j = 1, nb
+          if (act(j)) then; a(k, j) = acc(j); m(j) = k; end if
+        end do
+        if (k == nlev) exit
+        if (ed_depth_tol > 0.0_dp .and. k >= 8 .and. mod(k, 4) == 0) then
+          do j = 1, nb
+            if (.not. act(j)) cycle
+            call cf_species(a(:, j), b(:, j), c(:, j), k, zs(j), gtry, ftry)
+            if (k > 8) then
+              if (abs(gtry - gprev(j)) <= ed_depth_tol * abs(gtry) .and. &
+                  abs(ftry - fprev(j)) <= ed_depth_tol * max(abs(ftry), tnorm * abs(gtry))) act(j) = .false.
+            end if
+            gprev(j) = gtry; fprev(j) = ftry
+          end do
+        end if
+        do i = 1, size(u, 2)
+          w(:, i) = w(:, i) - a(k, :) * u(:, i)
+          if (k > 1) w(:, i) = w(:, i) - b(k - 1, :) * up(:, i)
+        end do
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(w, 2); acc = acc + w(:, i) * w(:, i); end do
+        do j = 1, bw%nb
+          if (.not. act(j)) cycle
+          b(k, j) = sqrt(acc(j))
+          if (abs(b(k, j)) < 1.0e-12_dp) then; act(j) = .false.; closed(j) = .true.; end if
+        end do
+        if (.not. any(act)) exit
+        do j = 1, bw%nb
+          if (act(j)) then
+            acc(j) = 1.0_dp / b(k, j); keep(j) = 1.0_dp
+          else
+            acc(j) = (0.0_dp, 0.0_dp); keep(j) = 0.0_dp
+          end if
+        end do
+        do i = 1, size(u, 2)
+          up(:, i) = keep * u(:, i)
+          u(:, i) = acc * w(:, i)
+        end do
+      end do
+    end associate
+    do j = 1, nb
+      if (closed(j)) then
+        call cf_closed(a(:, j), b(:, j), c(:, j), m(j), zs(j), g(j), f(j))
+      else
+        call cf_species(a(:, j), b(:, j), c(:, j), m(j), zs(j), g(j), f(j))
+      end if
+    end do
+    !$omp atomic
+    ed_nchain = ed_nchain + nb
+    !$omp atomic
+    ed_nlev = ed_nlev + sum(m(1:nb))
+  end subroutine chain_blk
 end module asr_ed3

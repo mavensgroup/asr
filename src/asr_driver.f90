@@ -27,7 +27,10 @@
 !>                  terminated fraction next to the contour on complex chains, see docs/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
 !>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop),
 !>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, docs/DERIVATION_ed3.md),
-!>                  alpha_scale (diagnostic: screening constants times this factor; default 1)
+!>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
+!>                  energy_block (contour energies per chain block, default 8, capped by memory; 0 = one energy per chain with the
+!>                  older real kernels, for checks), ef_linear_max (Ry; E_F steps up to this size are taken to first order without
+!>                  a new contour, exact at self-consistency; default 0 = off)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
@@ -303,7 +306,7 @@ contains
     call check_keys(child, ['levels          ', 'recursion_steps ', 'rank            ', 'supercell       ', 'flip_radius     ', &
                             'contour_points  ', 'cluster_radius  ', 'inversion_radius', 'ed_terminator   ', 'fermi_kt        ', &
                             'fermi_poles     ', 'depth_tol       ', 'ef_scan         ', 'ef_scan_step    ', 'ef_scan_center  ', &
-                            'ef_scan_dump    ', 'route           ', 'alpha_scale     '], &
+                            'ef_scan_dump    ', 'route           ', 'alpha_scale     ', 'energy_block    ', 'ef_linear_max   '], &
                    '[asr]', msg)
     if (len(msg) > 0) return
     call get_value(child, 'levels', inp%ci%nlevels, 4)
@@ -326,6 +329,10 @@ contains
     if (xcs /= 'edc' .and. xcs /= 'ed3') then; msg = "[asr] route must be 'edc' or 'ed3'"; return; end if
     call get_value(child, 'alpha_scale', inp%ci%alpha_scale, 1.0_dp)
     if (inp%ci%alpha_scale <= 0.0_dp) then; msg = '[asr] alpha_scale must be positive'; return; end if
+    call get_value(child, 'energy_block', inp%ci%eblock, 8)
+    if (inp%ci%eblock < 0) then; msg = '[asr] energy_block must be >= 0'; return; end if
+    call get_value(child, 'ef_linear_max', inp%ci%ef_linear_max, 0.0_dp)
+    if (inp%ci%ef_linear_max < 0.0_dp) then; msg = '[asr] ef_linear_max must be >= 0'; return; end if
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
