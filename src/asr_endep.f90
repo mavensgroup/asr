@@ -8,6 +8,7 @@
 !> Because n_R is a projector, n_R mu_R^2 = mu_A^2 n_R, so the species-resolved functions need only the average g_RR and the
 !> transition element <n_R g_RR> from the complex-symmetric Lanczos chain of A(z) started on |R,{},L>.
 module asr_endep
+  use asr_lapack, only: zgeev
   use asr_kinds, only: dp
   use asr_augsym, only: augsym_op, augsym_ops
   use asr_lmto_realization, only: lmto_real_op, lmto_s_apply
@@ -215,7 +216,6 @@ contains
     real(dp) :: rw(2 * m)
     integer :: j, k, info, ilo, ihi
     character(len=8) :: tl
-    external :: zgeev
     tl = ed_tail; if (present(tail_in)) tl = tail_in
     if (m >= 2 .and. trim(tl) /= 'none') then
       tm = (0.0_dp, 0.0_dp)

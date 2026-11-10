@@ -3,6 +3,7 @@
 !> Stuttgart E_F, l-resolved site occupations vs the converged Stuttgart moments, and
 !> convergence with cluster radius.
 program test_lmto_cell
+  use asr_lapack, only: zheev
   use asr_kinds, only: dp, pi
   use asr_strconst
   use asr_lmto_ham, only: potpar_t, ham_k
@@ -113,7 +114,6 @@ contains
     real(dp) :: ev(size(a, 1)), rw(3 * size(a, 1))
     complex(dp) :: m(size(a, 1), size(a, 1)), cw(4 * size(a, 1))
     integer :: info
-    external :: zheev
     m = a
     call zheev('N', 'U', size(a, 1), m, size(a, 1), ev, cw, size(cw), rw, info)
   end function sorted_eig

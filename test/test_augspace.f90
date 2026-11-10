@@ -3,6 +3,7 @@
 !> the exact configuration average  <<G_00(z)>> = sum_C p(C) G_00[C](z)  to machine precision.
 !> Diagonal AND off-diagonal disorder, asymmetric concentration.
 program test_augspace
+  use asr_lapack, only: dsyev
   use asr_kinds, only: dp
   use asr_operator, only: csr_op
   use asr_augspace
@@ -19,7 +20,6 @@ program test_augspace
   complex(dp) :: z, gex, grec
   integer :: i, j, k, kz, c, info, m, ix, iy, iz, jx, jy, jz, nst
   logical :: isa(n)
-  external :: dsyev
 
   print '(a)', 'test_augspace'
   ! 2x2x2 open cubic cluster

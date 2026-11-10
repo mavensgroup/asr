@@ -1,6 +1,7 @@
 !> Energy-dependent recursion for an ORDERED B2 crystal (no augmented space, asr_endep::ed_ordered_green) vs the exact dense
 !> inverse of A(z) = P(z) - S on the same periodic supercell; every start orbital on both sublattices.
 program test_endep_ordered
+  use asr_lapack, only: zgetrf, zgetri
   use asr_kinds, only: dp
   use asr_lmto_ham, only: potpar_t
   use asr_augspace, only: graph_t

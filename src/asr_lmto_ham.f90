@@ -3,6 +3,7 @@
 !> in the alpha (screened) representation.  o^alpha = (gamma-alpha)/((gamma-alpha)(E_nu-C)-Delta)
 !> (as in the Stuttgart makpph).
 module asr_lmto_ham
+  use asr_lapack, only: zheev
   use asr_kinds, only: dp, pi, ci
   use asr_operator, only: linop
   implicit none
@@ -89,7 +90,6 @@ contains
     integer :: ik, ib, ie, info
     real(dp) :: ev(9), rwork(100)
     complex(dp) :: h(9, 9), cw(200)
-    external :: zheev
     g = (0.0_dp, 0.0_dp)
     !$omp parallel do private(ik, ib, ie, ev, h, cw, rwork, info) reduction(+:g)
     do ik = 1, op%nk3
@@ -184,7 +184,6 @@ contains
     integer :: ix, iy, iz, ie, ib, l, n, info
     real(dp) :: k(3), ev(9), w(9, 0:2), rwork(100), x, g
     complex(dp) :: h(9, 9), cw(200)
-    external :: zheev
     dos_l = 0.0_dp
     !$omp parallel do collapse(2) private(ix,iy,iz,k,h,ev,cw,rwork,info,ib,l,w,ie,x,g) reduction(+:dos_l)
     do iz = 0, nk - 1

@@ -5,6 +5,7 @@
 !> (3) the third-order recursion Hamiltonian (order = 3) against the self-consistent first-order k-space ASA (asa_scf):
 !> H^(2) misses the overlap term h p h and puts E_F ~35 mRy too high; H^(3) must close that gap.
 program test_alloy_b2
+  use asr_lapack, only: zheev
   use asr_kinds, only: dp
   use asr_alloy_scf
   use asr_asa, only: core_shells_for, asa_input_t, asa_result_t, asa_scf
@@ -28,7 +29,6 @@ program test_alloy_b2
   complex(dp), allocatable :: h(:, :), cw(:)
   real(dp) :: bv(3, 3), k(3), avw, lo, hi, ef, nn, alat, rwork(100)
   integer :: nk, i, j, l, ix, iy, iz, ik, nd, info, nst, it, lw
-  external :: zheev
 
   inp%nlevels = 16; inp%lsuper = 12; alat = 2.92055_dp
   if (command_argument_count() >= 1) then; call get_command_argument(1, arg); read (arg, *) inp%nlevels; end if

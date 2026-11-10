@@ -36,6 +36,7 @@
 !> A mode with Gamma = 0 has F = +infinity: its charge deviation must vanish.  V = F dq cannot represent it, but the drive
 !> u = db can: dq = Gamma u, V = a (1 - Gamma) u (screen_update).  This form has the same fixed point wherever F is finite.
 module asr_screening
+  use asr_lapack, only: dgesv, dsyev
   use asr_kinds, only: dp, pi
   implicit none
   private
@@ -202,7 +203,6 @@ contains
     real(dp) :: g(size(ahat, 1), size(ahat, 1)), f(size(ahat, 1), size(ahat, 1)), y(size(ahat, 1), size(ahat, 1))
     real(dp) :: d(size(ahat, 1)), ev(size(ahat, 1)), ge(size(ahat, 1)), work(3 * size(ahat, 1) + 1)
     integer :: n, i, j, info, ipiv(size(ahat, 1))
-    external :: dgesv, dsyev
     n = size(ahat, 1)
     if (s%unscreened .or. all(ahat == 0.0_dp)) then
       g = s%g1 * ahat; f = s%w1 * ahat

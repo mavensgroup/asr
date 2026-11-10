@@ -1,6 +1,7 @@
 !> M1 gate 1: recursion == dense diagonalisation when the Krylov space is
 !> exhausted (continued fraction without any tail).
 program test_recursion_dense
+  use asr_lapack, only: dsyev
   use asr_kinds, only: dp
   use asr_operator, only: csr_op, csr_from_triplets
   use asr_recursion, only: lanczos

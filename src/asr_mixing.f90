@@ -14,6 +14,7 @@
 !> After a restart the history is refilled from column 1 (nfill counts the pairs since the restart): the fit uses columns 1..nh,
 !> so writing on at the old ring position left the newest pair out and fitted stale pairs from before the restart.
 module asr_mixing
+  use asr_lapack, only: dgesv
   use asr_kinds, only: dp
   implicit none
   private
@@ -81,7 +82,6 @@ contains
     subroutine fit_step()
       real(dp) :: amat(a%m, a%m), rhs(a%m)
       integer :: i, j, nh, info, ipiv(a%m)
-      external :: dgesv
       nh = a%nh
       if (nh == 0) then; xnext = xin + br * r; return; end if    ! no history (first step, after a restart): as a restart
       xnext = xin + beta * r

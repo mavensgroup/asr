@@ -5,6 +5,7 @@
 !> Convention (mstrx2 / INFO_<lat>):  S0_ss(d) = -2 w/d.  Lengths in units of
 !> the lattice constant `alat` unless stated; w = average WS radius.
 module asr_strconst
+  use asr_lapack, only: dgesv
   use asr_kinds, only: dp, pi
   use asr_harmonics, only: ylm_real, gaunt_table, lm_idx
   implicit none
@@ -129,7 +130,6 @@ contains
     real(dp), allocatable :: s0(:, :), m(:, :), x(:, :)
     integer, allocatable :: ipiv(:)
     real(dp) :: b9(9, 9), ad(9)
-    external :: dgesv
     n = size(vec, 2); nn = 9 * n
     allocate (s0(nn, nn), m(nn, nn), x(nn, 9), ipiv(nn), blk(9, 9, n))
     s0 = 0.0_dp

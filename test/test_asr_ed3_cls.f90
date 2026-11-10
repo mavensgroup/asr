@@ -8,6 +8,7 @@
 !>  (B2) fcc, ternary {2,3,4}, conditional first-shell class: D4h-reduced chains == unreduced chains for G_uu, G_wu, G_ww, G_uw
 !>       (the start vector w = h'u - g_c u is built by the operator itself, so it is in normalised orbit coordinates).
 program test_asr_ed3_cls
+  use asr_lapack, only: zgesv
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augcls
@@ -22,7 +23,6 @@ program test_asr_ed3_cls
   real(dp) :: alpha(0:2), oo(0:2, 4)
   real(dp) :: dsp(9, 4), csp(9, 4), esp(9, 4), osp(9, 4), psp(9, 4)
   integer :: l, sp
-  external :: zgesv
 
   print '(a)', 'test_asr_ed3_cls'
   do l = 0, 2

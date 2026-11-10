@@ -21,6 +21,7 @@ program test_augcls_project
   use asr_symmetry
   use asr_lmto_ham, only: potpar_t
   use asr_testing
+  use asr_lapack, only: zgesv
   implicit none
   integer, parameter :: lsup = 4, nlev = 144, iv = 5
   type(potpar_t) :: pp(2)
@@ -40,7 +41,6 @@ program test_augcls_project
   complex(dp), allocatable :: km(:, :), ev(:), col(:), rhs(:, :), x(:), y(:), px(:), py(:), ep(:, :)
   complex(dp) :: z, zs(2), gex, q0ex, q2ex, g1, gb(2), bk(0:3), bkb(0:3, 2), et(9, 2), uu(9, 2), qt(9, 2)
   integer :: l, i, nd, ndu, info, iz
-  external :: zgesv
 
   print '(a)', 'test_augcls_project'
   do l = 0, 2

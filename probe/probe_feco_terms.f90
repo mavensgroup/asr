@@ -9,6 +9,7 @@
 !> One-shot site moments (common E_F, linear tetrahedra) for each, no self-consistency.
 !> usage: probe_feco_terms [nk_scf] [nk] [feco|cuzn|fefe]
 program probe_feco_terms
+  use asr_lapack, only: zgesv, zheev
   use asr_kinds, only: dp
   use asr_asa
   use asr_atom, only: shell_t
@@ -34,7 +35,6 @@ program probe_feco_terms
   real(dp) :: bv(3, 3), k(3), ef, m(2), qq(2), nel, ov(18), pv(18), en(18), w(18), rwork(54)
   complex(dp) :: hh(18, 18), kk(18, 18), t(18, 18), hm(18, 18), cw(72)
   integer :: nks, nk, ic, s, l, ix, iy, iz, ik, iv, i, j, info, nst
-  external :: zheev
 
   nks = 16; nk = 24
   if (command_argument_count() >= 1) then; call get_command_argument(1, arg); read (arg, *) nks; end if
@@ -164,7 +164,6 @@ contains
     real(dp) :: lam(18), rw(54)
     complex(dp) :: work(72)
     integer :: ii, jj, ipiv(18), inf
-    external :: zgesv, zheev
     do jj = 1, 18; hoh(:, jj) = o * h(:, jj); end do          ! hoh = o h  (row-scaled)
     hoh = matmul(h, hoh)                                      ! h o h
     select case (iv)

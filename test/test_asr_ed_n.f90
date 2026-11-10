@@ -3,6 +3,7 @@
 !>   (1) recursion == exact configuration average of the dense [E - H(E)]^-1_00, H(E) = E - T (E - E_nu - h) T - T h o h T;
 !>   (2) that average == the same average of [E - H^(2)]^-1_00 (E - H(E) = T (E - H^(2)) T, T_0 = 1 at the central site).
 program test_asr_ed_n
+  use asr_lapack, only: zgesv
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augn
@@ -23,7 +24,6 @@ program test_asr_ed_n
   real(dp) :: err1, err2, err3
   integer :: i, l, l2, c, m, l0, kz, cen, sp, cf(n), q
   logical :: fl(n)
-  external :: zgesv
 
   print '(a)', 'test_asr_ed_n'
   conc = [0.3_dp, 0.5_dp, 0.2_dp]

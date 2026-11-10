@@ -3,6 +3,7 @@
 !> (2) disorder: species-resolved G from the recursion vs the ensemble average of exact dense inverses of
 !>     (P(z) - S) on random periodic supercells (sites of each species and orbitals of each class averaged).
 program test_endep
+  use asr_lapack, only: zgetrf, zgetri
   use asr_kinds, only: dp, pi
   use asr_lmto_ham, only: potpar_t
   use asr_augspace, only: graph_t

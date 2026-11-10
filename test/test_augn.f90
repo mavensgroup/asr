@@ -5,6 +5,7 @@
 !>  (3) ns = 2: chain coefficients identical to the binary operator asr_augorb;
 !>  (4) the complex-parameter application augn_rand_c reproduces the real one.
 program test_augn
+  use asr_lapack, only: dsyev
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb, only: orb_alloy_t, augorb_op, build_augorb_operator
@@ -172,7 +173,6 @@ contains
     real(dp) :: sm(nd, nd), hm(nd, nd), om(nd), dm(nd), cm(nd), em(nd), hh(nd, nd), ev(nd), wk2(300), vec(nd)
     complex(dp) :: gg
     integer :: ii, jj, kk, ll, ll2, rr, info, sp
-    external :: dsyev
     sm = 0.0_dp
     do ii = 1, n
       do ll = 1, nl; do ll2 = 1, nl

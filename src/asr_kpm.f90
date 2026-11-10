@@ -1,6 +1,7 @@
 !> Kernel polynomial method (Chebyshev) density of states with stochastic trace and the Jackson kernel.
 !> Independent of the continued-fraction machinery: used as ground truth for large disordered systems.
 module asr_kpm
+  use asr_lapack, only: dsterf
   use asr_kinds, only: dp, pi
   use asr_operator, only: linop
   implicit none
@@ -18,7 +19,6 @@ contains
     real(dp), allocatable :: v(:), u(:), up(:), w(:)
     real(dp) :: a(nstep), b(nstep), d(nstep), e(nstep), bn
     integer :: i, dim, info
-    external :: dsterf
     dim = op%dim()
     allocate (v(dim), u(dim), up(dim), w(dim))
     call random_number(v); v = v - 0.5_dp

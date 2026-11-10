@@ -3,6 +3,7 @@
 !> enumeration of all 2^N configurations on a ring of 6 sites with 2 orbitals per site.
 !> Krylov space exhausted => recursion must equal the exact configuration average.
 program test_augorb
+  use asr_lapack, only: dsyev
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb
@@ -21,7 +22,6 @@ program test_augorb
   complex(dp) :: z, gex, grec
   integer :: i, j, k, c, info, m, nd, kz, l, l2, rr, s2, r1
   logical :: isa(n)
-  external :: dsyev
 
   print '(a)', 'test_augorb'
   ! ring: slot 1 -> R+1, slot 2 -> R-1

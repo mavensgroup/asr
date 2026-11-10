@@ -2,6 +2,7 @@
 !> contour with EXACT potential functions: (a) dense inverse of P - S, (b) ed_ordered_green recursion; and the same with
 !> the parametrised P for reference.
 program probe_pfun_rec
+  use asr_lapack, only: zgetrf, zgetrs
   use asr_kinds, only: dp, pi
   use asr_asa
   use asr_atom, only: shell_t

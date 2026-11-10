@@ -14,6 +14,7 @@
 !>   6. Single-site dressing (h z)_1 = eps_1 z_1 / (1 - eps_1 o_1): exact at p^gamma = 0 (checked); its error at p^gamma /= 0
 !>      is printed (measurement, not a gate).
 program test_asr_ed3
+  use asr_lapack, only: dsygv, zgesv
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb
@@ -35,7 +36,6 @@ program test_asr_ed3
   integer :: i, l, l2, cen, l0, kz, ndim, j, info, il
   integer, allocatable :: ipiv(:)
   integer :: lstart(3) = [1, 2, 5]
-  external :: zgesv
 
   print '(a)', 'test_asr_ed3'
   do l = 0, 2
@@ -356,7 +356,6 @@ contains
     real(dp), allocatable :: work(:)
     integer :: c, ii, k, ll, inf
     logical :: isa_(n)
-    external :: dsygv
     allocate (work(64 * nd))
     q = 0; qd = 0; pe2 = 0
     do c = 0, 2**(n - 1) - 1

@@ -1,6 +1,7 @@
 !> Cubic point-group (O_h, 48 operations) site permutations about the origin site of a periodic
 !> sc/bcc/fcc supercell built by asr_lattices::periodic_graph (integer half-lattice coordinates).
 module asr_symmetry
+  use asr_lapack, only: dgesv
   implicit none
   private
   public :: cubic_site_perms, d4h_ops, orbital_rep, class_ops
@@ -105,7 +106,6 @@ contains
     real(dp) :: pts(3, np), a(np, 9), b(np, 9), yv(25), mp(3), ata(9, 9), atb(9, 9), x(9, 9)
     integer :: ip, iop, k, ipiv(9), info
     real(dp), parameter :: wq(3) = [0.414213562373095_dp, 0.732050807568877_dp, 0.236067977499790_dp]   ! sqrt(2) - 1, sqrt(3) - 1, sqrt(5) - 2
-    external :: dgesv
     do ip = 1, np
       pts(:, ip) = real(ip, dp) * wq; pts(:, ip) = pts(:, ip) - aint(pts(:, ip)) - 0.5_dp
       call ylm_real(2, pts(1, ip), pts(2, ip), pts(3, ip), yv(1:9)); a(ip, :) = yv(1:9)

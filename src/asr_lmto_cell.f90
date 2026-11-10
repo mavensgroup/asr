@@ -3,6 +3,7 @@
 !> Structure constants: bare canonical S0 on a finite cluster around each basis
 !> atom, screened with per-site hard-core alpha:  (1 - S0 alpha) S^alpha = S0.
 module asr_lmto_cell
+  use asr_lapack, only: dgesv, zheev
   use asr_kinds, only: dp, pi, ci
   use asr_strconst, only: bare_s0_block
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
@@ -77,7 +78,6 @@ contains
     real(dp), allocatable :: tmp(:, :), s0(:, :), m(:, :), x(:, :)
     integer, allocatable :: tia(:), ipiv(:)
     real(dp) :: b9(9, 9), ad(9)
-    external :: dgesv
     nmax = ceiling(rmax / minval([(norm2(c%avec(:, i)), i=1, 3)])) + 2
     allocate (tmp(3, c%nat * (2 * nmax + 1)**3), tia(c%nat * (2 * nmax + 1)**3)); n = 0
     do n3 = -nmax, nmax; do n2 = -nmax, nmax; do n1 = -nmax, nmax
@@ -234,7 +234,6 @@ contains
     real(dp), allocatable :: ev(:), rwork(:)
     complex(dp), allocatable :: h(:, :), cw(:)
     integer :: ix, iy, iz, ib, ie, nd, ia, l, info
-    external :: zheev
     bv = recip_vectors(c%avec); nd = 9 * c%nat
     dos = 0.0_dp
     !$omp parallel private(ev, rwork, h, cw, k, x, g, wgt, ib, ie, ia, l, info, iy, ix)

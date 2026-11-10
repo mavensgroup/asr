@@ -1,6 +1,7 @@
 !> Species-resolved Green functions: <<n_R G_RR>> from the recursion (transition element) vs enumeration of all
 !> configurations weighted by the occupation of the start site (ring of 6 sites, 2 orbitals, TB-LMTO form).
 program test_partial
+  use asr_lapack, only: dsyev
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb
@@ -18,7 +19,6 @@ program test_partial
   complex(dp) :: z, gA_ex, gB_ex, gavg_ex, fA, gavg
   integer :: i, j, k, cfg, info, m, nd, kz, l, l2, rr, iorb
   logical :: isa(n)
-  external :: dsyev
 
   print '(a)', 'test_partial'
   allocate (g%nbr_ptr(n + 1), g%nbr(2 * n)); g%n = n

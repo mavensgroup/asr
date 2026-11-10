@@ -3,6 +3,7 @@
 !> reference-DOS comparison that IS verified (d band); the sp region is NOT
 !> asserted (known open difference: combined correction / f downfolding).
 program test_lmto_ham
+  use asr_lapack, only: zheev
   use asr_kinds, only: dp
   use asr_strconst
   use asr_lmto_ham
@@ -16,7 +17,6 @@ program test_lmto_ham
   complex(dp) :: h(9, 9), cw(200)
   integer :: i, u, info
   real(dp) :: occ(0:2), nef
-  external :: zheev
 
   print '(a)', 'test_lmto_ham'
   pp%enu = [-0.54494317_dp, -0.45471939_dp, -0.51341327_dp]

@@ -8,6 +8,7 @@
 !>      ring of 5 == exact average over the conditional product measure, including species of zero conditional weight; fcc ternary:
 !>      reduced == unreduced with the shell class, and shell concentrations = x reproduce the operator without a shell class.
 program test_augcls
+  use asr_lapack, only: zgesv
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augcls
@@ -157,7 +158,6 @@ contains
     real(dp), allocatable :: s(:, :), hm(:, :), hoh(:, :), dl(:), cm(:), en(:), om(:), dc(:), tt(:)
     complex(dp), allocatable :: ae(:, :), rhs(:)
     integer, allocatable :: ipiv(:)
-    external :: zgesv
     n = g%n; nd = 9 * n
     allocate (s(nd, nd), hm(nd, nd), hoh(nd, nd), dl(nd), cm(nd), en(nd), om(nd), dc(nd), tt(nd), ae(nd, nd), rhs(nd), ipiv(nd))
     s = 0.0_dp

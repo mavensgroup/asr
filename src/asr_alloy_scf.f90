@@ -11,6 +11,7 @@
 !> -> relaxed core, Hartree, xc (spin-polarised libxc), SIM Madelung -> Anderson mixing of the smooth
 !> potentials and E_nu.
 module asr_alloy_scf
+  use asr_lapack, only: zgetrf, zgetri
   use asr_kinds, only: dp, pi
   use asr_radial
   use asr_xc

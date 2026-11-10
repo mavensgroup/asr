@@ -4,6 +4,7 @@
 !>   (2) the same average of [E - H^(2)]^-1_{00} (E - H(E) = T (E - H^(2)) T and T_0 = 1 at the central site),
 !> for both central species, with the nonrandom S' = Delta_c^1/2 S Delta_c^1/2 of the AMscf form.
 program test_asr_ed
+  use asr_lapack, only: zgesv
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_augorb
@@ -25,7 +26,6 @@ program test_asr_ed
   real(dp) :: err1, err2, err3, u
   integer :: i, k, l, l2, c, m, l0, kz, cen
   logical :: isa(n), ctr_a
-  external :: zgesv
 
   print '(a)', 'test_asr_ed'
   do l = 0, 2

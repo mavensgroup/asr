@@ -4,6 +4,7 @@
 !> libxc, first-order ASA bands, moments -> charge, E_nu to band centre, potential mixing.
 !> Every parameter is generated here; nothing tabulated.
 module asr_asa
+  use asr_lapack, only: zheev, zhegv
   use asr_kinds, only: dp, pi
   use asr_radial
   use asr_xc
@@ -457,7 +458,6 @@ contains
     complex(dp), allocatable :: hh(:, :), hm(:, :), om(:, :), cw(:), zc(:), cc(:)
     real(dp) :: bv(3, 3), k(3)
     integer :: ix, iy, iz, ik, ib, i, j, l, a, nst, nd, info, s, js
-    external :: zhegv, zheev
     so = .false.; if (present(h2)) so = h2
     nd = 9 * c%nat
     bv = recip_vectors(c%avec)

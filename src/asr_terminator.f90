@@ -12,6 +12,7 @@
 !> asymptotic (a_inf, b_inf) over ninterp further levels, then held constant.
 !> NOT yet checked against the original paper.
 module asr_terminator
+  use asr_lapack, only: dsterf
   use asr_kinds, only: dp
   use asr_greens, only: cf_green, sqrt_tail, periodic_g
   implicit none
@@ -72,7 +73,6 @@ contains
     real(dp), intent(out) :: val
     logical, intent(in) :: upper
     integer :: info
-    external :: dsterf
     call dsterf(n, d, e, info)           ! eigenvalues ascending in d
     if (info /= 0) error stop 'bp_asymptote: dsterf failed'
     if (upper) then; val = d(n); else; val = d(1); end if

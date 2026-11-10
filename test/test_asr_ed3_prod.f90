@@ -8,6 +8,7 @@
 !>       the error of the charge Q falls with the steps; -Im of the block matrix (q0, q1; q1, q2) positive semidefinite on the main
 !>       contour line and above (Im z >= 0.1).  Closer to the axis the counts are printed: the cross term q1 is first order there.
 program test_asr_ed3_prod
+  use asr_lapack, only: dsygv, zgesv
   use asr_kinds, only: dp, pi
   use asr_augspace, only: graph_t
   use asr_augcls
@@ -25,7 +26,6 @@ program test_asr_ed3_prod
   real(dp) :: alpha(0:2), oo(0:2, 4)
   real(dp) :: dsp(9, 4), csp(9, 4), esp(9, 4), osp(9, 4), psp(9, 4)
   integer :: l, sp
-  external :: zgesv, dsygv
 
   print '(a)', 'test_asr_ed3_prod'
   do l = 0, 2
