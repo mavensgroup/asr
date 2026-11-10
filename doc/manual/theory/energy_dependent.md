@@ -90,9 +90,64 @@ H(E)=\big[E-\Delta_c(E-E_{\nu,R})/\Delta_R\big]+h'-h'qh' ,\qquad
 h'=g+S',\ \ g_R=\tfrac{\Delta_c}{\Delta_R}(C_R-E_{\nu,R}),\ \ q_R=\tfrac{o_R\Delta_R}{\Delta_c}.
 \]
 
-At infinite depth \(E-H(E)=T\,(E-H^{(2)})\,T\), so \(G_c\) equals the
-species-resolved energy-independent function. The two routes are therefore
-exact cross-checks of one another at convergence.
+The identity \(E-H(E)=T\,(E-H^{(2)})\,T\) is exact for every configuration. Proof:
+\(T h T=h'\), \(T(E-E_\nu)T=\Delta_c(E-E_\nu)/\Delta_R\) and
+\(T\,h\,o\,h\,T=h'\,(T^{-1}oT^{-1})\,h'=h'qh'\). Here \(T_R=d_c/d_R\) with the signed
+\(d=\sqrt\Delta\), so \(T d\) is the same on every site for any sign convention. The code
+uses \(|d_c|\). This differs by a diagonal sign matrix per orbital and does not change a
+diagonal element. \(T=1\) on the frozen centre, so
+\(G_c(E)=\langle R_0|(E-H^{(2)})^{-1}|R_0\rangle\) averaged over all configurations with
+species \(c\) on \(R_0\). This is the species-resolved Green function. The
+energy-independent route with a frozen centre gives the same function. The two routes are
+exact cross-checks of one another at convergence. At a finite number of steps they are
+different approximants.
+
+## The reduced operator and its symmetric subspace
+
+The point-group reduction stores one representative per orbit of nodes. A reduced vector is
+valid only in the *symmetric subspace* \(V\): for every operation \(g\) of the stabiliser
+of a representative node \(r\),
+
+\[
+\psi(r)=\chi(g)\,D(g)^{T}\psi(r).
+\]
+
+The reduced operator maps \(V\) into \(V\) and is symmetric on \(V\). On the rest of the
+coordinate space it is a different matrix, and that matrix is not symmetric. A Lanczos chain
+starts in \(V\). Rounding moves it out of \(V\) by \(10^{-16}\) per step. The recurrence
+then amplifies this part. In an ordered B2 cell the part outside \(V\) is \(10^{-11}\) of
+the vector after 24 steps, \(10^{-5}\) after 36 steps and several percent after 48 steps.
+The `ed3` chains then miss the exact result by \(10^{-5}\) to \(10^{-4}\) however long they
+run. So every chain applies the projector
+
+\[
+(P\psi)(r)=\frac1{|S_r|}\sum_{g\in S_r}\chi(g)\,D(g)^{T}\psi(r)
+\]
+
+to each new Lanczos vector ([[asr_augcls]] `augcls_project_c`, [[asr_augblk]] `blk_project`).
+\(P\) is a real symmetric projector, and the operator maps \(V\) into \(V\). So the chain with
+\(P\) is the Lanczos chain of the operator restricted to \(V\). With it the reduced
+chains equal a dense solve on the unreduced operator to \(10^{-14}\) (`test_augcls_project`).
+In random alloys at 24 to 48 steps the projection changes nothing visible.
+
+## Causality of a truncated chain
+
+The exact \(G_c(z)\) is a Herglotz function: \(-\mathrm{Im}\,G_c>0\) for
+\(\mathrm{Im}\,z>0\). An energy-independent Lanczos chain keeps this property at every
+length, because its fraction has real coefficients. The energy-dependent chain does not. Write
+\(z-H(z)=zM-A\) with \(M=T^2\) and \(A=T H^{(2)} T\), both real. The chain of \(m\) steps
+gives the bilinear Galerkin approximant on the Krylov space of \(zM-A\). That space depends on
+\(z\). The approximant is a rational function of \(z\) with real coefficients. Its poles
+are the zeros of a real polynomial, and they need not be real. A pole in the upper half plane
+makes \(-\mathrm{Im}\,G\) negative near it. Such points occur with and without a tail. A
+scan of an fcc ternary test operator (three central species, four start orbitals, 801 energies,
+24 to 48 steps) found them at isolated energies for \(\mathrm{Im}\,z\) = 0.001 to 0.02. With
+the `hull` tail the worst case was a DOS of \(-2.1\) states/Ry at one energy
+(\(\mathrm{Im}\,z\) = 0.005, 48 steps), with 1 % of the weight negative. The tail adds a second
+mechanism: its band edges are complex, and its branch cut can lie above \(z\). There is no
+proof of causality for any tail on these chains. The `ed3` route prints the number of contour
+nodes at which the block \(-\mathrm{Im}\,G\) is not positive. Treat a DOS with
+negative values as not converged in the number of steps.
 
 ## Tails, depth and cost
 

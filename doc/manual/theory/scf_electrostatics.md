@@ -81,6 +81,41 @@ For the **ordered B2** real-space route the two-site Madelung shifts are exact
 (Ewald sums with a neutralising background: \(V_i=\sum_j\Phi(i,j)\,q_j\) in
 Hartree, ×2 for Ry).
 
+## Total energy
+
+The total energy is the Kohn-Sham functional of the output density in the input potential. Per
+component (Ry),
+
+\[
+E_p=E_\text{band}+\sum\varepsilon_\text{core}-\int n\,\tilde v_\text{in}
++\tfrac12\int n\,V_H[n]+\int n\,\varepsilon_{xc}[n]+\tfrac12\,q_p\,V^\text{M}_p ,
+\qquad \tilde v=v+2Z/r .
+\]
+
+The first three terms are the kinetic energy plus \(\int n\,2Z/r\). That nuclear term
+cancels against the sphere electrostatics. \(V^\text{M}_p\) is the Madelung and screening
+potential of the output charges. The Fermi smearing entropy is not included. With
+\(kT=1\) mRy this changes the energy by about \(\tfrac{\pi^2}{6}N(E_F)(kT)^2\), a few
+hundredths of a mRy.
+
+The band energy must be the occupied eigenvalue sum of the Hamiltonian that the route solves.
+
+* Routes with an orthogonal Hamiltonian (`edc`, `second_order`): the \(M_k\) are energy
+  moments, the sphere charge of a channel is \(M_0\), and
+  \(E_\text{band}=\sum_l (M_1+E_\nu M_0)\).
+* Full ASA (`[kspace]` default and `route = "ed3"`): the generalised problem
+  \(Hz=\varepsilon Oz\) has \(\varepsilon\,z^TOz=z^THz\). All factors next to \(h\) in
+  \(H\) are diagonal, so
+
+  \[
+  z^THz=\sum_{RL}\big[q_1+E_\nu\,(q_0+p^\gamma q_2)\big].
+  \]
+
+  The band energy of a channel is \(q_1\) plus \(E_\nu\) times its sphere charge
+  \(q_0+p^\gamma q_2\). The same follows inside one sphere from \(H\phi=E_\nu\phi\) and
+  \(H\dot\phi=E_\nu\dot\phi+\phi\). `test_band_energy` checks the identity against the
+  eigenvalue sum of the bands to \(10^{-13}\) Ry.
+
 ## Charge definitions
 
 | Setting | Definition |

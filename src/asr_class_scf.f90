@@ -326,8 +326,11 @@ contains
         npass = jf
         if (abs(nn - nelec) < max(2.0e-4_dp, 1.0e-3_dp * dvc) .or. jf == nfe) exit
         ! one contour per iteration (ef_linear_max > 0): a first-order step up to ef_linear_max replaces the next contour.  The
-        ! electron count stays exact (below); the moments carry an error O(step^2), which vanishes at self-consistency, where E_F
-        ! no longer moves between iterations.  So the fixed point is unchanged; only the path towards it differs.
+        ! electron count stays exact (below).  The moments carry an error of first order in the step: the step uses the DOS at
+        ! E_F + i ed_eta, while the derivative of the contour moments is the thermally broadened DOS (fermi_kt), and the two
+        ! differ per component and spin.  The error vanishes at self-consistency, where E_F no longer moves between iterations
+        ! (the carried E_F is a quasi-Newton iterate of N(E_F) = N_elec).  So the fixed point is unchanged; only the path
+        ! towards it differs.  The SCF stops on dV only: check the printed shift of the last iteration.
         if (jf == 1 .and. inp%ef_linear_max > 0.0_dp) then
           if (abs(nelec - nn) / max(dvc, 0.1_dp) <= inp%ef_linear_max) exit
         end if
