@@ -216,10 +216,18 @@ physical-amplitude resolvent.  Checked here.
    run they do: the 128-site cell `trial/b45/ks/a0_s1` gives Cu $\sum_l (q_0 + p^\gamma q_2)$ = 11.08176, so qnet 0.08176
    (printed 0.08175), and Zn -0.08176 (printed -0.08175).  So the oracle is exact.  Compare qnet, not table sums, for
    one-iteration runs.
-2. **Band energy.**  `asa_scf` uses $q_1 + E_\nu q_0$ per channel.  At convergence $q_1 = 0$ ($E_\nu$ at the band centre).  That treats $q_1$ as an energy moment.  In `ed3` the
-   band energy should be the occupied sum of $E_\alpha z_\alpha^T O z_\alpha$, a contour integral of
-   $E\,[G_{11} + 2 o (h G)_{11} + p (h G h)_{11}]$.  Decided (user, 2026-11-05): use the k-space form, $q_1 + E_\nu q_0$ per
-   channel, so that the total energy matches the oracle.
+2. **Band energy: closed (2026-11-10).**  The band energy is the occupied sum of $E_\alpha z_\alpha^T O z_\alpha$.  It has a closed
+   form in the moments.  For every eigenvector $E_\alpha z^T O z = z^T H z$.  Insert $H$ of section 2.  All factors next to $h$
+   are diagonal.  So
+   $$z^T H z = \sum_{RL} \big[ E_\nu (\mathrm{xm0} + 2 o\, \mathrm{xm1} + p\, \mathrm{xm2}) + \mathrm{xm1} + o\, \mathrm{xm2} \big]
+   = \sum_{RL} \big[ q_1 + E_\nu (q_0 + p^\gamma q_2) \big] .$$
+   The band energy of a channel is $q_1$ plus $E_\nu$ times its sphere charge.  The same result follows inside one sphere from
+   $H \phi = E_\nu \phi$ and $H \dot\phi = E_\nu \dot\phi + \phi$.  The identity holds for the sum over all sites and orbitals.
+   It holds for any occupation weights.  Until 2026-11-10 `asa_scf` and `ed3` used $q_1 + E_\nu q_0$.  That form is correct only
+   for energy moments (`edc` and `second_order`).  In the generalised problem it loses $E_\nu p^\gamma q_2$ per channel.
+   `test_band_energy` compares the moment form with the eigenvalue sum of the bands: the old form is off by 0.55 Ry per cell
+   for B2 \ce{FeCu} after three iterations, and the new form agrees to $4 \times 10^{-14}$ Ry.  The total energies of the
+   k-space full ASA and of `ed3` change.  The default route `edc` does not change.
 3. **Tail of the cross term: closed for the charge.**  `cf_species` already gives the projection with the tail.  The cross term is
    weak near the axis, so the production chains use $|a\rangle, |v\rangle$ (section 6) and the charge does not need it.  Only
    $q_1$ does.  The two chains give it twice, and each SCF iteration prints the largest difference.

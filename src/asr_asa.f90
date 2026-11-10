@@ -68,6 +68,9 @@ module asr_asa
     real(dp) :: ef = 0.0_dp, dv = 0.0_dp
     real(dp) :: moment_cell = 0.0_dp
     real(dp) :: etot = 0.0_dp               !! total energy per atom of the cell (Ry; Kohn-Sham form as asr_class_scf)
+    !> last iteration, per cell (Ry): the valence band energy used in etot (from the moments), and the occupied eigenvalue sum
+    !> of the bands themselves (the same weights).  They must be equal.
+    real(dp) :: eband = 0.0_dp, sumev = 0.0_dp
     integer :: iter = 0
     logical :: converged = .false.
     !! SCF history, rows 1:iter (dV in Ry; moment in mu_B and qnet in electrons per class; total energy per atom in Ry)
@@ -108,7 +111,7 @@ contains
     integer, allocatable :: offx(:)
     integer :: nx, ii
     type(anderson_t) :: mixer
-    real(dp) :: c, avw, ef, nelec, dv, dvc, e, ratio, qcore_s, qval_s, etot
+    real(dp) :: c, avw, ef, nelec, dv, dvc, e, ratio, qcore_s, qval_s, etot, sumev, eband
     real(dp), allocatable :: esum(:)
     integer :: ncl, nsp, it, ic, s, l, is, k, n, ia, nod
     logical :: vb, core_ok
@@ -182,7 +185,7 @@ contains
       ! (2) bands, common Fermi level, moments per atom -> per class
       if (allocated(qat)) deallocate (qat)
       allocate (qat(0:2, 0:2, cell%nat, nsp))
-      call bands_moments(cell, cls, pps, alpha_sp, inp%nk, nsp, nelec, inp%smear, inp%bz, ef, qat, inp%second_order)
+      call bands_moments(cell, cls, pps, alpha_sp, inp%nk, nsp, nelec, inp%smear, inp%bz, ef, qat, inp%second_order, sumev)
       do ic = 1, ncl
         cr(ic)%q = 0.0_dp
         do ia = 1, cell%nat
@@ -196,10 +199,15 @@ contains
         n = cr(ic)%mesh%n
         allocate (nval(n, nsp, 1), ncore(n, nsp, 1), tmp(n), cum(n), yc(2, 0:0, n))
         nval = 0.0_dp; ncore = 0.0_dp; esum(ic) = 0.0_dp
+        if (ic == 1) eband = 0.0_dp
         do s = 1, nsp
           do l = 0, 2
             k = 2 * (ic - 1) + s
-            esum(ic) = esum(ic) + cr(ic)%q(1, l, s) + enu(l, s, ic) * cr(ic)%q(0, l, s)
+            ! band energy of the channel.  Generalised problem: e z^T O z = z^T H z = sum_RL [q1 + E_nu (q0 + p^gamma q2)], E_nu
+            ! times the sphere charge.  second_order: the q_k are energy moments and the sphere charge is q0.
+            e = cr(ic)%q(1, l, s) + enu(l, s, ic) * cr(ic)%q(0, l, s)
+            if (.not. inp%second_order) e = e + enu(l, s, ic) * cr(ic)%pp(l, s)%p * cr(ic)%q(2, l, s)
+            esum(ic) = esum(ic) + e; eband = eband + natc(ic) * e
             nval(:, s, 1) = nval(:, s, 1) &
               + cr(ic)%q(0, l, s) * (y(1, 0, 1:n, l, k)**2 + y(2, 0, 1:n, l, k)**2 / c**2) &
               + 2.0_dp * cr(ic)%q(1, l, s) * (y(1, 0, 1:n, l, k) * y(1, 1, 1:n, l, k) + y(2, 0, 1:n, l, k) * y(2, 1, 1:n, l, k) / c**2) &
@@ -315,7 +323,7 @@ contains
         end do
       end do
       etot = etot / real(cell%nat, dp)
-      res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
+      res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot; res%eband = eband; res%sumev = sumev
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       do ic = 1, ncl; res%hist_moment(it, ic) = cr(ic)%moment; res%hist_qnet(it, ic) = cr(ic)%qnet; end do
       if (vb) then
@@ -514,7 +522,7 @@ contains
   end subroutine bands_core
 
   !> Fermi level and per-atom gamma-representation moments qat(k, l, atom, spin).
-  subroutine bands_moments(c, cls, pps, alpha_sp, nk, nsp, nelec, sigma, bz, ef, qat, h2)
+  subroutine bands_moments(c, cls, pps, alpha_sp, nk, nsp, nelec, sigma, bz, ef, qat, h2, sumev)
     type(cell_t), intent(in) :: c
     type(cluster_t), intent(in) :: cls(:)
     type(potpar_t), intent(in) :: pps(:, :)
@@ -523,6 +531,7 @@ contains
     integer, intent(in) :: nk, nsp
     real(dp), intent(out) :: ef, qat(0:2, 0:2, c%nat, nsp)
     logical, intent(in), optional :: h2           !! orthogonal second-order H: moments taken directly (no o transformation)
+    real(dp), intent(out), optional :: sumev      !! occupied eigenvalue sum per cell, with the weights of the moments
     real(dp), allocatable :: eb(:, :), xm(:, :, :, :), eall(:, :), wall(:, :)
     real(dp) :: wk, f, lo, hi, nn, ol(0:2), fs
     integer :: i, l, a, nst, nd, it, s, ic, js
@@ -555,6 +564,7 @@ contains
       ef = 0.5_dp * (lo + hi)
     end if
     qat = 0.0_dp
+    if (present(sumev)) sumev = 0.0_dp
     do s = 1, nsp
       do i = 1, nst
         if (trim(bz) == 'tetra') then
@@ -562,6 +572,7 @@ contains
         else
           f = fs * wk * 0.5_dp * erfc((eb(i, s) - ef) / sigma)
         end if
+        if (present(sumev)) sumev = sumev + f * eb(i, s)
         do a = 1, c%nat
           ic = c%isp(a)
           q = to_alpha(pps(ic, s), alpha_sp(:, ic)); ol = o_alpha(q, alpha_sp(:, ic))

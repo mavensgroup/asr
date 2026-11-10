@@ -17,7 +17,7 @@
 !> -> Anderson mixing of the smooth potentials and E_nu.
 !> Total energy per site (Ry, Kohn-Sham form: output density, input potential), E = sum_p w_p E_p with
 !>     E_p = E_band + sum eps_core - int n v~_in + 1/2 int n V_H[n] + int n eps_xc[n] + 1/2 q_p vm_p,
-!> E_band = sum_l (M1_l + E_nu,l M0_l), v~ = v + 2Z/r (the nuclear terms -2Z int n/r of T and of the sphere electrostatics cancel),
+!> E_band = sum_l (M1_l + E_nu,l M0_l) (M0 = sphere charge of the channel), v~ = v + 2Z/r (the nuclear terms -2Z int n/r of T and of the sphere electrostatics cancel),
 !> vm_p = Madelung + screened fluctuation shift from the output charges (1/2 q vm = Madelung energy of the sublattice charges +
 !> 1/2 sum w dq F dq; diag(w) F is symmetric, so this is variational).  The Fermi-smearing entropy (k T ~ 1 mRy) is not included.
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
@@ -26,7 +26,7 @@
 !> route = 'ed3' (docs/DERIVATION_ed3.md, asr_ed3): the full generalised ASA problem instead of H^(2).  The chains give the central
 !> blocks xm0 = G_11, xm1 = (hG)_11, xm2 = (hGh)_11 and the moments are those of k-space (bands_moments): q0 = xm0 + 2 o xm1 + o^2 xm2,
 !> q1 = xm1 + o xm2, q2 = xm2, density q0 phi^2 + 2 q1 phi phidot + q2 phidot^2, channel charge q0 + p^gamma q2 = xm0 + 2 o xm1 + p xm2.
-!> E_band = sum_l (q1 + E_nu,l q0) as in asa_scf.  E_F comes from the channel charges.  gz(...) then holds G + 2 o hG + p hGh, whose
+!> E_band = sum_l (q1 + E_nu,l (q0 + p^gamma q2)) as in asa_scf: the occupied eigenvalue sum.  E_F comes from the channel charges.  gz(...) then holds G + 2 o hG + p hGh, whose
 !> -Im / pi is the DOS of the sphere charge, so dos_final and ef_scan need no other change.
 module asr_class_scf
   use asr_kinds, only: dp, pi
@@ -372,7 +372,9 @@ contains
         nval = 0.0_dp; ncore = 0.0_dp; esum(p) = 0.0_dp
         do sg = 1, nsp
           do l = 0, 2
-            esum(p) = esum(p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * mom(p, sg, 0, l))
+            ! band energy of the channel: E_nu times the sphere charge (edc: M0; ed3: q0 + p^gamma q2, since
+            ! e z^T O z = z^T H z = sum_RL [q1 + E_nu (q0 + p^gamma q2)]; test_band_energy) plus the first moment
+            esum(p) = esum(p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * qch(p, sg, l))
             nval(:, sg) = nval(:, sg) + fs * ( &
                 mom(p, sg, 0, l) * (y(1, 0, 1:n, l, p, sg)**2 + y(2, 0, 1:n, l, p, sg)**2 / c**2) &
               + 2.0_dp * mom(p, sg, 1, l) * (y(1, 0, 1:n, l, p, sg) * y(1, 1, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 1, 1:n, l, p, sg) / c**2) &
