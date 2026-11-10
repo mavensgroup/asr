@@ -10,7 +10,7 @@ program test_orbital_rep
   implicit none
   type(graph_t) :: g
   integer, allocatable :: coord(:, :), bvec(:, :), mats(:, :, :), perm(:, :)
-  real(dp), allocatable :: d(:, :, :), vec(:, :), blk(:, :, :)
+  real(dp), allocatable :: d(:, :, :), d2(:, :, :), vec(:, :), blk(:, :, :)
   real(dp) :: a(9, 9), b(9, 9), al4(0:3), alpha(0:2), eo, ec1, ec2, u(3), w
   integer :: iop, j, k, kk, ia, nmono, kp
   logical :: found
@@ -28,6 +28,11 @@ program test_orbital_rep
   end do
   call check(nmono == 16, 'all 16 D4h operations act monomially on the 9 orbitals')
   call check_close(eo, 0.0_dp, 1.0e-9_dp, 'orbital matrices are orthogonal')
+  ! the entries multiply every application of a reduced operator: they must be exactly 0, +1 or -1 and the same in every call,
+  ! or two runs of the same input differ at rounding level
+  call check(all(d == real(nint(d), dp)), 'monomial operations: every entry is exactly 0, +1 or -1')
+  call orbital_rep(mats, d2)
+  call check(all(d == d2), 'orbital_rep gives the same bits in a second call')
   ! covariance of the screened bond blocks:  B(M v) = X B(v) X^T  for X = D or D^T ?
   al4 = hardcore_alpha(0.7_dp); alpha = al4(0:2)
   do ik = 1, 2

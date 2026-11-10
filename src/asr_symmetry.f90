@@ -92,7 +92,10 @@ contains
 
   !> Orbital representation of each operation on the 9 real harmonics (s | y z x | xy yz 3z2-r2 xz x2-y2):
   !>   Y_k(M p) = sum_j d(k,j,iop) Y_j(p).   Fitted by least squares on generic points; entries are 0, +-1
-  !> for the monomial (D4h) operations.
+  !> for the monomial (D4h) operations.  The points are fixed (a Weyl sequence), and an entry within 1e-9 of an integer is set
+  !> to that integer.  So the result is the same in every call and every run, and a monomial matrix is exact.  The entries
+  !> multiply every application of a reduced operator (asr_augcls, asr_augsym): with random points they were 1 +- 1e-15 and
+  !> differed from run to run, so two runs of one input differed at rounding level.
   subroutine orbital_rep(mats, d)
     use asr_kinds, only: dp
     use asr_harmonics, only: ylm_real
@@ -101,10 +104,10 @@ contains
     integer, parameter :: np = 24
     real(dp) :: pts(3, np), a(np, 9), b(np, 9), yv(25), mp(3), ata(9, 9), atb(9, 9), x(9, 9)
     integer :: ip, iop, k, ipiv(9), info
+    real(dp), parameter :: wq(3) = [0.414213562373095_dp, 0.732050807568877_dp, 0.236067977499790_dp]   ! sqrt(2) - 1, sqrt(3) - 1, sqrt(5) - 2
     external :: dgesv
-    call random_seed()
     do ip = 1, np
-      call random_number(pts(:, ip)); pts(:, ip) = pts(:, ip) - 0.5_dp
+      pts(:, ip) = real(ip, dp) * wq; pts(:, ip) = pts(:, ip) - aint(pts(:, ip)) - 0.5_dp
       call ylm_real(2, pts(1, ip), pts(2, ip), pts(3, ip), yv(1:9)); a(ip, :) = yv(1:9)
     end do
     allocate (d(9, 9, size(mats, 3)))
@@ -120,7 +123,7 @@ contains
       ata = matmul(transpose(a), a)
       d(:, :, iop) = transpose(x)
       do k = 1, 9
-        where (abs(d(:, k, iop)) < 1.0e-9_dp) d(:, k, iop) = 0.0_dp
+        where (abs(d(:, k, iop) - anint(d(:, k, iop))) < 1.0e-9_dp) d(:, k, iop) = anint(d(:, k, iop))
       end do
     end do
   end subroutine orbital_rep
