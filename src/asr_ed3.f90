@@ -12,10 +12,10 @@
 !> q0 + p^gamma q2 needs no cross term.  docs/DERIVATION_ed3.md section 6 compares this with chains from |u>, S'|u>.
 module asr_ed3
   use asr_kinds, only: dp
-  use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c
+  use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species
-  use asr_augblk, only: blk_work_t, blk_kmul3
+  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
+  use asr_augblk, only: blk_work_t, blk_kmul3, blk_project
   implicit none
   private
   public :: ed3_t, ed3_work_t, ed3_work_init, ed3_setup, ed3_start, ed3_blocks, ed3_kmul, ed3_coefs, ed3_blocks_blk
@@ -120,6 +120,7 @@ contains
     integer, intent(in) :: iv
     wk%s0 = (0.0_dp, 0.0_dp); wk%s0(iv) = (1.0_dp, 0.0_dp)
     call augcls_hp_c(op, wk%s0, wk%vv)
+    if (ed_project) call augcls_project_c(op, wk%vv)
     wk%av = wk%s0 + ed%o(iv, ed%central) * wk%vv
     wk%nv = sqrt(real(sum(wk%vv * wk%vv), dp)); wk%na = sqrt(real(sum(wk%av * wk%av), dp))
     if (wk%nv < 1.0e-14_dp .or. wk%na < 1.0e-14_dp) error stop 'ed3_start: zero start vector'
@@ -158,6 +159,7 @@ contains
       end if
       wk%w = wk%w - a(k) * wk%u
       if (k > 1) wk%w = wk%w - b(k - 1) * wk%up
+      if (ed_project) call augcls_project_c(op, wk%w)        ! rounding leaves the symmetric subspace and is amplified there
       b(k) = sqrt(sum(wk%w * wk%w))
       if (abs(b(k)) < 1.0e-12_dp) then; closed = .true.; exit; end if
       wk%up = wk%u
@@ -309,6 +311,7 @@ contains
           w(:, i) = w(:, i) - a(k, :) * u(:, i)
           if (k > 1) w(:, i) = w(:, i) - b(k - 1, :) * up(:, i)
         end do
+        if (ed_project) call blk_project(op, w)
         acc = (0.0_dp, 0.0_dp)
         do i = 1, size(w, 2); acc = acc + w(:, i) * w(:, i); end do
         do j = 1, bw%nb

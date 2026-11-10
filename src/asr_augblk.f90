@@ -16,7 +16,7 @@ module asr_augblk
   use asr_augcls, only: augcls_op
   implicit none
   private
-  public :: blk_work_t, blk_work_init, blk_hamx, blk_kmul3, blk_hp, blk_rand_lin, blk_nbmax
+  public :: blk_work_t, blk_work_init, blk_hamx, blk_kmul3, blk_hp, blk_rand_lin, blk_nbmax, blk_project
 
   !> work space of one thread: u, up, w are the Lanczos vectors of the members, the rest are kernel temporaries.  The kernels
   !> always work on all wk%nb members (whole, contiguous arrays); a shorter block is padded by the caller with idle zero rows.
@@ -278,6 +278,29 @@ contains
       !$omp end parallel do
     end associate
   end subroutine blk_kmul3
+
+  !> projection of every member of x onto the symmetric subspace of the reduced operator, in place (as augcls_project_c)
+  subroutine blk_project(op, x)
+    type(augcls_op), intent(in) :: op
+    complex(dp), intent(inout), contiguous :: x(:, :)
+    complex(dp) :: acc(size(x, 1), 9)
+    integer :: i, j, l, g, ns, j0
+    !$omp parallel do private(j, l, g, ns, j0, acc)
+    do i = 1, op%nn
+      ns = op%stab_ptr(i + 1) - op%stab_ptr(i)
+      if (ns <= 1) cycle
+      j0 = 9 * (i - 1)
+      acc = (0.0_dp, 0.0_dp)
+      do j = op%stab_ptr(i), op%stab_ptr(i + 1) - 1
+        g = op%stab(j)
+        do l = 1, 9
+          acc(:, l) = acc(:, l) + op%chi(g) * op%sg(l, g) * x(:, j0 + op%pi(l, g))
+        end do
+      end do
+      do l = 1, 9; x(:, j0 + l) = acc(:, l) / real(ns, dp); end do
+    end do
+    !$omp end parallel do
+  end subroutine blk_project
 
   !> y = h x = (c + D S D) x, normalised coordinates (as augcls_hp_c)
   subroutine blk_hp(op, wk, x, y)

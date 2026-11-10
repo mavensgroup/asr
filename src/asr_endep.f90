@@ -14,7 +14,7 @@ module asr_endep
   implicit none
   private
   public :: ed_params_t, ed_work_t, ed_functions, ed_species_green, ed_work_init, ed_ordered_green
-  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species
+  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species, ed_project
 
   !> adaptive depth: from level 8, every 4 levels, stop when the terminated Green function changes by less than ed_depth_tol
   !> (relative); 0 = always use the full depth.  ed_nchain / ed_nlev count chains and levels used (statistics).
@@ -28,6 +28,9 @@ module asr_endep
   !> terminated fraction then has a pole next to the contour and N(E_F) varies steeply (levels-4 Fe66Ni14Cr20 SCF stall, Cr e_g).
   !> 'hull' is the default of the class SCF; test_terminators checks the Nevanlinna bound |dG/dz| <= -Im G / Im z.
   character(len=8) :: ed_tail = 'hull'
+  !> The chains on a group-reduced operator (asr_edc, asr_ed3) project every new Lanczos vector onto the symmetric subspace
+  !> (asr_augcls::augcls_project_c).  .false. switches this off: for tests and diagnostics only.
+  logical :: ed_project = .true.
 
   !> gamma-representation parameters (9 orbitals) of one species / spin; p = 0: two-parameter P^gamma = (z - C)/Delta,
   !> p > 0: third-order P^gamma = (z - C + p (z - E_nu)^3)/Delta (p = <phidot|phidot>, exact to third order in z - E_nu)

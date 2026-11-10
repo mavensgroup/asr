@@ -24,7 +24,7 @@ module asr_augcls
   implicit none
   private
   public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c, augcls_set_class_conc, augcls_hp_c
+            augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -45,6 +45,7 @@ module asr_augcls
     real(dp), allocatable :: norb(:), sq(:)
     integer, allocatable :: pi(:, :)
     real(dp), allocatable :: sg(:, :), chi(:)
+    integer, allocatable :: stab_ptr(:), stab(:)                  !! stabiliser of node i: operations stab(stab_ptr(i):stab_ptr(i+1)-1)
     real(dp), pointer :: wk(:, :) => null()
   contains
     procedure :: apply => augcls_apply
@@ -226,6 +227,45 @@ contains
     end do
     !$omp end parallel do
   end subroutine augcls_hp_c
+
+  !> Projection of x (normalised coordinates, in place) onto the symmetric subspace V of the reduced operator.  A representative
+  !> node r with stabiliser S_r = {g: g r = r} must satisfy psi(r) = chi(g) D(g)^T psi(r) for every g in S_r, so
+  !>     (P psi)(r) = 1/|S_r| sum_{g in S_r} chi(g) D(g)^T psi(r).
+  !> P is a real symmetric projector.  The operator maps V into V and is symmetric on V only.  Outside V it is some other,
+  !> non-symmetric matrix.  A Lanczos chain started in V leaves it by rounding, and the recurrence amplifies that part by
+  !> orders of magnitude within tens of steps.  So every chain projects its new vector (asr_edc, asr_ed3).  Nodes with the
+  !> trivial stabiliser are not touched; the cost is far below one operator application.
+  subroutine augcls_project_c(self, x)
+    class(augcls_op), intent(in) :: self
+    complex(dp), intent(inout) :: x(:)
+    complex(dp) :: acc(9)
+    integer :: i, j, l, g, ns
+    !$omp parallel do private(j, l, g, ns, acc)
+    do i = 1, self%nn
+      ns = self%stab_ptr(i + 1) - self%stab_ptr(i)
+      if (ns <= 1) cycle
+      acc = (0.0_dp, 0.0_dp)
+      do j = self%stab_ptr(i), self%stab_ptr(i + 1) - 1
+        g = self%stab(j)
+        do l = 1, 9
+          acc(l) = acc(l) + self%chi(g) * self%sg(l, g) * x(9 * (i - 1) + self%pi(l, g))
+        end do
+      end do
+      x(9 * (i - 1) + 1:9 * i) = acc / real(ns, dp)
+    end do
+    !$omp end parallel do
+  end subroutine augcls_project_c
+
+  !> |x - P x| / |x|: the part of x outside the symmetric subspace (diagnostic, tests)
+  function augcls_leak_c(self, x) result(leak)
+    class(augcls_op), intent(in) :: self
+    complex(dp), intent(in) :: x(:)
+    real(dp) :: leak
+    complex(dp), allocatable :: y(:)
+    y = x
+    call augcls_project_c(self, y)
+    leak = sqrt(sum(abs(x - y)**2) / max(sum(abs(x)**2), tiny(1.0_dp)))
+  end function augcls_leak_c
 
   !> local weights wt(l, k, k', class) = sum_s par(l, spc(s)) mt(k, k', s, class)
   pure subroutine local_weights(self, par, wt)
@@ -420,7 +460,8 @@ contains
     logical, intent(in), optional :: flippable(:)
     type(store_t) :: st
     logical, allocatable :: canflip(:)
-    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:)
+    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), stb(:)
+    integer :: nstb
     integer :: nop, nsm, i, lev, r, r1, r2, k1, k2, nsit, f, j, idx, rkmax, cs, osz, gb, ns, k, l, gg, jj, kap, ncomb, q, dgt
     logical :: isnew
 
@@ -508,9 +549,18 @@ contains
       end do
     end do
     op%chi = 1.0_dp
+    allocate (op%stab_ptr(st%n + 1), stb(nop * st%n)); nstb = 0
     do i = 1, st%n
       r = st%site(i)
       c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
+      op%stab_ptr(i) = nstb + 1                                        ! stabiliser: g maps the site and the configuration onto themselves
+      do gg = 1, nop
+        if (perm(r, gg) /= r) cycle
+        c2 = [(perm(c0(k) / nsm, gg) * nsm + mod(c0(k), nsm), k=1, size(c0))]
+        call sort_small(c2)
+        if (all(c2 == c0)) then; nstb = nstb + 1; stb(nstb) = gg; end if
+      end do
+      if ((nstb - op%stab_ptr(i) + 1) * st%orb(i) /= nop) error stop 'build_augcls_operator: stabiliser size /= group order / orbit size'
       op%level(i) = st%level(i); op%norb(i) = real(st%orb(i), dp); op%sq(i) = sqrt(op%norb(i)); op%site(i) = r
       op%ncl(i) = cls(r)
       op%lst(i) = get_state(c0, r, nsm)
@@ -530,6 +580,8 @@ contains
         if (j > 0) then; op%hopr(k, i) = j; op%hopg(k, i) = gb; end if
       end do
     end do
+    op%stab_ptr(st%n + 1) = nstb + 1
+    op%stab = stb(1:nstb)
     allocate (op%wk(9 * st%n, 8))
     call augcls_set_start(op, 1, dmat)
   end subroutine build_augcls_operator
