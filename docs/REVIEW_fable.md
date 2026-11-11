@@ -104,7 +104,7 @@ decisive test.
 | 6 | `ef_linear_max` | narrowed | same fixed point proven; size of the 1.5e-3 $\mu_B$ not attributed (3.5) |
 | 7 | block kernels | resolved | not a kernel bug: the single-energy chain differs from itself by the same amount under a $10^{-15}$ shift of $z$; the persistent part was F2; block equals single to $10^{-14}$ at 144 steps after F2 |
 | 8 | thread-order dependence | resolved | F3 |
-| 9 | OpenBLAS ring test | narrowed | not OpenBLAS: the gfortran 14 build fails identically with MKL (3.6) |
+| 9 | OpenBLAS ring test | resolved | not OpenBLAS and not the library: the test's own configuration count was wrong under gfortran 14; fixed in the test, passes there (3.6) |
 | 10 | MPI shutdown crash | not reached | `asr_mpi.F90` read; no defect found by reading; no test possible here |
 | 11 | terminators and causality | narrowed | F4: violations proven on a test operator; the FeNiCr SRO spin DOS at levels 3 has no negative value |
 | 12 | electrostatics (B3) | resolved by derivation | 3.7 |
@@ -179,12 +179,18 @@ mode needs the two logs (the printed "shift" of the last iteration) or a rerun a
 - Here: gfortran 16.2 with OpenBLAS 0.3.34 and with reference LAPACK (FlexiBLAS) pass, 40 of 40 random seeds, largest error
   $8 \times 10^{-15}$.
 - smriti `ringtest/RESULT.txt`: the gfortran 14 build fails with err 18.7 both with OpenBLAS and with MKL.  So the library is
-  not the cause.  The node counts of all six ring cases equal those of the passing builds, so the operator graph is the same.
-  The ring SRO check in the same program passes.  The only construct unique to the failing check is an `associate` with a
-  computed array-element selector inside a loop.  Commit 919f73f replaces it with a plain variable and fixes the seed
-  (test only).  A gfortran 14 run of the full suite on this branch is prepared on smriti (`~/asr_trial/review`); its build stopped on
-  the user disk quota, so it has not run.  It decides the hypothesis.
-- The test uses an unseeded `random_seed()`.  It should get a fixed seed.  Not changed.
+  not the cause.  The node counts of all six ring cases equal those of the passing builds.
+- Cause (resolved 2026-11-11, smriti jobs 398595, 398596, 398614).  Per-case output showed that the exact reference was the
+  recursion value times a constant: 0.048, 1.31 and 6.6 for start classes 1, 2, 3, the same for s and d orbitals and at every
+  energy.  So the configuration weights of the reference did not sum to 1, and the library was right.  The configuration count
+  came from an implied-do inside `product()`; gfortran 14 evaluated it wrongly.  Commit 4c70b9f computes it in a plain loop and
+  adds a check that the weights sum to 1.  gfortran 14, optimised and with `-fcheck=all -finit-real=snan`: all ring checks pass
+  (weights $2 \times 10^{-16}$, ring $3 \times 10^{-15}$).  The `associate` change of 919f73f was not the cause; it is harmless.
+- The same gfortran 14 suite found a real defect: `build_augcls_operator` assigned the species parameters also when they were
+  not allocated (undefined behaviour; ifx tolerates it, gfortran 14 crashed in `test_augcls_blk`).  Fixed in d54f018;
+  `test_augcls_blk` passes 18/18 with both gfortran 14 builds.  Full gfortran 14 suite (398595, before these two fixes): the
+  other 48 programs pass, including `test_band_energy`, `test_augcls_project` and `test_orbital_rep`.
+- The ring test now uses a fixed seed (919f73f).
 - Branch `lapack-interfaces`: it builds with gfortran 16 here, and that build was used for this test.  No defect seen.
 
 ### 3.7 Electrostatics (doubt 12)
@@ -201,8 +207,8 @@ energy is the exact average of the model: the fluctuation terms of $\tfrac{a}{2}
 2. Effect of F2 on a B2 `ed3` run at 96 steps, with `energy_block` 0 and 8 (doubt 7 on the production case).
 3. Done: the F4 control shows that `main` has the same unstable start (F4).  Open: a converged spin SRO SCF for this input
    (start from the non-magnetic SRO potential), then the DOS again.
-4. Read on 2026-11-11: `ringtest/RESULT.txt` (3.6) and the levels-4 results (F1 table, doubt 2).  Pending: the gfortran 14
-   test suite of this branch (smriti, `~/asr_trial/review`; build blocked by the disk quota).
+4. Read on 2026-11-11: `ringtest/RESULT.txt` (3.6) and the levels-4 results (F1 table, doubt 2).  The gfortran 14 suite of this
+   branch ran (3.6).
 5. The two FeNiCr logs for doubt 6.
 
 ## 5. Tests
