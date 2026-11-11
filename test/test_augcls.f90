@@ -27,6 +27,8 @@ program test_augcls
   type(potpar_t) :: pp(4), qq(4)
   real(dp) :: alpha(0:2), oo(0:2, 4)
   integer :: l, sp
+  character(len=16) :: arg
+  logical :: ringonly = .false.
 
   print '(a)', 'test_augcls'
   do l = 0, 2
@@ -44,11 +46,16 @@ program test_augcls
   do sp = 1, 4
     qq(sp) = to_alpha(pp(sp), alpha); oo(:, sp) = o_alpha(qq(sp), alpha)
   end do
+  ! optional argument "ring": only the two ring checks (seconds instead of minutes; compiler checks on the cluster)
+  if (command_argument_count() >= 1) then
+    call get_command_argument(1, arg)
+    ringonly = trim(arg) == 'ring'
+  end if
   call ring_brute_force()
-  call decorated_bcc()
-  call regressions()
+  if (.not. ringonly) call decorated_bcc()
+  if (.not. ringonly) call regressions()
   call ring_sro()
-  call fcc_sro()
+  if (.not. ringonly) call fcc_sro()
   call report()
 
 contains
@@ -74,7 +81,7 @@ contains
     type(edn_work_t) :: wk
     integer :: perm(n, 1), i, l2, ic, cen, kz, m, cf(n), q, c, ncfg, j, ib, l0, kc, nseed
     integer, allocatable :: seed(:)
-    real(dp) :: dmat(9, 9, 1), u, pc, err
+    real(dp) :: dmat(9, 9, 1), u, pc, err, psum, perr
     complex(dp) :: z, gre, gden, a(nlev), b(nlev)
     logical :: fl(n)
     allocate (g%nbr_ptr(n + 1), g%nbr(2 * n)); g%n = n
@@ -84,6 +91,7 @@ contains
       g%nbr(2 * i) = mod(i - 2 + n, n) + 1
     end do
     g%nbr_ptr(n + 1) = 2 * n + 1
+    perr = 0.0_dp
     call three_classes(mdl)
     allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
     call random_seed(size=nseed); allocate (seed(nseed)); seed = 20261111 + 7 * [(i, i=1, nseed)]
@@ -113,7 +121,9 @@ contains
             call edc_green(op, wk, ed, z, l0, nlev, gre, a, b, m)
             gre = cf_complex(a, b, m, z)
             gden = (0.0_dp, 0.0_dp)
-            ncfg = product([(mdl%nsc(rcls(1 + mod(i + ib - 2, n))), i=2, n)])
+            ncfg = 1                                       ! plain loop: the implied-do form gave a wrong count with gfortran 14
+            do i = 2, n; ncfg = ncfg * mdl%nsc(rcls(1 + mod(i + ib - 2, n))); end do
+            psum = 0.0_dp
             do c = 0, ncfg - 1
               q = c; pc = 1.0_dp; cf(1) = cen
               do i = 2, n
@@ -121,7 +131,9 @@ contains
                 cf(i) = mdl%spc(mod(q, mdl%nsc(kc)) + 1, kc); pc = pc * mdl%conc(mod(q, mdl%nsc(kc)) + 1, kc); q = q / mdl%nsc(kc)
               end do
               gden = gden + pc * dense_g(mdl, g, cf, cen, z, l0)
+              psum = psum + pc
             end do
+            perr = max(perr, abs(psum - 1.0_dp))
             err = max(err, abs(gre - gden))
             if (abs(gre - gden) > 1.0e-6_dp) print '(a,3i3,i5,a,4es12.4)', '    case (class, centre, orbital), steps ', ic, cen, l0, m, &
               ': recursion, exact ', gre, gden
@@ -131,6 +143,7 @@ contains
       end do
     end do
     print '(a,es10.3)', '  ring: max |recursion - exact average| ', err
+    call check_close(perr, 0.0_dp, 1.0e-12_dp, 'three classes: configuration weights of the exact average sum to 1')
     call check_close(err, 0.0_dp, 1.0e-6_dp, 'three classes (ordered/binary/ternary): ED recursion == exact configuration average')
   end subroutine ring_brute_force
 
