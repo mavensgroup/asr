@@ -1,9 +1,10 @@
 # Full-ASA energy-dependent recursion (route `ed3`): derivation
 
-Branch `ed3`, written 2026-11-04.  Status: the operator algebra is proven.  The moment extraction is specified.  Gate 1 is
-passed (2026-11-04, `test/test_asr_ed3.f90` 14/14, `test/test_asr_ed3_cls.f90` 9/9).  The production routine is not written
-yet.  Open items are listed in section 9.  Main stays on the production route (`asr_edc`) until gates 2 to 4 pass.
-Update 2026-11-06: the production routine is `src/asr_ed3.f90` with `[asr] route = "ed3"`.  The default route stays `edc`.
+Written 2026-11-04 on branch `ed3`, merged into `main`.  Status (2026-11-11): the operator algebra is proven.  The production
+routine is `src/asr_ed3.f90` with `[asr] route = "ed3"`.  The default route stays `edc`.  Gate 1 passed (2026-11-04,
+`test/test_asr_ed3.f90` 14/14, `test/test_asr_ed3_cls.f90` 9/9).  Gates 2 and 3 passed at changed settings (sections 10a and
+10b).  Gate 4 results are in section 10c.  The band energy was corrected on 2026-11-10 (section 9 item 2).  Open items are in
+section 9.
 
 ## 1. Why
 The production route `asr_edc` is exactly the orthogonal second-order Hamiltonian $H^{(2)} = E_\nu + h - h o h$.  It has no
@@ -39,11 +40,15 @@ the full-ASA model is therefore all $H^{(2)}$.  The route has no hidden error he
 correlated cells with $H^{(2)}$ give -0.0103, so the ratio of model to correlated value is 1.08 at $H^{(2)}$ and 1.45 in the full
 ASA.  So $H^{(2)}$ hides most of the model error, and this route will expose it.
 
+Correction (2026-11-07, section 10b).  The values -0.0072, +0.0071 and -0.0131 hold each cell at its own E_F, so they are not
+neutral.  The neutral target is -0.00515, +0.00505 and -0.00932.  Against it the first-shell model is 1.03 times the correlated
+value at -0.148 and 1.13 times at -0.266, not 1.45.  At $H^{(2)}$ the neutral model value at -0.148 is -0.01025.
+
 ## 2. Notation (as in the code)
 All potential parameters are diagonal in site $R$ and orbital $L$.  The screening $\alpha$ is the standard TB-LMTO set.  It is
 the same for every species.  So the screened structure constants $S = S^\alpha$ do not depend on the configuration.
 - $E_\nu$, $c = C^\alpha - E_\nu$, $D = \Delta^\alpha$, $d = D^{1/2}$, $o = o^\alpha$ (`o_alpha`), $p = p^\alpha$ (`to_alpha`).
-- `to_alpha` (src/asr_lmto_ham.f90:126) gives $p^\alpha = p^\gamma - (o^\gamma)^2 + (o^\alpha)^2$.  From the gamma
+- `to_alpha` (src/asr_lmto_ham.f90:111, the line `q%p(l) = ...`) gives $p^\alpha = p^\gamma - (o^\gamma)^2 + (o^\alpha)^2$.  From the gamma
   representation $o^\gamma = 0$.  So $p = p^\gamma + o^2$.  Here $p^\gamma = \langle \dot\phi | \dot\phi \rangle > 0$.
 - $h = c + d S d$.  It is real symmetric.
 - $\varepsilon(E) = E - E_\nu$, diagonal.
@@ -130,7 +135,7 @@ Recipe per (central species, start orbital, contour energy):
 1. Chain from $|u\rangle$: $G_{uu}$ from the continued fraction with the `hull` tail, as now.
 2. In the same chain, $G_{wu} = \sum_m (w^T v_m)\, [J^{-1}]_{m1}$.  Here $v_m$ are the Lanczos vectors and $J$ is the
    terminated tridiagonal matrix.  The bracket is the bilinear form of the complex-symmetric Lanczos.  The dot products
-   are cheap, because $w$ has support on the first shell only.
+   are cheap, because $w$ has support on the $S'$ range of the centre only (section 9 item 6).
 3. Chain from $|w\rangle$: $G_{ww}$ from its continued fraction.  The same projection onto $u$ gives $G_{uw}$.  By symmetry
    $G_{uw} = G_{wu}$.  This gives a free consistency check of step 2.
 4. $(h G)_{11} = g_c G_{uu} + G_{wu}$ and $(h G h)_{11} = g_c^2 G_{uu} + 2 g_c G_{wu} + G_{ww}$.
@@ -163,7 +168,7 @@ all 20 test energies from $\mathrm{Im}\,z = 0.01$ to 0.3 (`test_asr_ed3_prod`). 
 not a strict comparison.
 
 Why one chain is not enough.  Row 1 of $K' G' = 1$ reads
-$\tilde\varepsilon_1 G_{11} - (1 - u_1)(h' G')_{11} - (h' u G')_{11} + (h' \tilde Q h' G')_{11} = 1$.
+$\tilde\varepsilon_1 G_{11} - (1 - u_1)(h' G')_{11} + (h' u G')_{11} - (h' \tilde Q h' G')_{11} = 1$.
 The last two terms carry $u_R$ and $\tilde Q_R$ of the neighbours.  They are new unknowns.  So this identity does not fix
 $(h G)_{11}$ from $G_{11}$.  We know no other closure for $p^\gamma \neq 0$.
 
@@ -205,13 +210,13 @@ physical-amplitude resolvent.  Checked here.
 - **Per-orbital weight.**  It is not 1.  $\sum_\alpha Q_1 = [O^{-1} + o_1 (h O^{-1} + O^{-1} h) + p_1\, h O^{-1} h]_{11}$, with
   $o_1$, $p_1$ of the centre.  This is not $(O O^{-1})_{11}$, because $O$ carries $o$ and $p$ of the intermediate sites.  Only
   the trace over all sites gives the number of states.  The present sum-rule print ($M_0 = 1$ at 6 Ry) needs a new target.
-- **Representation.**  The generalised problem should not depend on $\alpha$ apart from the $S$ cut-off.  This is to be
-  tested (gate 4), not assumed.
+- **Representation.**  The generalised problem should not depend on $\alpha$ apart from the $S$ cut-off.  Tested in gate 4a
+  (section 10c): k-space moves by 0.0001 e, `ed3` by 0.0036 e for a change of $\alpha$ from 0.8 to 1.2 times the standard set.
 
 ## 9. Open items
 1. **The k-space oracle's own bookkeeping: closed (2026-11-04).**  For B2 after one iteration, $\sum_l (q_0 + p^\gamma q_2)$
    from the printed table gave qnet 0.1086 against the printed 0.1193.  Cause: after the SCF loop `asa_scf` recomputes the
-   printed parameters, $p$ included, at the mixed new potential and the updated $E_\nu$ (src/asr_asa.f90:327-337).  The
+   printed parameters, $p$ included, at the mixed new potential and the updated $E_\nu$ (src/asr_asa.f90, block "final parameters at converged potential and E_nu").  The
    printed $q_0, q_1, q_2$ are the moments of the last iteration.  After one iteration they do not match.  In a converged
    run they do: the 128-site cell `trial/b45/ks/a0_s1` gives Cu $\sum_l (q_0 + p^\gamma q_2)$ = 11.08176, so qnet 0.08176
    (printed 0.08175), and Zn -0.08176 (printed -0.08175).  So the oracle is exact.  Compare qnet, not table sums, for
@@ -231,8 +236,10 @@ physical-amplitude resolvent.  Checked here.
 3. **Tail of the cross term: closed for the charge.**  `cf_species` already gives the projection with the tail.  The cross term is
    weak near the axis, so the production chains use $|a\rangle, |v\rangle$ (section 6) and the charge does not need it.  Only
    $q_1$ does.  The two chains give it twice, and each SCF iteration prints the largest difference.
-4. **E_F search.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
-5. **Cost.**  Two chains per energy.  Measure against `asr_edc`.
+4. **E_F search: closed.**  It needs $N(E)$ from the sphere charges at each trial $E_F$.  All three blocks are needed there too.
+   The production routine does this (gate 4b converged in 19 iterations with 33 E_F passes).
+5. **Cost: closed.**  Two chains per energy.  Measured: 1.55 times `asr_edc` per iteration at `rcl` 1.2 (section 10c); `rcl` 2.0
+   costs 7.4 times `rcl` 1.2 (section 10a).
 6. **Storage of $w$: closed.**  $|w\rangle = S' |1 L\rangle$ covers the whole $S'$ range (bcc with `rcl` 1.2 alat: 8 + 6
    sites), not only the first shell.  Build it as $h'|u\rangle - g_c |u\rangle$ with the operator itself.  Then it is in the
    normalised orbit coordinates of the reduced operator.  Gate 1 B2 confirms it: reduced and unreduced agree for all four
@@ -275,6 +282,9 @@ The cleanest oracle is k-space full ASA at nk 32, Gaussian 1 mRy: qnet 0.1193, E
 | `ed3`, supercell 16, 96 steps, 128 points | 0.1295 | -0.1622 | -0.74455 |
 | k-space, nk 32, Gaussian 1 mRy | 0.1193 | -0.1617 | -0.74519 |
 | k-space, nk 32, tetrahedra | 0.1183 | -0.1610 | -0.74458 |
+
+The energies in this section and in 10b use the old band-energy form on both sides (section 9 item 2).  They are one-iteration
+runs, so the table correction of section 9 item 1 does not apply, and the energy comparison was not redone.
 
 Against the limits: E_F passes at the converged settings (0.5 mRy), and the total energy agrees to 0.6 mRy.  The charge does not pass: qnet is 0.0102 high (limit 0.010), and the channels at 128 points are Cu s -0.0042, p -0.0063, d +0.0206, Zn s -0.0042, p -0.0102, d +0.0042 (limit 0.007).
 
@@ -328,6 +338,34 @@ Open:
    +0.0010 Ry.  `edc` shifts by +0.00036 Ry.  So the Cu charge agrees, but the split between site response and E_F is not shown.
 2. The k-space table sums miss qnet by 0.012 e (item 1 of section 9), so per-channel model values from the table are not usable.
 3. These runs use `rcl` 1.2.  Gate 2 showed about 0.01 e from the kept $S$ range.
+
+## 10c. Gate 4 results (2026-11-08, recorded 2026-11-11)
+Binary `ab50499`, desktop `~/asr_ed3/trial/gate4a`, `gate4a_rand`, `gate4a_diag`, `gate4b`.
+
+Gate 4a, representation.  B2 \ce{CuZn} at free atoms, one iteration, `rcl` 2.0, supercell 16, screening constants scaled by 0.8 and
+1.2 (`alpha_scale`).
+| route | qnet Cu at 0.8 / 1.2 | change | E_F at 0.8 / 1.2 (Ry) | change (mRy) |
+|---|---|---|---|---|
+| k-space full ASA | 0.11926 / 0.11936 | 0.0001 | -0.15984 / -0.15996 | 0.1 |
+| `ed3` | 0.11646 / 0.12008 | 0.0036 | -0.16051 / -0.16030 | 0.2 |
+| `edc` | 0.11594 / 0.12221 | 0.0063 | -0.11897 / -0.12232 | 3.4 |
+`ed3` has about half the representation dependence of `edc`.  Its change of 0.0036 e is below the gate-2 limit of 0.010 e.  The
+k-space change is 0.0001 e, so the `ed3` residual comes from the recursion side.  The kept $S$ range or the chain truncation are the
+likely sources.  This is not shown.
+
+Gate 4b, SCF.  Random \ce{CuZn}, levels 3, `rcl` 1.2, converged.  `ed3`: 19 iterations, 33 E_F passes, about 459 s per iteration.
+`edc`: 31 iterations, 87 passes, about 296 s per iteration.  `ed3` converges in fewer iterations.  Each `ed3` iteration costs about
+1.55 times as much.  Passed.
+
+## 10d. Check of this document (2026-11-11)
+All identities were checked numerically on random matrices (12 orbitals, complex $E$, random diagonal $c$, $D$, $o$, $p^\gamma$,
+$E_\nu$): Results 1 to 4, the canonical form, the matrix-vector product, the three central blocks and the chains from
+$|a\rangle, |v\rangle$ of section 6, the norm and the band energy of section 9 item 2, the per-orbital weight of section 8,
+Result 6 and the closed second-order form.  All agree to $10^{-15}$.  One error was found and corrected: the row identity in
+section 6 had the wrong sign on its last two terms (0.08 off as printed).  The argument there does not depend on the signs.
+The arithmetic of sections 1, 10a and 10b (ratios, channel sums, the neutral target) was recomputed and agrees.  Not rechecked:
+the measured numbers themselves, which are quoted from the run directories.  Note: section 1 and gate 2 quote E_F -0.1623 Ry
+for the k-space B2 oracle, and section 10a quotes -0.1617 (Gaussian) and -0.1610 (tetrahedra); the first is an earlier run.
 
 ## 11. Provenance
 The first draft was written by another model from a prompt of this thread.  A second draft by the same model took over the
