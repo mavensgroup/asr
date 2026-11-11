@@ -18,6 +18,17 @@ decisive test.
 - Evidence: `test/test_band_energy.f90` compares the moment form with the occupied eigenvalue sum of the same bands and
   weights (B2 \ce{FeCu}; tetrahedra, Gaussian, spin).  Before: off by 0.52 to 0.55 Ry per cell.  After: $4 \times 10^{-14}$ Ry.
   The second-order branch was exact before and after ($2 \times 10^{-14}$).
+- Effect on the `ed3` SRO runs on smriti (2026-11-11, from the converged `asr.out` tables, $\sum_p w_p \sum_l E_\nu p^\gamma q_2$
+  with the printed values): the correction is $-76.2$ to $-76.8$ mRy per site.  It differs between SRO states, so dE moves:
+  | levels | $\alpha$ | dE old (mRy) | dE new (mRy) | cells (old form) | dq_Cu ASR | dq_Cu cells |
+  |---|---|---|---|---|---|---|
+  | 3 | $-0.148$ | $-1.331$ | $-1.142$ | $-1.44$ to $-1.49$ | $+0.0126$ | $+0.012$ |
+  | 3 | $+0.148$ | $+1.528$ | $+1.269$ | $+1.48$ | $-0.0129$ | $-0.012$ |
+  | 3 | $-0.266$ | $-2.643$ | $-2.287$ | $-2.30$ | $+0.0225$ | $+0.019$ |
+  | 4 | $-0.266$ | $-2.106$ | $-1.726$ | $-2.30$ | $+0.0225$ | $+0.019$ |
+  The per-atom cells were computed with `asa_scf`, which had the same error.  Their column is still in the old form, so no
+  conclusion on the agreement is possible until their correction is computed from their own tables (desktop
+  `trial/b45/ks_site`).
 - Effect: total energies of the k-space full ASA and of `ed3` change.  Charges, $E_F$ and potentials do not.  The default
   route `edc` does not change.  **Not yet measured**: fcc \ce{Cu} $a_0$ and $B$ (k-space), and the \ce{CuZn} SRO energies of
   `ed3` and of the per-atom cells (`STATUS.md` row "bcc CuZn SRO").  Both sides of that comparison used the old form, so
@@ -59,8 +70,13 @@ decisive test.
   $\mathrm{Im}\,z$ = 0.02, 0.005, 0.001; 24, 36, 48 steps).  The scan was stopped after 28 of the 36 cases.  With `hull`: 6 of these 28 have negative DOS points; the worst
   is $-2.1$ states/Ry at $E = 0.330$ ($\mathrm{Im}\,z$ = 0.005, 48 steps, p orbital), 1.1 % of the weight.  Without a tail:
   similar isolated points, and $\mathrm{Im}\,G = +6.9$ at 72 steps in one case.
-- Consequence: the dips and negative values reported for the \ce{Fe66Ni14Cr20} SRO DOS have a known mechanism.  The
-  production case itself was not reproduced (it needs the desktop).
+- Consequence: the dips and negative values reported for the \ce{Fe66Ni14Cr20} SRO DOS have a known mechanism.
+- Production case (desktop, 2026-11-11, binary `0ee51d6`, so with the projection of F2): fcc \ce{Fe66Ni14Cr20}, triad (1, 1, 0),
+  spin, levels 3, 24 steps, `hull`.  DOS at $\eta$ = 0.02 (321 energies) and $\eta$ = 0.005 (801 energies, $-0.6$ to 0.4 Ry):
+  no negative value in any of the 30 columns (components, $l$, spin).  So the report is not reproduced in this setting.  Caveat:
+  the SCF from free atoms did not converge in 99 iterations (dV 0.05 to 0.17 at the end, Cr charge $-4.8$ e after iteration 1).
+  A second SCF from its potential reached dV $1$ to $5 \times 10^{-4}$ and stalled.  The DOS is at that potential.  A control
+  with `main` for two iterations of the same input ran on the desktop; its result was not read (desktop unreachable).
 - A causal alternative exists in exact form: the same $G_c$ is the resolvent of the pencil $(A, M)$ with real, fixed
   operators.  A Lanczos chain in the $M$ inner product has real coefficients and is Herglotz at every length.  It is the
   energy-independent route on $H^{(2)}$ with a frozen centre.  The ground rules exclude a swap, so nothing was changed.
@@ -78,16 +94,16 @@ decisive test.
 | # | doubt | status | reason |
 |---|---|---|---|
 | 1 | SRO model and band positions | narrowed | see 3.1 |
-| 2 | `ed3` at strong order | not resolved | F1 changes both sides of the energy comparison; levels-4 runs not read; see 3.1 |
+| 2 | `ed3` at strong order | narrowed | levels 3 to 4 at $-0.266$: dq_Cu unchanged (+0.0225 against +0.019 in the cell), so the 18 % charge overshoot is not truncation; dE moves by 0.5 mRy (not converged in levels at that size); F1 moves dE by +0.2 to +0.4 mRy and the cells still need the same correction (table in F1) |
 | 3 | energy-dependent form | resolved | identity proven by algebra (section 3.2); code checked line by line; existing ring tests agree to $10^{-15}$ |
 | 4 | `ed3` derivation | resolved with one correction | Results 1 to 5 re-derived; band energy corrected (F1); gates judged in 3.3 |
 | 5 | total energy | narrowed | F1 fixed; functional form and double counting checked (3.4); 0.1 mRy claim not yet tested by a run |
 | 6 | `ef_linear_max` | narrowed | same fixed point proven; size of the 1.5e-3 $\mu_B$ not attributed (3.5) |
 | 7 | block kernels | resolved | not a kernel bug: the single-energy chain differs from itself by the same amount under a $10^{-15}$ shift of $z$; the persistent part was F2; block equals single to $10^{-14}$ at 144 steps after F2 |
 | 8 | thread-order dependence | resolved | F3 |
-| 9 | OpenBLAS ring test | narrowed | 3.6 |
+| 9 | OpenBLAS ring test | narrowed | not OpenBLAS: the gfortran 14 build fails identically with MKL (3.6) |
 | 10 | MPI shutdown crash | not reached | `asr_mpi.F90` read; no defect found by reading; no test possible here |
-| 11 | terminators and causality | narrowed | F4: violations proven on a test operator; FeNiCr case not reproduced |
+| 11 | terminators and causality | narrowed | F4: violations proven on a test operator; the FeNiCr SRO spin DOS at levels 3 has no negative value |
 | 12 | electrostatics (B3) | resolved by derivation | 3.7 |
 | 13 to 15 | lower priority | not reached | F2 does not explain 13 on the evidence here (no effect in a random operator up to 48 steps) |
 
@@ -158,8 +174,13 @@ mode needs the two logs (the printed "shift" of the last iteration) or a rerun a
 - The reference is well conditioned: $\| K^{-1} \| \le \max(D_s/D_c) / \mathrm{Im}\,z \approx 6$, condition number below 100.
 - The recursion side calls no BLAS or LAPACK routine whose result it uses.
 - Here: gfortran 16.2 with OpenBLAS 0.3.34 and with reference LAPACK (FlexiBLAS) pass, 40 of 40 random seeds, largest error
-  $8 \times 10^{-15}$.  So the failure belongs to the gfortran 14 / OpenBLAS 0.3.28 build.  `RESULT.txt` on smriti decides
-  between compiler and library; it was not read.
+  $8 \times 10^{-15}$.
+- smriti `ringtest/RESULT.txt`: the gfortran 14 build fails with err 18.7 both with OpenBLAS and with MKL.  So the library is
+  not the cause.  The node counts of all six ring cases equal those of the passing builds, so the operator graph is the same.
+  The ring SRO check in the same program passes.  The only construct unique to the failing check is an `associate` with a
+  computed array-element selector inside a loop.  Commit 919f73f replaces it with a plain variable and fixes the seed
+  (test only).  A gfortran 14 run of the full suite on this branch is prepared on smriti (`~/asr_trial/review`); its build stopped on
+  the user disk quota, so it has not run.  It decides the hypothesis.
 - The test uses an unseeded `random_seed()`.  It should get a fixed seed.  Not changed.
 - Branch `lapack-interfaces`: it builds with gfortran 16 here, and that build was used for this test.  No defect seen.
 
@@ -172,10 +193,13 @@ energy is the exact average of the model: the fluctuation terms of $\tfrac{a}{2}
 ($+\mathrm{var}(V)/2a$ and $-\mathrm{var}(V)/2a$).
 
 ## 4. What needs the desktop or smriti
-1. Effect of F1: fcc \ce{Cu} $a_0$ and $B$; \ce{CuZn} SRO energies of `ed3` and of the per-atom cells (from existing output).
+1. Effect of F1: fcc \ce{Cu} $a_0$ and $B$; the correction of the per-atom cells (`trial/b45/ks_site`, from their own tables).
+   The `ed3` side is done (F1 table).
 2. Effect of F2 on a B2 `ed3` run at 96 steps, with `energy_block` 0 and 8 (doubt 7 on the production case).
-3. \ce{Fe66Ni14Cr20} SRO DOS with spin: count of negative DOS points (doubt 11).
-4. `ringtest/RESULT.txt` and the levels-4 results on smriti (doubts 9 and 2).
+3. The F4 control (`~/asr_review/trial/f4/ctl_main`, `ctl_review` on the desktop): does `main` show the same first iteration
+   (Cr charge $-4.8$ e)?  If yes, the unconverged SCF is the free-atom start of this input, not the branch.
+4. Read on 2026-11-11: `ringtest/RESULT.txt` (3.6) and the levels-4 results (F1 table, doubt 2).  Pending: the gfortran 14
+   test suite of this branch (smriti, `~/asr_trial/review`; build blocked by the disk quota).
 5. The two FeNiCr logs for doubt 6.
 
 ## 5. Tests
