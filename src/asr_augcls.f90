@@ -525,7 +525,12 @@ contains
     allocate (op%flipr(nsm, st%n), op%flipg(nsm, st%n), op%hopr(ns, st%n), op%hopg(ns, st%n), op%lst(st%n), op%site(st%n), &
               op%ncl(st%n), op%frozen(st%n), op%level(st%n), op%norb(st%n), op%sq(st%n))
     op%flipr = 0; op%flipg = 1; op%hopr = 0; op%hopg = 1; op%frozen = 0
-    op%c = mdl%c; op%d = mdl%d; op%o = mdl%o; op%e = mdl%e
+    ! species parameters: copied only if present (callers may set them later with augcls_set_params).  Assigning an unallocated
+    ! array is undefined behaviour; ifx leaves the target unallocated, gfortran 14 crashes (test_augcls_blk, ring_case).
+    if (allocated(mdl%c)) op%c = mdl%c
+    if (allocated(mdl%d)) op%d = mdl%d
+    if (allocated(mdl%o)) op%o = mdl%o
+    if (allocated(mdl%e)) op%e = mdl%e
     allocate (op%block0(9, 9)); op%block0 = 0.0_dp
     if (allocated(mdl%block0)) op%block0 = mdl%block0
     allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop))

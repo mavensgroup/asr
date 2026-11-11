@@ -123,6 +123,8 @@ contains
               gden = gden + pc * dense_g(mdl, g, cf, cen, z, l0)
             end do
             err = max(err, abs(gre - gden))
+            if (abs(gre - gden) > 1.0e-6_dp) print '(a,3i3,i5,a,4es12.4)', '    case (class, centre, orbital), steps ', ic, cen, l0, m, &
+              ': recursion, exact ', gre, gden
           end do
         end do
         print '(a,i0,a,i0,a,i0,a)', '  ring: start class ', ic, ', central species ', cen, ': ', op%nn, ' nodes'
