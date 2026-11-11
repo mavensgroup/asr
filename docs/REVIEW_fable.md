@@ -75,8 +75,11 @@ decisive test.
   spin, levels 3, 24 steps, `hull`.  DOS at $\eta$ = 0.02 (321 energies) and $\eta$ = 0.005 (801 energies, $-0.6$ to 0.4 Ry):
   no negative value in any of the 30 columns (components, $l$, spin).  So the report is not reproduced in this setting.  Caveat:
   the SCF from free atoms did not converge in 99 iterations (dV 0.05 to 0.17 at the end, Cr charge $-4.8$ e after iteration 1).
-  A second SCF from its potential reached dV $1$ to $5 \times 10^{-4}$ and stalled.  The DOS is at that potential.  A control
-  with `main` for two iterations of the same input ran on the desktop; its result was not read (desktop unreachable).
+  A second SCF from its potential reached dV $1$ to $5 \times 10^{-4}$ and stalled.  The DOS is at that potential.  Control
+  (desktop `trial/f4/ctl_main`, `ctl_review`): `main` e8d193c gives the same iteration 1 as this branch to all printed digits
+  (E_F search, E_F $-0.467557$, qnet 1.3098 / 0.6566 / $-4.7820$, dV 78.01, E $-2450.32088120$).  So the unstable SCF comes
+  from this input with a free-atom start and spin, not from the branch.  Converging it needs a start potential (for example
+  the converged non-magnetic SRO run) or a smaller mixing; this was not tried.
 - A causal alternative exists in exact form: the same $G_c$ is the resolvent of the pencil $(A, M)$ with real, fixed
   operators.  A Lanczos chain in the $M$ inner product has real coefficients and is Herglotz at every length.  It is the
   energy-independent route on $H^{(2)}$ with a frozen centre.  The ground rules exclude a swap, so nothing was changed.
@@ -196,8 +199,8 @@ energy is the exact average of the model: the fluctuation terms of $\tfrac{a}{2}
 1. Effect of F1: fcc \ce{Cu} $a_0$ and $B$; the correction of the per-atom cells (`trial/b45/ks_site`, from their own tables).
    The `ed3` side is done (F1 table).
 2. Effect of F2 on a B2 `ed3` run at 96 steps, with `energy_block` 0 and 8 (doubt 7 on the production case).
-3. The F4 control (`~/asr_review/trial/f4/ctl_main`, `ctl_review` on the desktop): does `main` show the same first iteration
-   (Cr charge $-4.8$ e)?  If yes, the unconverged SCF is the free-atom start of this input, not the branch.
+3. Done: the F4 control shows that `main` has the same unstable start (F4).  Open: a converged spin SRO SCF for this input
+   (start from the non-magnetic SRO potential), then the DOS again.
 4. Read on 2026-11-11: `ringtest/RESULT.txt` (3.6) and the levels-4 results (F1 table, doubt 2).  Pending: the gfortran 14
    test suite of this branch (smriti, `~/asr_trial/review`; build blocked by the disk quota).
 5. The two FeNiCr logs for doubt 6.
