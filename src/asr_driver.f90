@@ -59,7 +59,7 @@ module asr_driver
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
-  public :: run_input_t, read_run_input, run_input, kspace_cell
+  public :: run_input_t, read_run_input, run_input, kspace_cell, class_species
 
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
@@ -557,6 +557,21 @@ contains
     end if
   end subroutine run_input
 
+  !> the species of the class SCF input inp%ci (valence, core shells, atomic start) from the [[species]] of the input file
+  subroutine class_species(inp)
+    type(run_input_t), intent(inout) :: inp
+    integer :: i, nsp
+    nsp = size(inp%species)
+    if (allocated(inp%ci%spec)) deallocate (inp%ci%spec)
+    allocate (inp%ci%spec(nsp))
+    do i = 1, nsp
+      inp%ci%spec(i)%z = inp%species(i)%z; inp%ci%spec(i)%nval = inp%species(i)%nval; inp%ci%spec(i)%spin_sign = inp%species(i)%spin_sign
+      inp%ci%spec(i)%nvl = inp%species(i)%konfig(0:2)
+      inp%ci%spec(i)%core = core_shells_for(inp%species(i)%konfig)
+      inp%ci%spec(i)%atom_shells = atom_shells(inp%species(i))
+    end do
+  end subroutine class_species
+
   subroutine run_asr(inp, ok)
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
@@ -571,13 +586,7 @@ contains
     ok = .false.
     t0 = rep_wall()
     nsp = size(inp%species)
-    allocate (inp%ci%spec(nsp))
-    do i = 1, nsp
-      inp%ci%spec(i)%z = inp%species(i)%z; inp%ci%spec(i)%nval = inp%species(i)%nval; inp%ci%spec(i)%spin_sign = inp%species(i)%spin_sign
-      inp%ci%spec(i)%nvl = inp%species(i)%konfig(0:2)
-      inp%ci%spec(i)%core = core_shells_for(inp%species(i)%konfig)
-      inp%ci%spec(i)%atom_shells = atom_shells(inp%species(i))
-    end do
+    call class_species(inp)
     print '(a,a)', 'asr (augmented-space recursion)  ', inp%name
     print '(a,a,a,f9.5,a,i0,a,i0,a,i0)', '  graph lattice ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, '  period=', inp%ci%dec%period, &
       '  sites per decoration cell=', inp%ci%dec%nsite, '  spin=', inp%ci%nspin
@@ -686,6 +695,14 @@ contains
       end do
     end if
     call rep_scf_history(ru, labels, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%ci%tol, res%converged)
+    if (res%nclamp > 0) then
+      write (ru, '(a,i0,a)') ' WARNING: E_nu was held at its band window in the last iteration (', res%nclamp, ' channels).  This is not a'
+      write (ru, '(a)') '          fixed point: the result depends on the window margin.  Reported as not converged.'
+    end if
+    write (ru, '(a,i0)') ' E_nu band-window clamp, events in the whole run (path only when 0 in the last iteration): ', res%nclamp_run
+    write (ru, '(a,2es10.2,a)') ' valence weight within 3 Ry below the contour bottom, first / final potential:', res%wbelow1, res%wbelow, &
+      ' electrons per site'
+    if (.not. res%below_ok) write (ru, '(a)') ' WARNING: states below the contour bottom: the charges and the energy miss them'
     write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
     write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)
     write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per site'

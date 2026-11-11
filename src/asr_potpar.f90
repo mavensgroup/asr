@@ -13,7 +13,12 @@ module asr_potpar
   use asr_radial
   implicit none
   private
-  public :: potpar_l_t, potpar_at_enu, band_window, clamp_enu
+  public :: potpar_l_t, potpar_at_enu, band_window, clamp_enu, enu_window_margin
+
+  !> clamp_enu keeps E_nu below etop - enu_window_margin * (etop - ebot).  A numerical safeguard of the SCF path: a result is
+  !> valid only if the clamp is not active in the last iteration (the SCF drivers count it; then the result does not depend on
+  !> this number).  Changed by tests only.
+  real(dp) :: enu_window_margin = 0.05_dp
 
   type :: potpar_l_t
     real(dp) :: enu = 0.0_dp, c = 0.0_dp, sqrdel = 0.0_dp, p = 0.0_dp, gamma = 0.0_dp
@@ -122,7 +127,8 @@ contains
     end function bisect_nodes
   end subroutine band_window
 
-  !> E_nu kept inside [ebot, etop - 5% of the band window] of its own branch (see band_window); returns .true. if it was moved
+  !> E_nu kept inside [ebot, etop - enu_window_margin (5 %) of the band window] of its own branch (see band_window); returns
+  !> .true. if it was moved
   logical function clamp_enu(m, v, l, nodes, z, c, enu) result(moved)
     type(radmesh_t), intent(in) :: m
     real(dp), intent(in) :: v(:), z, c
@@ -133,7 +139,7 @@ contains
     e0 = enu
     moved = .false.
     if (.not. (eb < et .and. abs(eb) < 1.0e3_dp .and. abs(et) < 1.0e3_dp)) return     ! window not found: leave E_nu
-    enu = max(eb, min(et - 0.05_dp * (et - eb), enu))
+    enu = max(eb, min(et - enu_window_margin * (et - eb), enu))
     moved = (enu /= e0)
   end function clamp_enu
 end module asr_potpar

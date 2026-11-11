@@ -73,6 +73,9 @@ module asr_asa
     real(dp) :: eband = 0.0_dp, sumev = 0.0_dp
     integer :: iter = 0
     logical :: converged = .false.
+    !> E_nu channels held at their band window (clamp_enu) in the last iteration / in the whole run.  nclamp > 0: the result
+    !> depends on the window margin and is reported as not converged.
+    integer :: nclamp = 0, nclamp_run = 0
     !! SCF history, rows 1:iter (dV in Ry; moment in mu_B and qnet in electrons per class; total energy per atom in Ry)
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
   end type asa_result_t
@@ -304,6 +307,7 @@ contains
         end do
       end if
       call anderson_step(mixer, xin, xout, inp%beta, xnext, wmix)
+      res%nclamp = 0
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         do s = 1, nsp
@@ -317,6 +321,7 @@ contains
             ii = offx(ic) + n * nsp + 3 * (s - 1) + l + 1
             enu(l, s, ic) = xin(ii) + max(-inp%denumax, min(inp%denumax, xnext(ii) - xin(ii)))
             if (clamp_enu(cr(ic)%mesh, cr(ic)%v(:, s), l, inp%cls(ic)%nvl(l) - l - 1, inp%cls(ic)%z, c, enu(l, s, ic))) then
+              res%nclamp = res%nclamp + 1; res%nclamp_run = res%nclamp_run + 1
               if (vb) print '(a,i0,a,i0,a,i0,a,f9.5)', '    E_nu outside its band window: class ', ic, ' spin ', s, ' l ', l, ' -> ', enu(l, s, ic)
             end if
           end do
@@ -334,8 +339,10 @@ contains
         do ic = 1, ncl; write (*, '(f9.5)', advance='no') cr(ic)%qnet; end do
         write (*, *)
       end if
-      if (dv < inp%tol .and. it > 3) then; res%converged = .true.; exit; end if
+      if (dv < inp%tol .and. it > 3) then; res%converged = (res%nclamp == 0); exit; end if
     end do
+    if (res%nclamp > 0 .and. vb) print '(a,i0,a)', '  WARNING: E_nu held at its band window in the last iteration (', res%nclamp, &
+      ' channels): not a fixed point, the result depends on the window margin'
     call xc_finalize(xf)
     ! final parameters at converged potential and E_nu
     do ic = 1, ncl

@@ -84,6 +84,7 @@ module asr_class_scf
     integer :: ndos = 0
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
     character(len=256) :: pot_in = '', pot_out = ''
+    real(dp) :: ebot_offset = 1.2_dp                   !! the contour starts ebot_offset (Ry) below the lowest E_nu; res%wbelow checks it
   end type class_scf_input_t
 
   type :: class_scf_result_t
@@ -98,9 +99,17 @@ module asr_class_scf
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e)
     real(dp), allocatable :: qch(:, :, :)                  !! qch(component, spin, l): sphere charge per channel, one spin channel
+    !> E_nu channels held at their band window (clamp_enu) in the last iteration / in the whole run.  nclamp > 0: the E_nu fixed
+    !> point lies outside the window, the result depends on the window margin, and converged is .false.
+    integer :: nclamp = 0, nclamp_run = 0
+    !> valence electrons per site in the 3 Ry below the contour bottom, at the first (wbelow1) and the final potential.  The
+    !> occupied moments miss this weight.  It must vanish (|wbelow| < wbelow_tol); below_ok is that test.
+    real(dp) :: wbelow = 0.0_dp, wbelow1 = 0.0_dp
+    logical :: below_ok = .true.
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
+  real(dp), parameter, public :: wbelow_tol = 1.0e-3_dp     !! electrons per site
   real(dp), parameter :: worb(4) = [1.0_dp, 3.0_dp, 3.0_dp, 2.0_dp]
 
   type :: class_op_t
@@ -278,7 +287,7 @@ contains
     br = inp%beta; if (inp%beta_restart > 0.0_dp) br = inp%beta_restart
 
     do it = 1, inp%maxit
-      ed_nchain = 0; ed_nlev = 0; ed_nfall = 0
+      ed_nchain = 0; ed_nlev = 0; ed_nfall = 0; res%nclamp = 0
       do p = 1, ncomp
         n = cr(p)%mesh%n
         do sg = 1, nsp
@@ -297,6 +306,13 @@ contains
         end do
         if (ed3) print '(a,f9.4,a)', '  ed3 sum rule: weighted channel charge per orbital =', &
           sum([(w(p) * sum(qch(p, 1, :)) / 9.0_dp, p=1, ncomp)]), ' (1 only if all pencil eigenvalues lie below 6 Ry; single channels differ from 1)'
+        print '(a)', '  (this sum rule runs the production contour up to 6 Ry: a rough check, a few per cent off at 32 contour points)'
+      end if
+      if (it == 1 .and. inp%ef_scan == 0) then
+        call weight_below(res%wbelow1)
+        if (vb .or. abs(res%wbelow1) >= wbelow_tol) print '(a,f6.2,a,es10.2,a)', '  valence weight within 3 Ry below the contour bottom (', &
+          inp%ebot_offset, ' Ry below the lowest E_nu):', res%wbelow1, ' electrons per site (must vanish)'
+        if (abs(res%wbelow1) >= wbelow_tol) print '(a)', '  WARNING: states below the contour bottom at the start potential'
       end if
       if (inp%ef_scan > 0) then
         call ef_scan_run()
@@ -474,6 +490,7 @@ contains
           do l = 0, 2
             enu(l, sg, p) = xin(i + n + 1 + l) + max(-0.08_dp, min(0.08_dp, xnext(i + n + 1 + l) - xin(i + n + 1 + l)))
             if (clamp_enu(cr(p)%mesh, cr(p)%v(:, sg), l, inp%spec(psp(p))%nvl(l) - l - 1, inp%spec(psp(p))%z, c, enu(l, sg, p))) then
+              res%nclamp = res%nclamp + 1; res%nclamp_run = res%nclamp_run + 1
               if (vb) print '(a,i0,a,i0,a,i0,a,f9.5)', '    E_nu outside its band window: component ', p, ' spin ', sg, ' l ', l, ' -> ', enu(l, sg, p)
             end if
           end do
@@ -502,8 +519,18 @@ contains
           ' r=', cr(max(pdv, 1))%mesh%r(max(kdv, 1)), '  max dE_nu=', denu
       end if
       if (len_trim(inp%pot_out) > 0) call write_potentials()       ! every iteration: a stopped run restarts from here
-      if (dv < inp%tol .and. it > 3) then; res%converged = .true.; exit; end if
+      ! dV below the tolerance with E_nu held at its window is not a fixed point (the result would depend on the window margin)
+      if (dv < inp%tol .and. it > 3) then; res%converged = (res%nclamp == 0); exit; end if
     end do
+    if (res%nclamp > 0) print '(a,i0,a)', '  WARNING: E_nu held at its band window in the last iteration (', res%nclamp, &
+      ' channels): not a fixed point, the result depends on the window margin'
+    ! valence weight below the contour bottom at the final potential (the occupied moments would miss it)
+    call all_params()
+    call weight_below(res%wbelow)
+    res%below_ok = abs(res%wbelow) < wbelow_tol .and. abs(res%wbelow1) < wbelow_tol
+    if (vb .or. abs(res%wbelow) >= wbelow_tol) print '(a,es10.2,a)', '  valence weight within 3 Ry below the contour bottom, final potential:', &
+      res%wbelow, ' electrons per site (must vanish)'
+    if (abs(res%wbelow) >= wbelow_tol) print '(a)', '  WARNING: states below the contour bottom: the charges and the energy miss them'
     call xc_finalize(xf)
     do p = 1, ncomp
       do sg = 1, nsp
@@ -843,7 +870,7 @@ contains
       integer, intent(out) :: nq
       real(dp) :: ebot
       integer :: npl
-      ebot = minval(enu(:, 1:nsp, :)) - 1.2_dp
+      ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
       if (inp%fermi_kt > 0.0_dp) then
         npl = fermi_npole(inp%fermi_kt); if (inp%fermi_poles > 0) npl = inp%fermi_poles
         nq = fermi_nodes_count(npl, inp%ncont, 16)
@@ -856,6 +883,27 @@ contains
       end if
       zq(nq + 1) = cmplx(efv, inp%ed_eta, dp); wq(nq + 1) = (0.0_dp, 0.0_dp)
     end subroutine contour
+
+    !> wb = valence electrons per site with energies in [ebot - 3 Ry, ebot], ebot = the bottom of the occupation contour: the
+    !> integral of G over a closed path around that interval (arc through the upper half plane, 16 + 4 Gauss-Legendre nodes).
+    !> G is analytic there when no state lies below ebot; then wb vanishes to quadrature accuracy.  A finite value is the weight
+    !> that the occupied moments miss.  Cost: 20 energies, about a third of one E_F pass.
+    subroutine weight_below(wb)
+      real(dp), intent(out) :: wb
+      integer, parameter :: na = 16, nv = 4
+      complex(dp) :: zq(na + nv), wq(na + nv)
+      complex(dp), allocatable :: gz(:, :, :, :)
+      real(dp) :: ebot
+      integer :: j, o, gg, pp_
+      ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
+      call contour_nodes_closed(ebot - 3.0_dp, ebot, 0.05_dp, na, nv, zq, wq)
+      allocate (gz(na + nv, 4, ncomp, nsp))
+      call chain_greens(zq, gz)
+      wb = 0.0_dp
+      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, na + nv
+        wb = wb - fs * w(pp_) * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
+      end do; end do; end do; end do
+    end subroutine weight_below
 
     subroutine dos_final()
       complex(dp), allocatable :: zs(:), gz(:, :, :, :)

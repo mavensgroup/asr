@@ -158,6 +158,11 @@ contains
     write (ru, '(a,a,a,i0,a,f8.4,a,f7.3)') '  BZ integration  ', trim(inp%bz), '  nk=', inp%nk, '  smear=', inp%smear, '  mixing=', inp%mixing
     call rep_structure(ru, inp%lattice, ai%alat, cell%avec, cell%tau, cell%isp, syms, swsc)
     call rep_scf_history(ru, syms, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%tolerance, res%converged)
+    if (res%nclamp > 0) then
+      write (ru, '(a,i0,a)') ' WARNING: E_nu was held at its band window in the last iteration (', res%nclamp, ' channels).  This is not a'
+      write (ru, '(a)') '          fixed point: the result depends on the window margin.  Reported as not converged.'
+    end if
+    write (ru, '(a,i0)') ' E_nu band-window clamp, events in the whole run (path only when 0 in the last iteration): ', res%nclamp_run
     write (ru, '(a)') ' total energy per atom (Ry; Kohn-Sham form, output density in the input potential, Madelung of the'// &
       ' class charges at the atom positions), by iteration:'
     do it = 1, res%iter; write (ru, '(i6,f20.8)') it, res%hist_etot(it); end do
