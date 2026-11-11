@@ -72,7 +72,8 @@ contains
     type(augcls_op) :: op
     type(edn_t) :: ed
     type(edn_work_t) :: wk
-    integer :: perm(n, 1), i, l2, ic, cen, kz, m, cf(n), q, c, ncfg, j, ib, l0
+    integer :: perm(n, 1), i, l2, ic, cen, kz, m, cf(n), q, c, ncfg, j, ib, l0, kc, nseed
+    integer, allocatable :: seed(:)
     real(dp) :: dmat(9, 9, 1), u, pc, err
     complex(dp) :: z, gre, gden, a(nlev), b(nlev)
     logical :: fl(n)
@@ -85,7 +86,8 @@ contains
     g%nbr_ptr(n + 1) = 2 * n + 1
     call three_classes(mdl)
     allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
-    call random_seed()
+    call random_seed(size=nseed); allocate (seed(nseed)); seed = 20261111 + 7 * [(i, i=1, nseed)]
+    call random_seed(put=seed)                           ! fixed seed: a failure can be reproduced
     do l = 1, 9; do l2 = 1, 9
       call random_number(u); mdl%block(l, l2, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
@@ -115,9 +117,8 @@ contains
             do c = 0, ncfg - 1
               q = c; pc = 1.0_dp; cf(1) = cen
               do i = 2, n
-                associate (k => rcls(1 + mod(i + ib - 2, n)))
-                  cf(i) = mdl%spc(mod(q, mdl%nsc(k)) + 1, k); pc = pc * mdl%conc(mod(q, mdl%nsc(k)) + 1, k); q = q / mdl%nsc(k)
-                end associate
+                kc = rcls(1 + mod(i + ib - 2, n))      ! a plain variable: gfortran 14 builds failed this check (err 18.7) with an associate here
+                cf(i) = mdl%spc(mod(q, mdl%nsc(kc)) + 1, kc); pc = pc * mdl%conc(mod(q, mdl%nsc(kc)) + 1, kc); q = q / mdl%nsc(kc)
               end do
               gden = gden + pc * dense_g(mdl, g, cf, cen, z, l0)
             end do
