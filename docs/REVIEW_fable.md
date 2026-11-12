@@ -232,14 +232,20 @@ Rule (user, 2026-11-11): the desktop takes jobs of 2 to 3 h.  Long jobs and jobs
    (F1), and the reruns of `a0_s1` and `a-0.30_s1` with the fixed code (F1, 6.1).
 2. Done: F2 on B2 `ed3` at 96 steps, `energy_block` 0 and 8, new and `main` binary, and a repeat (doubt 7).  The gap of
    $10^{-4}$ e remains.  It is reproducible with c12eb4f.
-3. Done: the F4 control shows that `main` has the same unstable start (F4).  Submitted on smriti (`~/asr_trial/review/
-   fnc_sro_spin`, one node): the spin SRO SCF with mixing 0.1, then the DOS.
+3. Done: the F4 control shows that `main` has the same unstable start (F4).  Done on the desktop (2026-11-12,
+   `~/asr_review/trial/desk2/fnc_sro_spin`, binary 36c10b1): the spin SRO SCF with mixing 0.1 from `trial/f4/scf/pot.dat`
+   converged in 98 iterations (dV $6.6 \times 10^{-6}$; no clamp event; weight below the contour $1.4 \times 10^{-9}$ e).  E_F
+   $-0.072941$ Ry, qnet Fe / Ni / Cr 0.0002 / 0.0366 / $-0.0264$, moments 0.351 / 0.093 / 0.014 $\mu_B$.  It is the same
+   solution that the stalled second SCF of F4 approached (same charges).  The DOS at $\eta$ = 0.005 (801 energies) has no
+   negative entry in any of its 27 columns; the smallest value is 0.032 states/Ry.  So the reported negative DOS is not
+   reproduced at the converged potential either.  With Fe surrounded by Fe only (triad 1, 1, 0) the Fe moment falls from
+   1.34 (random alloy) to 0.35 $\mu_B$, close to fcc Fe at this lattice constant; Cr is almost non-magnetic.
 4. Read on 2026-11-11: `ringtest/RESULT.txt` (3.6) and the levels-4 results (F1 table, doubt 2).  The gfortran 14 suite of this
    branch ran (3.6).
 5. Done: the two FeNiCr logs for doubt 6 (3.5).
 6. Submitted on smriti (`~/asr_trial/review/m015_L4_r20`, `p015_L4_r20`, two nodes each, binary 36c10b1): `ed3` levels 4 at
    $\pm 0.148$, because levels 3 is not converged for the SRO energy (F1 table).
-7. Submitted on smriti (`~/asr_trial/review/crfeconi_b12`, one node): CoCrFeNi levels 3, 24 steps, `sim_beta` 1.2 (6.6).
+7. Done on the desktop (`~/asr_review/trial/desk2/crfeconi_b12`): CoCrFeNi levels 3, 24 steps, `sim_beta` 1.2 (6.6).
 8. smriti state on 2026-11-12: all 110 `cpu` nodes are down or drained.  The four jobs (398637 to 398640) wait.  Items 3 and 7
    therefore also run on the desktop (`~/asr_review/trial/desk2/fnc_sro_spin`, `crfeconi_b12`, binary 36c10b1, 14 threads
    each, started 2026-11-12).  The levels-4 `ed3` runs of item 6 do not fit the desktop: they took 9 to 11 h on 4 nodes of
@@ -375,6 +381,20 @@ single-potential-per-species SCF uses.  So the cell gives $\beta = 1.2$ for fcc 
 the same value from the measured hardness.  The model is confirmed.  The input value 1.0 is 17 % too small for this alloy.
 For bcc \ce{CuZn} the same analysis gave 1.0 (FINDINGS_LOG "B3 tested").  So `sim_beta` is alloy dependent, and 1.0 is not a
 universal default.  At $\beta$ = 1 the ASR charges of CoCrFeNi are 7 to 12 % smaller than the cell's species means (Co 0.083
-against 0.089, Cr $-0.211$ against $-0.239$, Ni 0.137 against 0.155).  Running on smriti: CoCrFeNi at `sim_beta` 1.2.
+against 0.089, Cr $-0.211$ against $-0.239$, Ni 0.137 against 0.155).
+
+Run at `sim_beta` 1.2 (desktop `~/asr_review/trial/desk2/crfeconi_b12`, 19 iterations from the $\beta$ = 1 potential, converged,
+no clamp event).  Reference: the per-site cell with $H^{(2)}$ (`site_h2`, the same Hamiltonian as `edc`), species means.
+| species | qnet $\beta$ 1 | qnet $\beta$ 1.2 | qnet cell | moment $\beta$ 1 | moment $\beta$ 1.2 | moment cell |
+|---|---|---|---|---|---|---|
+| Co | 0.0830 ($-7$ %) | 0.0947 (+6 %) | 0.0892 | 0.927 ($-4.2$ %) | 0.914 ($-5.5$ %) | 0.967 |
+| Cr | $-0.2114$ ($-11$ %) | $-0.2402$ (+1 %) | $-0.2382$ | $-0.599$ (+22 %) | $-0.619$ (+26 %) | $-0.490$ |
+| Fe | $-0.0082$ | $-0.0090$ | $-0.0064$ | 1.743 ($-2.8$ %) | 1.751 ($-2.3$ %) | 1.793 |
+| Ni | 0.1367 ($-12$ %) | 0.1544 ($-1$ %) | 0.1554 | 0.272 ($-3.7$ %) | 0.266 ($-5.6$ %) | 0.282 |
+So $\beta$ = 1.2 puts the charges on the cell (Cr and Ni within 1 %, Co within 6 %).  The moments do not improve: Co and Ni move
+from 4 % to 5.5 % low, and Cr stays 22 to 26 % too large in magnitude.  The moment error is therefore not electrostatic.  It
+comes from the recursion (rank, levels and steps; 6.3, 6.4).  The rank test points the right way: rank 2 reduces the Cr moment
+of \ce{FeNiCr} by 2.6 to 3 %.  The `STATUS.md` row "CoCrFeNi levels 3 spin" (Co, Fe, Ni within 3 to 4 %) holds only at $\beta$ =
+1, where the charges are 7 to 12 % off.  So that agreement was partly a compensation between electrostatics and the recursion.
 A parameter-free form exists: the hardness is the on-site response $-dV_p/dq_p$ of the recursion itself, and $\beta$ follows
 from it through `screen_lattice`.  This is not implemented.
