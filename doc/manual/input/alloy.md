@@ -134,6 +134,7 @@ This is the most important table. Convergence strategy is in the
 | `exact_density` | `true` | With `exact`: density from \(-\tfrac1\pi\,\mathrm{Im}\int[G\phi(z)^2+T(z)]\,dz\); `false` uses energy moments of the exact \(G\) |
 | `ed_terminator` | `hull` | Tail of the chain: `hull`, `bp`, `avg2` |
 | `depth_tol` | `1e-5` | Stop a chain when \(G\) changes by less than this (`levels` is the maximum) |
+| `energy_block` | `0` | Contour energies per chain block. `0` runs one chain per energy. `8` runs eight energies in one block; it was 1.35× faster for CoCrFeNi at about 6× the memory. Both give the same result within the length error of the chain (see the [Convergence guide](../guides/convergence.html)). |
 | `kkr_check` | `0` | Ordered ED: after the SCF run a same-model k-space KKR-ASA check on an \(n_k^3\) mesh (`0` = off) |
 | `tail_scan` | `0` | **Diagnostic** (`asr_ed`): tabulate moments against termination depth 8 … `tail_scan` and tail type, then stop |
 

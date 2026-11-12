@@ -1,7 +1,7 @@
 # Review of code and physics (Fable 5.2 session, 2026-11-10)
 
-Branch `review-fable`, off `main` e8d193c.  Not merged.  Pushed to `origin` so that the desktop and smriti could build
-it.  Task: `docs/HANDOFF_review_fable.md`.
+Branch `review-fable`, off `main` e8d193c.  Merged into `main` on 2026-11-12 (fast-forward to 08a625e) after a comparison
+of 12 examples between the two binaries (identical charges, DOS and potentials; total energies changed by F1 only).  Task: `docs/HANDOFF_review_fable.md`.
 The code work and the unit tests were done on the laptop.  Runs: desktop `~/asr_review` (F4 on 2026-11-11, `trial/f4`;
 section 4 jobs in `trial/desk1`), smriti gfortran 14 jobs 398595, 398596 and 398614 (3.6).  The smriti SRO results
 (`~/asr_trial/mpi/prod`) and the desktop per-atom cells (`~/asr_remote4/trial/b45/ks_site`) were read for F1.
@@ -67,7 +67,8 @@ decisive test.
 - Effect on production: on a random fcc ternary operator (levels 2, 1704 reduced nodes) the projection changes $G$ by less
   than $10^{-10}$ up to 48 steps.  So random alloys at 24 to 48 steps are not affected.  Ordered and partly ordered cells
   with long chains are (gate 2 used 96 and 160 steps on B2).  Production B2 `ed3` at 96 steps (doubt 7): the block
-  difference stays at $10^{-4}$ e with the projection, so F2 is not its cause on that case.
+  difference stays at $10^{-4}$ e with the projection, so F2 is not its cause on that case.  The cause is the chain length
+  (3.8).
 - Not fixed: the older reduced operator `asr_augsym` (routes kept as cross-checks) has the same structure and no projector.
 
 ### F3. Run-to-run differences at rounding level came from `orbital_rep` (proven, fixed, commit 5545a36)
@@ -122,7 +123,7 @@ decisive test.
 | 4 | `ed3` derivation | resolved with one correction | Results 1 to 5 re-derived; band energy corrected (F1); gates judged in 3.3 |
 | 5 | total energy | narrowed | F1 fixed; functional form and double counting checked (3.4); 0.1 mRy claim not yet tested by a run |
 | 6 | `ef_linear_max` | narrowed | same fixed point proven; the step term is excluded, so the 1.5e-3 $\mu_B$ is the distance to the fixed point at tolerance 1e-5 (3.5) |
-| 7 | block kernels | narrowed, not resolved | not a kernel bug: the single-energy chain differs from itself by the same amount under a $10^{-15}$ shift of $z$; on the 128-site test cell block equals single to $10^{-14}$ at 144 steps after F2.  Production B2 `ed3` (supercell 16, 96 steps, 64 points, one iteration; desktop `trial/desk1/f2_b2`, 2026-11-11): with c12eb4f eb0 and eb8 still differ (qnet 0.12916 / 0.12928, E_F $-0.162172$ / $-0.162199$).  A repeat of eb0 is bit identical, so this is a fixed rounding sensitivity of the long ordered chains, about $10^{-4}$ e.  F2 does not remove it there.  The old binaries were not even reproducible: `main` and `5473149` give qnet 0.12935 and 0.12904 for the same eb0 input (F3) |
+| 7 | block kernels | resolved | not a kernel bug.  On B2 `ed3` the gap between `energy_block` 0 and 8 is a rounding scatter of chains that are not converged in length.  It is 0 at 48 steps, up to $3.8 \times 10^{-4}$ e between 64 and 192 steps, and $1 \times 10^{-5}$ e at 256 steps.  The length error at 96 steps is $7.8 \times 10^{-4}$ e, larger than the gap.  Reorthogonalisation does not remove the scatter (3.8) |
 | 8 | thread-order dependence | resolved | F3 |
 | 9 | OpenBLAS ring test | resolved | not OpenBLAS and not the library: the test's own configuration count was wrong under gfortran 14; fixed in the test, passes there (3.6) |
 | 10 | MPI shutdown crash | not reached | `asr_mpi.F90` read; no defect found by reading; no test possible here |
@@ -226,12 +227,47 @@ $F = -2\beta/R_1$, with the sign of `scf_electrostatics.md` (electron excess low
 energy is the exact average of the model: the fluctuation terms of $\tfrac{a}{2}(q - b)^2$ and of $\tfrac12 q V$ cancel
 ($+\mathrm{var}(V)/2a$ and $-\mathrm{var}(V)/2a$).
 
+### 3.8 Block kernels (doubt 7)
+Case: ordered B2 \ce{CuZn}, route `ed3`, levels 4, supercell 16, 64 contour points, `depth_tol` 0, `hull`, one iteration
+from free atoms (input of `trial/desk1/f2_b2/new_eb0`).  Desktop `~/asr_review/trial/doubt7`, 2026-11-13.  Binary a3aeb00
+(branch `doubt7-reorth`, not merged).  It adds a debug switch `ASR_ED3_REORTH=1` for full reorthogonalisation of the
+single-energy chain.  With the switch off it reproduces `new_eb0` bit for bit (`asr.out` and the DOS file).  All chains ran
+to full length.  Columns: qnet of Cu (Zn has the opposite sign) for `energy_block` 0, 8 and 0 with reorthogonalisation.
+
+| steps | eb0 | eb8 | eb0, reorth | $E_F$ eb0 / eb8 / reorth (Ry) |
+|---|---|---|---|---|
+| 48 | 0.12148 | 0.12148 | 0.12148 | $-0.161413$ / $-0.161413$ / $-0.161413$ |
+| 64 | 0.12625 | 0.12632 | 0.12540 | $-0.163373$ / $-0.163293$ / $-0.163640$ |
+| 80 | 0.12921 | 0.12920 | 0.12924 | $-0.162239$ / $-0.162258$ / $-0.162860$ |
+| 96 | 0.12916 | 0.12928 | 0.12896 | $-0.162172$ / $-0.162199$ / $-0.162716$ |
+| 128 | 0.12950 | 0.12950 | 0.12984 | $-0.161458$ / $-0.161488$ / $-0.161774$ |
+| 160 | 0.12985 | 0.12947 | 0.12993 | $-0.161544$ / $-0.161654$ / $-0.161516$ |
+| 192 | 0.12972 | 0.12986 | 0.13037 | $-0.160539$ / $-0.160607$ / $-0.161612$ |
+| 256 | 0.12994 | 0.12993 | 0.12988 | $-0.161057$ / $-0.161056$ / $-0.161069$ |
+
+- At 48 steps the three versions agree to all printed digits.  At 256 steps they agree to $6 \times 10^{-5}$ e and
+  $1.3 \times 10^{-5}$ Ry.  In between they scatter by up to $6.5 \times 10^{-4}$ e and 1 mRy.  The sign changes from one
+  length to the next.  So the block kernel has no bias.  It is one of three versions of the same chain with a different
+  rounding.
+- The scatter has the size of the length error.  From 96 to 256 steps qnet moves by $7.8 \times 10^{-4}$ e and $E_F$ by
+  1.1 mRy.  The gap of $1.2 \times 10^{-4}$ e at 96 steps lies inside that error.
+- Full reorthogonalisation does not reduce the scatter.  It is the largest outlier at 64, 80, 96 and 192 steps.  So loss of
+  orthogonality is not the mechanism.
+- A reading that fits the data, not proven: the ordered chain resolves sharp structure near $E_F$ step by step.  While a
+  pole of the $m$-step fraction lies close to the contour near $E_F$, a rounding change moves it and the occupied charge
+  follows.  Once that structure is resolved the versions meet.
+- Consequence: `energy_block` 8 is as accurate as 0.  The default stays 0; a change is the user's decision.  Ordered cells
+  at 96 steps carry a length error of about $10^{-3}$ e.  That is far below the accuracy target.
+- Earlier note in this row: the single-energy chain changed by the same amount under a $10^{-15}$ shift of $z$.  This fits
+  the same picture.  It was not repeated.
+
 ## 4. What needs the desktop or smriti
 Rule (user, 2026-11-11): the desktop takes jobs of 2 to 3 h.  Long jobs and jobs that need MPI wait for smriti.
 1. Effect of F1.  Done: the correction of both sides of the SRO comparison from the tables (F1 table), and fcc \ce{Cu} $E(a)$
    (F1), and the reruns of `a0_s1` and `a-0.30_s1` with the fixed code (F1, 6.1).
 2. Done: F2 on B2 `ed3` at 96 steps, `energy_block` 0 and 8, new and `main` binary, and a repeat (doubt 7).  The gap of
-   $10^{-4}$ e remains.  It is reproducible with c12eb4f.
+   $10^{-4}$ e remains.  It is reproducible with c12eb4f.  Done (2026-11-13): the length scan of 3.8 from 48 to 256 steps
+   with and without reorthogonalisation.  Doubt 7 is resolved.
 3. Done: the F4 control shows that `main` has the same unstable start (F4).  Done on the desktop (2026-11-12,
    `~/asr_review/trial/desk2/fnc_sro_spin`, binary 36c10b1): the spin SRO SCF with mixing 0.1 from `trial/f4/scf/pot.dat`
    converged in 98 iterations (dV $6.6 \times 10^{-6}$; no clamp event; weight below the contour $1.4 \times 10^{-9}$ e).  E_F

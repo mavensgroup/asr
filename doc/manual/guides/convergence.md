@@ -77,6 +77,14 @@ Always keep `symmetry = true` unless you are debugging: the reduction is exact.
   termination depth for each tail, each at its own \(E_F\). Do not use `bp` for
   SCF runs (see [Recursion and terminators](../theory/recursion.html)).
 * `fermi_kt` > 0 helps the SCF because \(N(E_F)\) becomes smooth.
+* Long chains on ordered cells carry a length error near \(10^{-3}\) e. On B2
+  CuZn (route `ed3`, supercell 16) the Cu charge transfer is 0.13 e. It moves
+  by \(7.8\times10^{-4}\) e from 96 to 256 steps, and \(E_F\) by 1.1 mRy. Between 64 and 192
+  steps the result also depends on rounding by a few \(10^{-4}\) e. So
+  `energy_block` 0 and 8, or a run with a different rounding, can differ by
+  that much. At 48 and at 256 steps all versions agree. This is far below the
+  accuracy of the method. Do not read differences below \(10^{-3}\) e between
+  such runs as physics.
 
 ## Ordered limits as tests
 

@@ -29,9 +29,10 @@
 !>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, docs/DERIVATION_ed3.md),
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
 !>                  energy_block (contour energies per chain block, capped by memory; default 0 = one energy per chain with the
-!>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; default 0 until the 1e-4 block difference
-!>                  in B2 ed3 is explained), ef_linear_max (Ry; E_F steps up to this size are taken to first order without
-!>                  a new contour, exact at self-consistency; default 0 = off)
+!>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; the 1e-4 block difference in B2 ed3 is
+!>                  rounding scatter inside the length error of the chain, docs/REVIEW_fable.md 3.8), ef_linear_max (Ry; E_F
+!>                  steps up to this size are taken to first order without a new contour, exact at self-consistency;
+!>                  default 0 = off)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
