@@ -230,9 +230,10 @@ energy is the exact average of the model: the fluctuation terms of $\tfrac{a}{2}
 ### 3.8 Block kernels (doubt 7)
 Case: ordered B2 \ce{CuZn}, route `ed3`, levels 4, supercell 16, 64 contour points, `depth_tol` 0, `hull`, one iteration
 from free atoms (input of `trial/desk1/f2_b2/new_eb0`).  Desktop `~/asr_review/trial/doubt7`, 2026-11-13.  Binary a3aeb00
-(branch `doubt7-reorth`, not merged).  It adds a debug switch `ASR_ED3_REORTH=1` for full reorthogonalisation of the
-single-energy chain.  With the switch off it reproduces `new_eb0` bit for bit (`asr.out` and the DOS file).  All chains ran
-to full length.  Columns: qnet of Cu (Zn has the opposite sign) for `energy_block` 0, 8 and 0 with reorthogonalisation.
+(from the branch `doubt7-reorth`, deleted from GitHub and kept only in a desktop clone).  It adds a debug switch
+`ASR_ED3_REORTH=1` for full reorthogonalisation of the single-energy chain.  With the switch off it reproduces `new_eb0`
+bit for bit (`asr.out` and the DOS file).  All chains ran to full length.  Columns: qnet of Cu (Zn has the opposite sign)
+for `energy_block` 0, 8 and 0 with reorthogonalisation.
 
 | steps | eb0 | eb8 | eb0, reorth | $E_F$ eb0 / eb8 / reorth (Ry) |
 |---|---|---|---|---|
@@ -384,10 +385,33 @@ Reading.  These are one-iteration responses at a fixed potential, so self-consis
 - \ce{CuZn} at levels 3 shows no rank effect in the charge (below $10^{-4}$ e) and 0.4 mRy in E_F.
 - \ce{FeNiCr} at levels 3 (production levels): rank 2 changes the Fe / Ni / Cr moments by $-0.5$ / $+0.2$ / $-2.6$ % and the Cr
   charge by 0.024 e (12 %).  dV after this one iteration is 0.014 Ry, against $4 \times 10^{-6}$ Ry in the rank-1 control.  So
-  rank 1 is not converged for this alloy at production settings.  The self-consistent size is not measured.  A rank-2
-  iteration costs about 1.9 h on 14 desktop threads (500,607 nodes, 11.5 GB).
-- Consequence: for magnetic multicomponent alloys the published accuracy of rank 1 is not established.  The Cr moment and the
-  Cr charge are the sensitive quantities.  FeRh (Fe 4.8 % low, flat in steps) should be rerun at rank 2.
+  rank 1 is not converged for this alloy at production settings.  A rank-2 iteration costs about 1.9 h on 14 desktop threads
+  (500,607 nodes, 11.5 GB).
+
+Self-consistent rank 2 (desktop `~/asr_review/trial/desk2/fnc_L3_rank2`, 2026-11-13).  \ce{Fe66Ni14Cr20} spin, levels 3, 24
+steps, `hull`, supercell 8, 32 contour points, `ef_linear_max` 0.005, tolerance $10^{-5}$ Ry.  The run starts from the converged
+rank-1 potential (`speed/s3_e33fe0b/fnc_l3_sp_el0.005`).  It converged in 24 iterations (dV $5.7 \times 10^{-6}$ Ry).  It took
+27.8 h on 20 threads, about 1.16 h per iteration, with 15.6 GB peak memory.
+
+| quantity | rank 1 (SCF) | rank 2 (SCF) | change |
+|---|---|---|---|
+| moment Fe ($\mu_B$) | 1.3393 | 1.2550 | $-6.3$ % |
+| moment Ni ($\mu_B$) | 0.2482 | 0.2383 | $-4.0$ % |
+| moment Cr ($\mu_B$) | $-0.9153$ | $-0.8101$ | $-11.5$ % |
+| mean moment per site ($\mu_B$) | 0.7356 | 0.6996 | $-4.9$ % |
+| qnet Fe / Ni / Cr (e) | 0.0246 / 0.1552 / $-0.1896$ | 0.0246 / 0.1538 / $-0.1887$ | below 0.0014 e |
+| E_F (Ry) | $-0.06633$ | $-0.06723$ | $-0.9$ mRy |
+
+- Self-consistency enlarges the moment change four to five times.  At fixed potential rank 2 lowered the Cr moment by 2.6 %.
+  The SCF value is 11.5 %.  The Fe change grows from $-0.5$ to $-6.3$ %.  The Ni change even reverses its sign, from $+0.2$ to
+  $-4.0$ %.
+- The charges do the opposite.  The fixed-potential Cr charge change of 0.024 e disappears at self-consistency.  All charges
+  agree with rank 1 to 0.0014 e.  Electrostatics restores the charges.  The magnetic response amplifies the moments.
+- The rank-1 baseline was made with binary e33fe0b, before F1.  So its total energy is not comparable with this run.
+- Consequence: rank 1 is not converged for magnetic multicomponent alloys.  The error is 4 to 12 % in the moments, largest for
+  Cr.  This is outside the 3 to 4 % target.  The charges are converged at rank 1.  Rank 3 equals rank 2 at levels 2, so rank 2
+  is probably enough.  FeRh (Fe 4.8 % low, flat in steps) should still be rerun at rank 2.  In \ce{FeNiCr} rank 2 lowers every
+  moment.  So in FeRh it may widen the gap instead of closing it.
 
 ### 6.5 Guards added (commit 36c10b1)
 1. `E_\nu` clamp.  `class_scf` and `asa_scf` count the clamp events.  A run that reaches the dV tolerance with $E_\nu$ held at
@@ -429,8 +453,11 @@ no clamp event).  Reference: the per-site cell with $H^{(2)}$ (`site_h2`, the sa
 | Ni | 0.1367 ($-12$ %) | 0.1544 ($-1$ %) | 0.1554 | 0.272 ($-3.7$ %) | 0.266 ($-5.6$ %) | 0.282 |
 So $\beta$ = 1.2 puts the charges on the cell (Cr and Ni within 1 %, Co within 6 %).  The moments do not improve: Co and Ni move
 from 4 % to 5.5 % low, and Cr stays 22 to 26 % too large in magnitude.  The moment error is therefore not electrostatic.  It
-comes from the recursion (rank, levels and steps; 6.3, 6.4).  The rank test points the right way: rank 2 reduces the Cr moment
-of \ce{FeNiCr} by 2.6 to 3 %.  The `STATUS.md` row "CoCrFeNi levels 3 spin" (Co, Fe, Ni within 3 to 4 %) holds only at $\beta$ =
-1, where the charges are 7 to 12 % off.  So that agreement was partly a compensation between electrostatics and the recursion.
+comes from the recursion (rank, levels and steps; 6.3, 6.4).  Self-consistent rank 2 reduces the Cr moment of \ce{FeNiCr} by
+11.5 % (6.4).  An effect of that size in CoCrFeNi would remove about half of the Cr excess.  Rank 2 also lowers the Fe and Ni
+moments of \ce{FeNiCr}, by 6.3 and 4.0 %.  In CoCrFeNi the Co, Fe and Ni moments are already 2 to 6 % low.  So rank 2 may move
+them further away.  A rank-2 run of CoCrFeNi is the direct test.  The `STATUS.md` row "CoCrFeNi levels 3 spin" (Co, Fe, Ni
+within 3 to 4 %) holds only at $\beta$ = 1, where the charges are 7 to 12 % off.  So that agreement was partly a
+compensation between electrostatics and the recursion.
 A parameter-free form exists: the hardness is the on-site response $-dV_p/dq_p$ of the recursion itself, and $\beta$ follows
 from it through `screen_lattice`.  This is not implemented.
