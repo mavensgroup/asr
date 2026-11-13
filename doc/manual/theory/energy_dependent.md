@@ -144,9 +144,28 @@ scan of an fcc ternary test operator (three central species, four start orbitals
 24 to 48 steps) found them at isolated energies for \(\mathrm{Im}\,z\) = 0.001 to 0.02. With
 the `hull` tail the worst case was a DOS of \(-2.1\) states/Ry at one energy
 (\(\mathrm{Im}\,z\) = 0.005, 48 steps), with 1 % of the weight negative. The tail adds a second
-mechanism: its band edges are complex, and its branch cut can lie above \(z\). There is no
-proof of causality for any tail on these chains. The `ed3` route prints the number of contour
-nodes at which the block \(-\mathrm{Im}\,G\) is not positive. Treat a DOS with
+mechanism: its band edges are complex, and its branch cut can lie above \(z\).
+
+Four statements are proven (`docs/DERIVATION_f4.md`).
+
+1. The chain is causal for one and two steps. A pole off the real axis can occur from three
+   steps on. On the real axis a pole of negative weight belongs to a Ritz value that is not
+   converged. Converged Ritz values give poles of positive weight.
+2. The residues of the chain without a tail sum to one. A non-causal pole moves weight. It
+   does not create or destroy it.
+3. No tail can repair the chain in general. Let \(g_{ij}\) be the elements of
+   \((z-T_m(z))^{-1}\). Every tail value with \(\mathrm{Im}\,t\le 0\) gives
+   \(-\mathrm{Im}\,G>0\) if and only if the \(2\times 2\) matrix
+   \(-\mathrm{Im}\,[g_{11}, g_{1m}; g_{1m}, g_{mm}]\) is positive definite. A tail with real
+   band edges has \(\mathrm{Im}\,t\le 0\), but the matrix is often not positive definite.
+4. The contour sum does not need an analytic approximant. It needs the chain to be accurate at
+   the nodes. A pole pair between the contour line and the real axis enters the electron
+   count with \(2\,\mathrm{Re}\,[r_p f(z_p)]\), where \(f\) is the Fermi function at the complex
+   pole. Far below \(E_F\) this is the ordinary weight of the pair. Within about \(10\,kT\) of
+   \(E_F\) the count is then not monotone in \(E_F\), and the SCF can stall.
+
+Both routes print the number of contour node values that are not causal, and `asr.out`
+carries a warning when the number is not zero in the last iteration. Treat a DOS with
 negative values as not converged in the number of steps.
 
 ## Tails, depth and cost

@@ -106,6 +106,10 @@ module asr_class_scf
     !> occupied moments miss this weight.  It must vanish (|wbelow| < wbelow_tol); below_ok is that test.
     real(dp) :: wbelow = 0.0_dp, wbelow1 = 0.0_dp
     logical :: below_ok = .true.
+    !> contour node values (node, start orbital, component, spin) of the last moment evaluation, and how many of them are not
+    !> causal: -Im G <= 0 (edc) or the block -Im G not positive semidefinite (ed3).  A Herglotz function has none.  The
+    !> truncated energy-dependent chain can have some (docs/DERIVATION_f4.md); the charges then carry the chain error there.
+    integer :: nnode = 0, nnoncausal = 0
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
@@ -159,6 +163,7 @@ contains
     if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
+    npsd = 0; nnode = 0
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
     ncls = inp%dec%ncls
@@ -497,6 +502,7 @@ contains
         end do
       end do
       res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
+      res%nnode = nnode; res%nnoncausal = npsd
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       res%hist_moment(it, :) = cr(:)%moment; res%hist_qnet(it, :) = cr(:)%qnet
       if (vb) then
@@ -512,6 +518,8 @@ contains
           end do
           print '(a,es9.2,a,i0,a,i0,a,es9.2)', '      ed3: max |dq1| / sqrt(|q0| |q2|) ', asym_max, ';  block -Im G not positive at ', npsd, ' of ', nnode, &
             ' node chains, max b^2/(a c) ', psd_max
+        else
+          print '(a,i0,a,i0,a)', '      edc: -Im G not positive at ', npsd, ' of ', nnode, ' node values'
         end if
         print '(a,i0,a,i0)', '      Anderson history ', mixer%nh, '  restarts so far ', mixer%nrestart
         print '(a,i0,a,a,a,es9.2,a,es10.3,a,i0,a,i0,a,f8.4,a,es10.3)', '      E_F passes ', npass, ' final ', &
@@ -524,6 +532,8 @@ contains
     end do
     if (res%nclamp > 0) print '(a,i0,a)', '  WARNING: E_nu held at its band window in the last iteration (', res%nclamp, &
       ' channels): not a fixed point, the result depends on the window margin'
+    if (res%nnoncausal > 0) print '(a,i0,a,i0,a)', '  WARNING: Green function not causal at ', res%nnoncausal, ' of ', res%nnode, &
+      ' contour node values in the last iteration (truncated energy-dependent chain, docs/DERIVATION_f4.md)'
     ! valence weight below the contour bottom at the final potential (the occupied moments would miss it)
     call all_params()
     call weight_below(res%wbelow)
@@ -581,10 +591,17 @@ contains
       mo = 0.0_dp; dosv = 0.0_dp; dm = 0.0_dp
       if (.not. ed3) then
         call chain_greens(zq, gz)
+        npsd = 0; nnode = 0
         do gg = 1, nsp
           do pp_ = 1, ncomp
             do o = 1, 4
               ll = lorb(o)
+              ! causality at every node in the upper half plane: -Im G > 0 for a Herglotz function (docs/DERIVATION_f4.md)
+              do j = 1, nq + 1
+                if (aimag(zq(j)) <= 0.0_dp) cycle
+                nnode = nnode + 1
+                if (aimag(gz(j, o, pp_, gg)) >= 0.0_dp) npsd = npsd + 1
+              end do
               dosv(pp_, gg, ll) = dosv(pp_, gg, ll) - worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
               do j = 1, nq
                 do kk = 0, 2

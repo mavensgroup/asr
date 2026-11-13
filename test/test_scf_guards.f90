@@ -34,6 +34,8 @@ program test_scf_guards
     '  weight below (first, final) ', r0%wbelow1, r0%wbelow
   call check(r0%iter == 4 .and. r0%converged, 'default margin: stops at iteration 4, reported converged')
   call check(r0%nclamp == 0 .and. r0%nclamp_run == 0, 'default margin: the E_nu clamp never fires')
+  ! one species: T = 1 on every site, so the chain has real Lanczos vectors and the Green function is causal at every node
+  call check(r0%nnode > 0 .and. r0%nnoncausal == 0, 'one species: all contour node values are causal (-Im G > 0)')
   call check(r0%below_ok .and. abs(r0%wbelow) < 1.0e-5_dp .and. abs(r0%wbelow1) < 1.0e-5_dp, &
              'no valence weight below the contour bottom (< 1e-5 e, first and final potential)')
 

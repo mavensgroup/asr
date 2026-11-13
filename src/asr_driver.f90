@@ -704,6 +704,9 @@ contains
     write (ru, '(a,2es10.2,a)') ' valence weight within 3 Ry below the contour bottom, first / final potential:', res%wbelow1, res%wbelow, &
       ' electrons per site'
     if (.not. res%below_ok) write (ru, '(a)') ' WARNING: states below the contour bottom: the charges and the energy miss them'
+    write (ru, '(a,i0,a,i0)') ' contour node values with a non-causal Green function (-Im G <= 0) in the last iteration: ', res%nnoncausal, &
+      ' of ', res%nnode
+    if (res%nnoncausal > 0) write (ru, '(a)') ' WARNING: the truncated energy-dependent chain is not causal at these nodes; the charges carry the chain error there'
     write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
     write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)
     write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per site'

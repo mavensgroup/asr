@@ -1,7 +1,10 @@
 !> Complex-energy contour integration of Green functions: occupied moments
 !>   M_k = -(1/pi) Im  int_C (z - E_nu)^k G(z) dz ,   C = semicircle in the upper half plane from E_bot to E_F,
-!> which equals  int_{E_bot}^{E_F} (E - E_nu)^k N(E) dE  when the Green function is analytic there (as the
-!> terminated continued fraction is).  Gauss-Legendre in the angle.
+!> which equals  int_{E_bot}^{E_F} (E - E_nu)^k N(E) dE  when the Green function is analytic there.  The exact Green function
+!> is.  A terminated chain with real coefficients (energy-independent route) is too.  The truncated energy-dependent chain is
+!> not analytic in general (REVIEW_fable F4): it can have poles off the real axis.  The contour sum of such a chain is still
+!> the exact moment up to the error of the chain at the nodes; a pole between the path and the real axis enters with its
+!> residue (docs/DERIVATION_f4.md, Results 9 and 10).  Gauss-Legendre in the angle.
 module asr_contour
   use asr_kinds, only: dp, pi
   implicit none

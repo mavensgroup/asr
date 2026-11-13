@@ -40,6 +40,10 @@ decisive test.
   overshoots by 30 % and levels 4 agrees to 2 %.  So the energy at strong order is not converged in levels at levels 3.  The
   charge is converged there (dq_Cu is the same at levels 3 and 4).  `edc` (energy moments, not changed by F1) gives $-1.28$,
   $+1.55$ and $-2.16$ mRy, 17 to 41 % above the corrected cells.
+  Suspected cause (2026-11-13): the cells are full ASA and `edc` is $H^{(2)}$.  At $H^{(2)}$ the correlated cells have twice the
+  SRO charge response of the full ASA (`DERIVATION_ed3.md` section 1), so their energy must differ too.  The right reference
+  for `edc` is the same cells with `[kspace] second_order = true`.  Test queued on the desktop (`trial/desk4/h2cells`: `a0_s1`
+  and `a-0.30_s1`).  It gives the $H^{(2)}$ cell value of dE at $\alpha = -0.266$, to be compared with $-2.16$ mRy.
 - Check of the table method (done 2026-11-11): the cells `a0_s1` and `a-0.30_s1` were rerun with the fixed binary c12eb4f
   (desktop `~/asr_review/trial/desk1/ks_site`).  They give $-3446.84486201$ and $-3446.84662776$ Ry per atom.  The table values
   are $-3446.84486167$ and $-3446.84662747$.  The difference is $3 \times 10^{-7}$ Ry in both, so dE is $-1.7658$ mRy both
@@ -105,6 +109,18 @@ decisive test.
   operators.  A Lanczos chain in the $M$ inner product has real coefficients and is Herglotz at every length.  It is the
   energy-independent route on $H^{(2)}$ with a frozen centre.  The ground rules exclude a swap, so nothing was changed.
 - Docs: `doc/manual/theory/energy_dependent.md` ("Causality of a truncated chain").
+- Analysis (2026-11-13, `docs/DERIVATION_f4.md`, ten proven results).  The three open questions are answered.
+  (1) The contour sum needs an accurate chain at the nodes, not an analytic one.  A pole pair below the contour line enters the
+  electron count with $2\,\mathrm{Re}\,[r_p f(z_p)]$.  It disturbs the SCF only within about 10 kT of $E_F$, where $N(E_F)$ is then
+  not monotone.  The residues sum to one, so no weight is lost.  (2) No tail is causal by construction.  Every tail with
+  $\mathrm{Im}\, t \le 0$ gives $-\mathrm{Im}\, G > 0$ if and only if a $2 \times 2$ matrix of the head of the chain is positive
+  definite.  Real band edges are therefore not a fix.  A causal completion of the chain data always exists, but not at a
+  usable cost.  The causal Krylov method for the pencil is the energy-independent route.  (3) The exact error of the chain
+  without a tail is $\rho_m^2\, q_{m+1}^T K^{-1} q_{m+1}$, bounded by $|\rho_m|^2 q^H M^{-1} q / \mathrm{Im}\, z$.  The smallest
+  non-causal chain has three steps on four sites (explicit example).  F4 holds in exact arithmetic.
+- Code (branch `f4-diagnostics`, not merged): `class_scf` counts the contour node values with $-\mathrm{Im}\, G \le 0$ for
+  `edc` as well, and `asr.out` warns when the count is not zero.  The header of `asr_contour` is corrected.
+  `tools/f4_dump.py` analyses an `ef_scan_dump` file.  Production dumps: desktop `trial/desk4/f4scan` (queued).
 
 ### F5. Comment and doc errors corrected
 - `energy_dependent.md` said the identity $E - H(E) = T (E - H^{(2)}) T$ holds "at infinite depth".  It is exact for every
@@ -127,7 +143,7 @@ decisive test.
 | 8 | thread-order dependence | resolved | F3 |
 | 9 | OpenBLAS ring test | resolved | not OpenBLAS and not the library: the test's own configuration count was wrong under gfortran 14; fixed in the test, passes there (3.6) |
 | 10 | MPI shutdown crash | not reached | `asr_mpi.F90` read; no defect found by reading; no test possible here |
-| 11 | terminators and causality | narrowed | F4: violations proven on a test operator; the FeNiCr SRO spin DOS at levels 3 has no negative value |
+| 11 | terminators and causality | analysed, not fixed | F4: violations proven on a test operator and by a 4-site example; mechanism, effect on the SCF and bounds derived (`docs/DERIVATION_f4.md`); no tail is causal by construction; the FeNiCr SRO spin DOS at levels 3 has no negative value |
 | 12 | electrostatics (B3) | resolved by derivation | 3.7 |
 | 13 to 15 | lower priority | not reached | F2 does not explain 13 on the evidence here (no effect in a random operator up to 48 steps) |
 
