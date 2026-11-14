@@ -52,7 +52,7 @@ max_iterations = 100
 tolerance = 1e-05
 
 [asr]
-levels = 4
+levels = 3
 recursion_steps = 24
 rank = 1
 contour_points = 32
