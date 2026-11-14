@@ -11,8 +11,24 @@
 [![Documentation](https://img.shields.io/badge/docs-FORD-4051b5)](https://mavensgroup.github.io/asr/)
 
 A from-scratch modern-Fortran code for electronic structure of random alloys beyond CPA: high-entropy alloys,
-disordered altermagnets, short-range order. The LMTO part is built in (own radial solver, libxc, own structure
-constants, own SCF) and is at present the only Hamiltonian (TB-LMTO-ASA); the method itself is Hamiltonian-agnostic, and other Hamiltonians (Wannier, tight binding) would plug in through the same operator interface (see `doc/manual/hamiltonian/`).
+disordered altermagnets, short-range order.
+
+## Method and Hamiltonian
+
+The code has two separate layers.
+
+* **The method: augmented-space recursion (ASR).** It takes the configuration average over the disorder and gives the
+  Green function by recursion. It is Hamiltonian-agnostic. It needs an operator on a graph whose site-diagonal part
+  depends on the local species and whose hopping does not. It never asks where that operator comes from.
+* **The Hamiltonian: TB-LMTO-ASA.** It supplies that operator: the species parameters, the screened hopping blocks
+  and their energy dependence. It is built in from scratch (own radial solver, libxc, own structure constants, own
+  SCF). At present it is the only Hamiltonian. Others (Wannier, tight binding) would plug in through the same operator
+  interface.
+
+The input follows the same split: the species block and a few `[scf]` keys are Hamiltonian-specific, the rest
+(structure, disorder, recursion, output) is not. See [`doc/manual/hamiltonian/index.md`](doc/manual/hamiltonian/index.md).
+The boundary is not yet perfectly clean: the SCF loop calls the ASA density and Madelung steps, and the site-class
+operator assumes the LMTO form h = c + d S d.
 
 Repository: **<https://github.com/mavensgroup/asr>**
 
@@ -58,10 +74,11 @@ One input format for every system, solved by the energy-dependent augmented-spac
 ## What is inside (src/)
 | layer | modules |
 |---|---|
-| base | `asr_kinds`, `asr_operator` (abstract `linop`, CSR), `asr_testing`, `asr_tomlutil`, `asr_input_lmto`, `asr_report`, `asr_driver` (the one input format and driver of `asr <input.toml>`), `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`) |
-| recursion | `asr_recursion` (Lanczos/Haydock), `asr_greens` (continued fraction, tails), `asr_terminator` (sqrt, Beer–Pettifor, Luchini–Nex join, period-p), `asr_contour`, `asr_partial` (species-resolved G), `asr_lattice_toy` (model clusters for tests) |
-| LMTO | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_pfun` (exact ASA potential function), `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_ewald`, `asr_mixing` (Anderson) |
-| disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augsym`, `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_symmetry` (O_h/D_4h reduction), `asr_augorb`, `asr_ed`, `asr_edn`, `asr_endep`, `asr_edc` (route `edc`), `asr_ed3` (route `ed3`, full ASA), `asr_sro` (first-shell Warren–Cowley SRO), `asr_screening` (screened electrostatics of the charge deviations), `asr_sublattice`, `asr_lmto_alloy`, `asr_lmto_realization`, `asr_alloy_scf`, `asr_class_scf`, `asr_kpm`, `asr_lattices` |
+| method: recursion | `asr_operator` (abstract `linop`, CSR), `asr_recursion` (Lanczos/Haydock), `asr_greens` (continued fraction, tails), `asr_terminator` (sqrt, Beer–Pettifor, Luchini–Nex join, period-p), `asr_contour`, `asr_partial` (species-resolved G), `asr_kpm` (independent DOS reference) |
+| method: disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_augsym`, `asr_symmetry` (O_h/D_4h reduction), `asr_sublattice`, `asr_sro` (first-shell Warren–Cowley SRO), `asr_lattices`, `asr_lattice_toy` (model clusters for tests) |
+| Hamiltonian: TB-LMTO-ASA | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_pfun` (exact ASA potential function), `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_lmto_alloy`, `asr_lmto_realization`, `asr_augorb`, energy-dependent forms `asr_ed`, `asr_edn`, `asr_endep`, `asr_edc` (route `edc`), `asr_ed3` (route `ed3`, full ASA), `asr_input_lmto` |
+| SCF and electrostatics (joins the two) | `asr_class_scf`, `asr_alloy_scf`, `asr_mixing` (Anderson), `asr_ewald` (Madelung), `asr_screening` (screened electrostatics of the charge deviations) |
+| base and driver | `asr_kinds`, `asr_testing`, `asr_tomlutil`, `asr_report`, `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`), `asr_driver` (the one input format and driver of `asr <input.toml>`) |
 
 ## Validation highlights
 * radial solver: hydrogenic levels 1e-10 Ry; free atoms He/Ne vs NIST LDA to 3e-7 Ha

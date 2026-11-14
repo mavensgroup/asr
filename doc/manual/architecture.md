@@ -21,29 +21,35 @@ title: Architecture
 
 ## Layers
 
-The layering below is the intended structure (the ROADMAP's "no upward dependencies" principle); it is conceptual and not enforced by the build.
+The code has two layers that meet only in the SCF: the **method** (augmented-space
+recursion, Hamiltonian-agnostic) and the **Hamiltonian** (TB-LMTO-ASA, the one
+implemented). The layering below is the intended structure (the ROADMAP's "no
+upward dependencies" principle); it is conceptual and not enforced by the build.
 
 ```text
- driver       asr_driver (one reader, dispatch on method)   asr_report      app/main.f90
-                     │                          │
- SCF          asr_class_scf  (method = "asr")   asr_lmto_driver → asr_asa  (method = "kspace")
+ driver        asr_driver (one reader, dispatch on method)   asr_report   app/main.f90
                      │
- ------------------- Hamiltonian-agnostic above, TB-LMTO-ASA specific below (see note) -------------------
- operators    asr_augcls (class parameters → operator)   asr_augn  asr_augspace  asr_sublattice
-              asr_edc / asr_ed3 / asr_ed / asr_edn / asr_endep   asr_lmto_cell  asr_lmto_ham
-                     │
- physics      asr_radial  asr_potpar  asr_atom  asr_xc  asr_strconst  asr_harmonics
-              asr_ewald   asr_tetra   asr_pfun  asr_screening  asr_sro
-                     │
- recursion    asr_recursion  asr_greens  asr_terminator  asr_contour  asr_partial  asr_mixing
-                     │
- base         asr_kinds  asr_operator  asr_symmetry  asr_lattices  asr_tomlutil  asr_testing  asr_mpi
+ SCF           asr_class_scf  asr_alloy_scf  asr_mixing  asr_ewald  asr_screening     (joins the two layers)
+                     │                                      │
+ ──── METHOD (Hamiltonian-agnostic) ────────┬──── HAMILTONIAN: TB-LMTO-ASA ───────────────────────
+ disorder      asr_augcls  asr_augn          │  operator    asr_edc  asr_ed3  asr_ed  asr_edn  asr_endep
+               asr_augspace  asr_augblk      │              asr_augorb  asr_lmto_alloy  asr_lmto_realization
+               asr_augsym  asr_sublattice    │              asr_lmto_ham  asr_lmto_cell
+               asr_sro  asr_lattices         │  physics     asr_radial  asr_potpar  asr_pfun  asr_atom
+ recursion     asr_recursion  asr_greens     │              asr_xc  asr_strconst  asr_harmonics
+               asr_terminator  asr_contour   │  input       asr_input_lmto
+               asr_partial  asr_kpm          │
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+ base          asr_kinds  asr_operator  asr_symmetry  asr_tomlutil  asr_testing  asr_mpi
 ```
 
-The line in the middle marks the intended Hamiltonian boundary
-([Hamiltonians](hamiltonian/index.html)). It is not yet perfectly clean: the SCF
-loop still calls the ASA density and Madelung steps, and `asr_augcls` assumes the
-\(h=c+dSd\) structure of the LMTO operator.
+The method sees only the abstract operator ([[asr_operator]]) and the class
+parameters ([[asr_augcls]]); the Hamiltonian supplies them
+([Hamiltonians](hamiltonian/index.html)). The boundary is not yet perfectly
+clean: the SCF loop still calls the ASA density and Madelung steps, and
+`asr_augcls` assumes the \(h=c+dSd\) structure of the LMTO operator. The ordered
+k-space path ([[asr_lmto_driver]], [[asr_asa]], [[asr_tetra]]) is an internal
+check and sits on the Hamiltonian side.
 
 ## Program flow
 
