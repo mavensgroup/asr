@@ -125,7 +125,7 @@ ordered_subpage: child1.md
 
 `ordered_subpage` fixes the order of children; a directory is a page via its
 `index.md`. Cross-page links are ordinary relative Markdown links with the
-`.html` extension (`[text](input/alloy.html)`).
+`.html` extension (`[text](input/asr.html)`).
 
 ### Building
 

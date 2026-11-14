@@ -5,6 +5,7 @@ ordered_subpage: installation.md
                  quickstart.md
                  input
                  output.md
+                 hamiltonian
                  theory
                  guides
                  architecture.md
@@ -31,7 +32,10 @@ short-range-order problems. Disorder is averaged **exactly** in an *augmented
 space* and the averaged Green function is obtained by the Haydock (Lanczos)
 recursion with a terminated continued fraction.
 
-The Hamiltonian is a self-consistent **TB-LMTO-ASA** that the code builds itself:
+The method is **Hamiltonian-agnostic**: it needs an operator on a graph with
+species-dependent site parameters and species-independent hopping, and nothing
+more ([Hamiltonians](hamiltonian/index.html)). At present one Hamiltonian is
+implemented, a self-consistent **TB-LMTO-ASA** that the code builds itself:
 radial scalar-relativistic solver, libxc exchange–correlation, screened
 structure constants, Ewald/Madelung sums, Anderson mixing. No potential
 parameters are tabulated or imported.
@@ -39,7 +43,8 @@ parameters are tabulated or imported.
 ## Key Capabilities
 
 - **Beyond the CPA**: Averages the Green function exactly over disorder in the Mookerjee augmented space via Haydock Lanczos recursion, preserving local environment fluctuations and cluster effects without single-site approximations.
-- **From-Scratch TB-LMTO-ASA**: Self-contained scalar-relativistic Koelling–Harmon radial solver, libxc exchange–correlation, screened structure constants, Madelung sums, and Anderson mixing without tabulated empirical parameters.
+- **Hamiltonian-agnostic method**: The disorder average and the recursion see only an operator ([[asr_operator]]) and class parameters ([[asr_augcls]]); the Hamiltonian is a separate, replaceable layer.
+- **From-scratch TB-LMTO-ASA (the implemented Hamiltonian)**: Self-contained scalar-relativistic Koelling–Harmon radial solver, libxc exchange–correlation, screened structure constants, Madelung sums, and Anderson mixing without tabulated empirical parameters.
 - **Sublattices & HEAs**: Handles ordered crystals, site-selective disorder, multicomponent alloys, and partially disordered Heuslers ($L2_1$) on decorated lattices with species-resolved magnetic moments and SIM electrostatics.
 - **Rigorously Validated**: Every claim is backed by automated tests: hydrogenic levels to $10^{-10}$ Ry, NIST atoms to $3\times 10^{-7}$ Ha, exact $2^N$ configuration averages to $10^{-14}$, and Stuttgart LMTO benchmarks.
 
@@ -61,22 +66,21 @@ parameters are tabulated or imported.
 
 ## What can I compute?
 
-The `[calculation] kind` key of the input file selects the workflow.
+One input format serves every system. The `[calculation] method` key selects
+the solver; the structure decides whether the system is ordered or disordered.
 
-| `kind` | System | Method | Self-consistent? | Example |
+| `method` | System | Solver | Self-consistent? | Example |
 |---|---|---|---|---|
-| `model` | Ordered sc/bcc/fcc nearest-neighbour s-band | Recursion + square-root terminator | no | `example/fcc_ordered.toml` |
-| `lmto` | Ordered crystals, any cell, SQS supercells | TB-LMTO-ASA, k-space, tetrahedra | yes (spin 1 or 2) | `example/ag_fcc.toml`, `fe_bcc.toml`, `fecu_b2.toml` |
-| `alloy` | Random binary A\(_x\)B\(_{1-x}\) on fcc/bcc; ordered B2 | Augmented-space recursion (real-space for B2) | yes | `example/cuzn_alloy.toml` |
-| `sublattice` | Ordered compounds, partial (sublattice) disorder, multicomponent/HEA | Energy-dependent augmented-space recursion on a decorated lattice | yes | `example/co2fe04cr06al_l21.toml` |
+| `asr` (default) | Any decorated sc/bcc/fcc structure: pure metal, ordered compound (B2, Heusler), partial disorder, binary to high-entropy alloys, first-shell short-range order | Energy-dependent augmented-space recursion | yes (spin 1 or 2) | `example/cuzn_alloy.toml`, `fe66ni14cr20_fcc.toml`, `co2fe04cr06al_l21.toml`, `fe66ni14cr20_fcc_sro.toml` |
+| `kspace` | Ordered structures of any cell, SQS supercells | Brillouin zone, tetrahedra: the exact reference | yes | `example/fe_bcc.toml`, `feco_b2_kspace.toml` |
 
 ## Reading guide
 
 * **New user** — [Installation](installation.html) → [Quick start](quickstart.html) →
   [Convergence guide](guides/convergence.html).
-* **Setting up a calculation** — [Input reference](input/index.html) and
+* **Setting up a calculation** — [Input reference](input/index.html), [Hamiltonians](hamiltonian/index.html) and
   [Output files](output.html).
-* **Want to know what the numbers mean** — [Theory](theory/index.html) and
+* **Want to know what the numbers mean** — [Theory](theory/index.html), [Hamiltonians](hamiltonian/index.html) and
   [Validation](validation.html).
 * **Contributor** — [Architecture](architecture.html) and
   [Developing](developing.html).

@@ -4,8 +4,8 @@ title: Output files
 
 # Output files
 
-All files are written to the directory of the input file. Every calculation
-kind prints a short summary to the terminal; the full information is in the
+All files are written to the directory of the input file. Every
+`method` prints a short summary to the terminal; the full information is in the
 report (`out_file`, default `asr.out`) and in plain-text data files that load
 directly into gnuplot, matplotlib or `numpy.loadtxt` (lines starting with `#` are
 comments).
@@ -25,7 +25,7 @@ sed -n '/=== converged results/,/=== density/p' asr.out
 |---|---|
 | *(banner)* | Code version, title, start time, input file name, OpenMP threads, units |
 | `input (verbatim)` | Echo of the input file, each line prefixed with `   | ` |
-| `method` | Hamiltonian, XC functional, screening, BZ integration; for alloys: concentration, recursion type, depth, rank, supercell, screening \(\alpha\), number of augmented-space nodes, symmetry |
+| `method` | Method and Hamiltonian (TB-LMTO-ASA), XC functional, screening, BZ integration; for the recursion: route, depth, rank, supercell, screening \(\alpha\), number of augmented-space nodes, symmetry |
 | `structure` | Lattice, constant (Bohr and Å), primitive vectors, cell volume, atoms with positions and sphere radii (not for disordered alloys, which have no explicit positions) |
 | `SCF history` | Per iteration: potential change \(dV\), \(E_F\), moment and net charge per class/species; the criterion is stated |
 | `converged results` | \(E_F\), net cell charge, and per class: \(Z\), valence, \(S\), net charge, and for each spin and \(l\) the parameters and occupations |
@@ -59,7 +59,7 @@ representation**. This matters if you compare to other LMTO codes: a code that s
 parameters in a different representation must transform them first (see
 [Conventions](appendix/conventions.html#gamma-representation)).
 
-## `params_file` (`lmto` only)
+## `params_file` (`method = "kspace"` only)
 
 Potential parameters in the gamma representation (Ry):
 
@@ -72,31 +72,15 @@ Potential parameters in the gamma representation (Ry):
 
 ## `dos_file`
 
-States/Ry, units of the corresponding calculation. The header always records
-the name and, for SCF kinds, `# E_F = …`.
+States/Ry. The header records the name and `# E_F = …`.
 
-**model**
-
-| Column | Content |
-|---|---|
-| 1 | \(E\) |
-| 2 | LDOS at the origin site |
-
-**lmto**
+**`method = "kspace"`**
 
 Columns: `E(Ry)`, then, **for each atom and each spin**, the three values `s p d`
 (states/Ry/atom per spin channel). For `spin = 2` all up and down blocks follow
 each other in atom-then-spin order.
 
-**alloy**
-
-`E  total  A_s A_p A_d  B_s B_p B_d  total_spin1 total_spin2`. `A` and `B`
-are the first and second species; the l-resolved columns are per atom of
-that species and **summed over spin**; `total` is concentration weighted
-\(x\sum_l A_l+(1-x)\sum_l B_l\); the last two columns split `total` by spin
-channel.
-
-**sublattice**
+**`method = "asr"`**
 
 `E  total  <label>_s <label>_p <label>_d (for each component p)  total_spin1 total_spin2`. States/Ry per atom of each component, summed over spin; `total` is per site, weighted by the component weights. Labels combine sublattice and species.
 
@@ -104,11 +88,11 @@ channel.
 
 | File | When | Content |
 |---|---|---|
-| `save_potential` | `alloy`, `sublattice` | Converged species potentials and \(E_\nu\); read back with `start_potential` |
+| `save_potential` | `method = "asr"` | Converged species potentials and \(E_\nu\); read back with `start_potential` |
 
 ## Terminal output of SCF iterations
 
-The `alloy` kind prints one line per iteration in the terminal:
+The recursion prints one line per iteration in the terminal:
 
 ```text
 it 30  dV= 4.021E-06  EF=  0.017089  qnet(A,B)=  0.06709 -0.06709  m(A,B)=  0.0000  0.0000

@@ -2,7 +2,6 @@
 title: Theory
 ordered_subpage: augmented_space.md
                  recursion.md
-                 lmto.md
                  energy_dependent.md
                  scf_electrostatics.md
 ---
@@ -17,7 +16,7 @@ substitute for the original papers (see [References](../appendix/references.html
 |---|---|
 | [Augmented space](augmented_space.html) | How can disorder be averaged *exactly* with a single Hamiltonian? |
 | [Recursion and terminators](recursion.html) | How is the Green function extracted, and why does depth matter? |
-| [TB-LMTO-ASA](lmto.html) | What is the Hamiltonian, and which parameters does the code generate? |
+| [Hamiltonians](../hamiltonian/index.html) | Which Hamiltonian does the method run on, and which parameters does the code generate? (TB-LMTO-ASA is the only one implemented) |
 | [Energy-dependent ASR](energy_dependent.html) | What are the three recursion routes (`energy-independent`, `energy-dependent`, `asr_ed`)? |
 | [SCF and electrostatics](scf_electrostatics.html) | How are charges, Fermi level, Madelung energy and mixing handled? |
 

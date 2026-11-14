@@ -12,7 +12,7 @@
 
 A from-scratch modern-Fortran code for electronic structure of random alloys beyond CPA: high-entropy alloys,
 disordered altermagnets, short-range order. The LMTO part is built in (own radial solver, libxc, own structure
-constants, own SCF); other Hamiltonians (Wannier, tight binding) plug in through the same operator interface.
+constants, own SCF) and is at present the only Hamiltonian (TB-LMTO-ASA); the method itself is Hamiltonian-agnostic, and other Hamiltonians (Wannier, tight binding) would plug in through the same operator interface (see `doc/manual/hamiltonian/`).
 
 Repository: **<https://github.com/mavensgroup/asr>**
 
@@ -49,7 +49,7 @@ asr example/cuzn_alloy.toml          # random binary bcc Cu50Zn50 via augmented-
 asr example/co2fe04cr06al_l21.toml   # sublattice-disordered L2_1 Heusler Co2Fe0.4Cr0.6Al
 ```
 Outputs are written next to the input file. Input is one validated TOML record; unknown keys are errors.
-Supported `[calculation] kind` values: `"model"`, `"lmto"`, `"alloy"`, and `"sublattice"` (see [`doc/manual/quickstart.md`](doc/manual/quickstart.md)).
+One input format for every system; `[calculation] method` is `"asr"` (default, recursion) or `"kspace"` (ordered reference). See [`doc/manual/quickstart.md`](doc/manual/quickstart.md); the Hamiltonian-specific input is separated in [`doc/manual/input/hamiltonian.md`](doc/manual/input/hamiltonian.md).
 
 ## What is inside (src/)
 | layer | modules |

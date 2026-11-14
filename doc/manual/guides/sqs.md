@@ -21,7 +21,7 @@ with pair swaps that best matches
 
 with \(\sigma=+1\) for A, \(-1\) for B. It writes one TOML fragment per SQS
 with `[structure] lattice = "cell"` and the `[[site]]` list for
-`kind = "lmto"`.
+`method = "kspace"`.
 
 ```bash
 python3 -I tools/sqs.py --lattice bcc --n 16 --x 0.5 --species Fe Co --nsqs 2 --out sqs_dir

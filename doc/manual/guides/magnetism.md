@@ -12,21 +12,20 @@ what is known about its numerics. Non-collinear magnetism is not available.
 * `zeta0` is the initial polarisation of the atomic density.
 * `spin_sign = -1` on a `[[species]]` starts that species antiparallel
   (ferrimagnets, antiferromagnets on `cell` supercells).
-* For restarts or antiparallel variants of an existing potential:
+* For restarts from an existing potential:
 
 ```toml
 [scf]
 spin = 2
 start_potential = "run1_pot.dat"   # written earlier by save_potential
-flip_spin = "B"                    # swap the spin channels of species B (alloy kind)
 ```
 
 ## Default seeds
 
-| Kind | `zeta0` default | Rationale |
+| `method` | `zeta0` default | Rationale |
 |---|---|---|
-| `lmto` | 0.4 | Ordered route is stable; use ≈ 0.4 for Fe |
-| `alloy`, `sublattice` | **0.1** | Larger seeds run away |
+| `kspace` | 0.4 | Ordered route is stable; use ≈ 0.4 for Fe |
+| `asr` | **0.1** | Larger seeds run away |
 
 !!! danger "Runaway with a large seed"
     In the alloy route the seed is applied to the whole atomic density

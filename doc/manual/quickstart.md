@@ -4,7 +4,7 @@ title: Quick start
 
 # Quick start
 
-This tutorial walks through **four short calculations**—one for each workflow supported by `asr` (`model`, `lmto`, `alloy`, and `sublattice`)—starting from a simple nearest-neighbour tight-binding band and progressing to a self-consistent disordered alloy and a site-disordered Heusler compound.
+This tutorial walks through **four calculations** with the one input format of `asr`: an ordered crystal by the exact k-space reference, the same kind of crystal by the augmented-space recursion, a random binary alloy, and a site-disordered Heusler compound. The Hamiltonian is the same in all four (TB-LMTO-ASA, the only one implemented; see [Hamiltonians](hamiltonian/index.html)). Only the structure and the `method` change.
 
 ---
 
@@ -32,90 +32,52 @@ In the commands below, `asr` refers to the installed binary (`asr_run -- <file>`
 
 ---
 
-## 1. Haydock Recursion on a Model Band (`kind = "model"`, 1 s)
+## 1. Ordered Crystal by k-space: fcc Ag (`method = "kspace"`, ≈ 9 s)
 
-The simplest calculation constructs a nearest-neighbour tight-binding \(s\)-band on a real-space cluster, tridiagonalizes it with the Lanczos (Haydock) recursion, terminates the continued fraction with a square-root analytic tail, and evaluates the local density of states (LDOS).
-
-### Input (`fcc_ordered.toml`)
-
-```toml
-[calculation]
-name = "fcc NN s-band"
-kind = "model"
-
-[structure]
-lattice = "fcc"
-
-[model]
-hopping = 1.0
-
-[recursion]
-nlevels = 40
-terminator = "sqrt-avg2"
-
-[dos]
-emin = -14.0
-emax = 14.0
-eta = 0.05
-npoints = 801
-
-[output]
-dos_file = "fcc_ordered_dos.dat"
-```
-
-### Run & Output
-
-```bash
-asr /tmp/run/fcc_ordered.toml
-```
-
-```text
-asr 0.1.0  fcc NN s-band
-input: /tmp/run/fcc_ordered.toml
-wrote /tmp/run/fcc_ordered_dos.dat
-```
-
-`/tmp/run/fcc_ordered_dos.dat` is a two-column table (`E  LDOS`) for the 12-nearest-neighbour fcc band (`[-12t, +4t]`), computed from 40 Lanczos steps and a square-root terminator. This is the core pipeline—*linear operator → Lanczos coefficients \((a_n, b_n)\) → terminated continued fraction → Green function \(\to\) LDOS*—that every first-principles calculation in `asr` builds upon. Try lowering `nlevels = 10` to observe finite-depth oscillations vs terminator smoothing (see [Theory: recursion](theory/recursion.html)).
-
----
-
-## 2. Self-Consistent Ordered Crystal: fcc Ag (`kind = "lmto"`, ≈ 9 s)
-
-For `kind = "lmto"`, `asr` runs a complete self-consistent TB-LMTO-ASA calculation from scratch: it solves the free-atom Dirac-like scalar-relativistic equation for the starting potential, computes screened canonical structure constants \(S^\alpha\), integrates the Brillouin zone by the Blöchl tetrahedron method, updates the sphere potential via libxc + Poisson, and mixes to self-consistency with Anderson mixing.
+With `method = "kspace"`, `asr` runs a complete self-consistent TB-LMTO-ASA calculation from scratch: it solves the free-atom scalar-relativistic equation for the starting potential, computes screened canonical structure constants \(S^\alpha\), integrates the Brillouin zone by the Blöchl tetrahedron method, updates the sphere potential via libxc + Poisson, and mixes to self-consistency with Anderson mixing. This is the exact reference for ordered structures; the recursion in the next section solves the same model.
 
 ### Input (`ag_fcc.toml`)
 
 ```toml
+# fcc Ag, k-space TB-LMTO-ASA (the exact reference of the ordered crystal).
 [calculation]
 name = "fcc Ag"
-kind = "lmto"
+method = "kspace"
 
 [structure]
 lattice = "fcc"
 alat = 4.0900            # Angstrom (experimental)
+centering = "F"          # one sublattice: the fcc lattice itself
+
+[[sublattice]]
+name = "fcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Ag"]
 
 [[species]]
 symbol = "Ag"
 z = 47
 nval = 11
-konfig = [5, 5, 4, 4]    # valence principal quantum numbers s,p,d,f; lower states are core
-occupations = [1.0, 10.0] # neutral-atom valence s and d occupations (starting potential only)
+konfig = [5, 5, 4, 4]
+occupations = [1.0, 10.0]
 
 [scf]
 spin = 1
 xc = "vbh"
-nk = 12
-bz = "tetra"
 mixing = 0.3
 tolerance = 1.0e-6
 max_iterations = 100
+
+[kspace]
+nk = 12
+bz = "tetra"
+dos_nk = 24
 
 [dos]
 emin = -0.9
 emax = 1.0
 npoints = 801
-smear = 0.01
-nk = 24
+eta = 0.01
 
 [output]
 dos_file = "ag_fcc_dos.dat"
@@ -128,15 +90,7 @@ params_file = "ag_fcc_params.dat"
 asr /tmp/run/ag_fcc.toml
 ```
 
-```text
-asr lmto  fcc Ag
-  lattice fcc  a(Bohr)=  7.72898  atoms/cell=1  xc=vbh  spin=1
-  SCF converged=T  iterations=12  dV= 9.82E-07  E_F= -0.173718 Ry
-  class Ag        S(Bohr)=  3.0205  qnet= -0.00000  moment=  0.00000
-  wrote ag_fcc_params.dat
-  wrote ag_fcc_dos.dat
-  wrote asr.out
-```
+The terminal prints a short summary (SCF convergence, \(E_F\), per-class charge and moment) and the files written.
 
 Inspect `/tmp/run/asr.out`. The converged potential parameters and \(l\)-resolved charges are summarized in:
 
@@ -167,20 +121,91 @@ These `s/p/d` occupations (`0.685 / 0.664 / 9.510`) and potential parameters (\(
 
 ---
 
-## 3. Random Binary Alloy: bcc Cu\(_{50}\)Zn\(_{50}\) (`kind = "alloy"`, ≈ 30 s)
+## 2. The Same Structure by Recursion: B2 FeCo (default `method = "asr"`)
 
-For `kind = "alloy"`, `asr` constructs the joint real-space \(\otimes\) configuration-space Hamiltonian in the Mookerjee augmented space, applies exact point-group (\(O_h / D_{4h}\)) symmetry reduction on the disorder configurations, integrates the configuration-averaged Green function along a semicircular complex energy contour at each SCF step, and includes Screened Impurity Model (SIM) Madelung electrostatics.
+Leave out `method` and the same structure block runs by the energy-dependent augmented-space recursion, the default solver. For an ordered crystal there is no disorder to average, and the recursion reproduces the k-space result to the accuracy of the chain length. Compare `example/feco_b2_asr.toml` with `example/feco_b2_kspace.toml`: the `[structure]`, `[[sublattice]]` and `[[species]]` blocks are identical, and only `method`, `[kspace]` (k mesh) and `[asr]` (recursion) differ. This pairing is the basic validation of the recursion ([Validation](validation.html)).
+
+```toml
+# Ordered B2 FeCo, ferromagnetic, by the energy-dependent recursion (default method).  k-space: example/feco_b2_kspace.toml.
+[calculation]
+name = "B2 FeCo FM, recursion"
+
+[structure]
+lattice = "bcc"
+alat = 2.857             # Angstrom
+period = 1
+centering = "P"          # two sublattices: cube corner and cube centre
+
+[[sublattice]]
+name = "a"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Fe"]
+
+[[sublattice]]
+name = "b"
+positions = [[0.5, 0.5, 0.5]]
+species = ["Co"]
+
+[[species]]
+symbol = "Fe"
+z = 26
+nval = 8
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 6.0]
+
+[[species]]
+symbol = "Co"
+z = 27
+nval = 9
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 7.0]
+
+[scf]
+spin = 2
+xc = "vbh"
+mixing = 0.2
+zeta0 = 0.1
+tolerance = 1.0e-5
+max_iterations = 200
+
+[asr]
+recursion_steps = 24     # Lanczos steps (ordered: one component per sublattice)
+supercell = 12
+contour_points = 32
+
+[dos]
+emin = -0.9
+emax = 0.6
+npoints = 601
+eta = 0.01
+
+[output]
+dos_file = "feco_b2_asr_dos.dat"
+```
+
+---
+
+## 3. Random Binary Alloy: bcc Cu\(_{50}\)Zn\(_{50}\)
+
+The only change against an ordered crystal is a sublattice with several species and their concentrations. `asr` then averages the Green function exactly over the disorder in the Mookerjee augmented space, with point-group (\(O_h / D_{4h}\)) symmetry reduction of the configuration space, a complex-energy contour at each SCF step, and Screened Impurity Model (SIM) electrostatics.
 
 ### Input (`cuzn_alloy.toml`)
 
 ```toml
+# Random bcc Cu0.5Zn0.5 (A2) by the energy-dependent augmented-space recursion: one sublattice with two species.
 [calculation]
 name = "CuZn bcc alloy"
-kind = "alloy"
 
 [structure]
 lattice = "bcc"
 alat = 2.85              # Angstrom
+centering = "I"
+
+[[sublattice]]
+name = "bcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Cu", "Zn"]
+concentrations = [0.5, 0.5]
 
 [[species]]
 symbol = "Cu"
@@ -188,7 +213,6 @@ z = 29
 nval = 11
 konfig = [4, 4, 3, 4]
 occupations = [1.0, 10.0]
-concentration = 0.5
 
 [[species]]
 symbol = "Zn"
@@ -201,14 +225,24 @@ occupations = [2.0, 10.0]
 spin = 1
 xc = "vbh"
 sim_beta = 1.0
+mixing = 0.3
 max_iterations = 60
 
 [asr]
-levels = 3               # Lanczos levels (depth); raise for production runs
-rank = 2                 # max flipped sites per augmented-space configuration
-supercell = 8            # real-space graph size in conventional cells
-symmetry = true          # exact D4h symmetry reduction of configuration space
-hamiltonian = "energy-independent"
+levels = 4               # augmented-space generations
+recursion_steps = 24     # Lanczos steps; convergence must be checked
+rank = 1                 # max flipped sites per augmented-space state
+supercell = 8            # graph size in conventional cells
+contour_points = 32
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 401
+eta = 0.02
+
+[output]
+dos_file = "cuzn_alloy_dos.dat"
 ```
 
 ### Run & Output
@@ -217,37 +251,18 @@ hamiltonian = "energy-independent"
 asr /tmp/run/cuzn_alloy.toml
 ```
 
-```text
-  SCF converged=T  iterations=30  E_F=  0.017089 Ry
-  species Cu  qnet=  0.06709  moment=  0.00000
-  species Zn  qnet= -0.06709  moment=  0.00000
-```
+The terminal prints the SCF history and, per species, the net charge and moment. `asr.out` records the recursion settings, the number of augmented-space nodes and the SIM parameter. `cuzn_alloy_dos.dat` holds the total and species/\(l\)-projected densities of states ([Output files](output.html)).
 
-In `/tmp/run/asr.out`:
-
-```text
-  recursion      energy-independent          levels=3  max rank=2  supercell=8
-  augmented-space nodes 63175   D4h symmetry=T   SIM beta= 1.000   mixing= 0.300
-```
-
-Here `63175` symmetry-reduced augmented-space states were generated, and Cu transfers \(0.067\,e\) to Zn under the Screened Impurity Model (`sim_beta = 1.0`). The output file `cuzn_alloy_dos.dat` contains the total and species/\(l\)-projected densities of states (`E  total  A_s A_p A_d  B_s B_p B_d  total_spin1  total_spin2`).
-
-!!! warning "Coarse tutorial settings vs production convergence"
-    `cuzn_alloy.toml` sets `levels = 3` so it finishes in ~30 seconds. At `levels = 3`, the continued fraction is truncated very early and partial \(l\)-resolved DOS curves can exhibit unphysical oscillations or small negative values near band edges. For production alloy calculations, use the energy-dependent route (`example/cuzn_alloy_asr_ed.toml` or `example/cuzn_alloy_ed.toml`) with deeper recursion (`levels = 4`, `recursion_steps = 24`–`36`, `rank = 1`, `ed_terminator = "hull"`), and consult the [Convergence guide](guides/convergence.html).
+!!! warning "Check the recursion depth"
+    `levels`, `recursion_steps` and `rank` control the accuracy. Too few steps truncate the continued fraction early and can produce oscillations or small negative values near band edges. Follow the [Convergence guide](guides/convergence.html) before trusting a result.
 
 ---
 
-## 4. Sublattice Disorder & Multicomponent Alloys: L2\(_1\) Co\(_2\)Fe\(_{0.4}\)Cr\(_{0.6}\)Al (`kind = "sublattice"`)
+## 4. Sublattice Disorder & Multicomponent Alloys: L2\(_1\) Co\(_2\)Fe\(_{0.4}\)Cr\(_{0.6}\)Al
 
-When a crystal has **multiple inequivalent Wyckoff sublattices**—some ordered and some chemically disordered, or with three or more alloy components—use `kind = "sublattice"`. Each `[[sublattice]]` block specifies its fractional coordinates on the decorated Bravais graph, the list of occupying `species`, and (if disordered) their `concentrations`.
-
-Look at `example/co2fe04cr06al_l21.toml`, which models the partially disordered L2\(_1\) Heusler alloy Co\(_2\)Fe\(_{0.4}\)Cr\(_{0.6}\)Al:
+A crystal with **several inequivalent Wyckoff sublattices**, some ordered and some disordered, or with three or more alloy components, uses the same blocks. Each `[[sublattice]]` gives its fractional coordinates on the decorated Bravais graph, the occupying `species` and, if disordered, their `concentrations`. See `example/co2fe04cr06al_l21.toml`, which models the partially disordered L2\(_1\) Heusler alloy Co\(_2\)Fe\(_{0.4}\)Cr\(_{0.6}\)Al:
 
 ```toml
-[calculation]
-name = "co2fe04cr06al L2_1, kind sublattice"
-kind = "sublattice"
-
 [structure]
 lattice = "bcc"
 alat = 2.8635
@@ -271,13 +286,15 @@ species = ["Fe", "Cr"]
 concentrations = [0.4, 0.6]
 ```
 
-Here Co (`8c`) and Al (`4a`) occupy ordered sublattices while Fe and Cr share the `4b` sublattice randomly in a 40:60 ratio. Running:
+Co (`8c`) and Al (`4a`) occupy ordered sublattices while Fe and Cr share `4b` randomly in a 40:60 ratio. Running:
 
 ```bash
 asr /tmp/run/co2fe04cr06al_l21.toml
 ```
 
-converges the spin-polarized multi-sublattice SCF with sublattice-averaged Ewald Madelung potentials plus intra-sublattice SIM screening, yielding species-resolved magnetic moments (\(\mu_{\text{Co}} \approx 0.94\,\mu_B\), \(\mu_{\text{Fe}} \approx 2.75\,\mu_B\), \(\mu_{\text{Cr}} \approx 1.24\,\mu_B\), \(\mu_{\text{Al}} \approx -0.08\,\mu_B\)). Note that this input uses production recursion settings (`levels = 4`, `recursion_steps = 24`, `spin = 2`) and takes several minutes on a 16-core workstation.
+converges the spin-polarised multi-sublattice SCF with species-resolved magnetic moments. The input uses production recursion settings (`levels = 4`, `recursion_steps = 24`, `spin = 2`) and takes several minutes on a 16-core workstation.
+
+For the species-dependent first-shell correlations of a high-entropy alloy see `example/fe66ni14cr20_fcc_sro.toml` and the `[[sro]]` section of the [input reference](input/asr.html).
 
 ---
 
@@ -285,10 +302,11 @@ converges the spin-polarized multi-sublattice SCF with sublattice-averaged Ewald
 
 | Goal | Manual Chapter |
 |---|---|
-| Look up every TOML section and key | [Input reference](input/index.html) (`model`, `lmto`, `alloy`, `sublattice`) |
+| Look up every TOML section and key | [Input reference](input/index.html) |
+| See which part of the input and code belongs to the Hamiltonian | [Hamiltonians](hamiltonian/index.html) |
 | Understand every table and column in `asr.out` and `*_dos.dat` | [Output files](output.html) |
 | Choose `levels`, `recursion_steps`, `rank`, and terminators for publication-grade runs | [Convergence guide](guides/convergence.html) |
 | Converge ferromagnetic, ferrimagnetic, and half-metallic alloys | [Magnetism guide](guides/magnetism.html) |
 | Cross-check ASR results against Special Quasirandom Structures (SQS) | [SQS cross-checks](guides/sqs.html) |
-| Understand the augmented-space formalism and TB-LMTO-ASA equations | [Theory](theory/index.html) |
+| Understand the augmented-space formalism and the TB-LMTO-ASA equations | [Theory](theory/index.html), [TB-LMTO-ASA](hamiltonian/tb_lmto_asa.html) |
 | Diagnose input errors or SCF convergence issues | [Troubleshooting](guides/troubleshooting.html) |

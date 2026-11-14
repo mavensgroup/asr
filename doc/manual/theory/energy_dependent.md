@@ -2,44 +2,44 @@
 title: Energy-dependent ASR
 ---
 
-# Three recursion routes
+# Energy-dependent ASR
 
-The `kind = "alloy"` and `"sublattice"` calculations select how the TB-LMTO
-Hamiltonian is turned into a recursion with `[asr] hamiltonian`.
+The recursion needs an operator. For the TB-LMTO-ASA Hamiltonian
+([Hamiltonians](../hamiltonian/index.html)) the operator depends on energy, and
+the code offers two production forms and keeps older forms as modules for
+tests and cross-checks. Only the production forms can be selected in the
+input file, with `[asr] route`.
 
-| `hamiltonian` | Operator | Recursions | Module |
+| `route` | Operator | Recursions | Module |
 |---|---|---|---|
-| `energy-independent` | \(H^{(2)}=E_\nu+h-hoh\) (or \(H^{(3)}\)); a *fixed* operator | One per start orbital (s, p\(_z\), t\(_{2g}\), e\(_g\)) and spin; **stored Lanczos basis**, G at any energy | [[asr_augsym]], [[asr_alloy_scf]] |
-| `energy-dependent` | \(A(z)=P^\alpha(z)-S^\alpha\), random diagonal \(P^\alpha(z)\) | One complex-symmetric chain **per complex energy** \(z\) | [[asr_endep]] |
-| `asr_ed` | AMscf form \(H(E)=E-T(E-E_\nu-h)T-ThohT\) | One recursion per central species, start site frozen | [[asr_ed]], [[asr_edn]], [[asr_edc]] |
+| `edc` (default) | AMscf form \(H(E)=E-T(E-E_\nu-h)T-ThohT\), the orthogonal \(H^{(2)}\) | One chain per (central species, start orbital, contour energy); start site frozen | [[asr_edc]], [[asr_ed]], [[asr_edn]] |
+| `ed3` | Full generalised ASA problem \(K(E)=EO-H\), including the \(hph\) term | As `edc`, with two start vectors per chain | [[asr_ed3]] (derivation in `docs/DERIVATION_ed3.md`) |
 
-`kind = "sublattice"` always uses the `asr_ed` form (via [[asr_edc]] and
-[[asr_class_scf]]).
+| Reference form (modules only) | Operator | Module |
+|---|---|---|
+| Energy-independent | \(H^{(2)}=E_\nu+h-hoh\), a fixed operator; stored Lanczos basis, \(G\) at any energy | [[asr_augsym]], [[asr_alloy_scf]] |
+| \(P(z)-S\) | \(A(z)=P^\alpha(z)-S^\alpha\), complex-symmetric chain per energy | [[asr_endep]] |
 
-!!! tip "Which one should I use?"
-    The energy-**independent** route is cheapest (one set of coefficients gives the
-    DOS at every energy) and is the natural first choice, but its
-    \(H^{(2)}\) is only an approximation of the energy dependence of the
-    potential function. The **energy-dependent** forms keep the exact \(z\)-dependence
-    (linear \(P(E)=(E-C)/\Delta\) in `asr_ed`) and are the production method for
-    real alloys. Use the two against each other as a cross-check.
+!!! tip "Which route should I use?"
+    Use `edc`, the production route. `ed3` adds the \(hph\) term that `edc` omits
+    and agrees better with the k-space full-ASA reference where that term
+    matters (see `docs/DERIVATION_ed3.md`, section 1). It costs more per
+    iteration. The energy-independent and \(P(z)-S\) forms are exact
+    cross-checks of `edc` at convergence but have no input switch.
 
-## Energy-independent
+## Energy-independent (reference form)
 
-\(H^{(2)}\) is expanded to a chosen `order` in \(h\). The augmented-space
-operator is built once per SCF iteration, four recursions per spin run
-(orbitals s, p\(_z\), xy, 3z²−r²), the Lanczos bases are stored, and the species
-Green functions are formed from \(\langle n_RG\rangle\) via the stored basis
-([[asr_partial]]). Moments \(M_k\) on a contour give \(E_F\), the charge and the density
+\(H^{(2)}\) is a fixed operator. The augmented-space operator is built once per
+SCF iteration, four recursions per spin run (orbitals s, p\(_z\), xy, 3z²−r²),
+the Lanczos bases are stored, and the species Green functions are formed from
+\(\langle n_RG\rangle\) via the stored basis ([[asr_partial]]). Moments \(M_k\)
+on a contour give \(E_F\), the charge and the density
 
 \[
-\rho_l=M_0\,\phi^2+2M_1\,\phi\dot\phi+M_2\,(\dot\phi^2+\phi\ddot\phi)
+\rho_l=M_0\,\phi^2+2M_1\,\phi\dot\phi+M_2\,(\dot\phi^2+\phi\ddot\phi) .
 \]
 
-(`density = "expand"`; with `"stuttgart"` the last term is
-\(M_2(\dot\phi^2-p\phi^2)\)).
-
-## Energy-dependent: \(P(z)-S\)
+## \(P(z)-S\) (reference form)
 
 At each complex energy \(z\) the recursion runs on
 
@@ -59,9 +59,8 @@ G=\lambda+\mu\,g^\alpha\mu,\quad
 \]
 
 \(A(z)\) is complex-symmetric, so the chain uses the complex-symmetric Lanczos
-process ([[asr_edn]] for \(n\) species). `potential_function = "exact"` replaces
-the two-parameter \(P\) by the exact potential function from the radial equation at
-each \(z\) ([[asr_pfun]]); \(\lambda=C'/C\) is used so that the poles at the real
+process ([[asr_edn]] for \(n\) species). The exact potential function
+from the radial equation at each \(z\) ([[asr_pfun]]) can replace the two-parameter \(P\) in this form; then \(\lambda=C'/C\) is used so that the poles at the real
 zeros of \(C\) cancel and the function is analytic elsewhere (the textbook
 \(-P''/(2P')\) has spurious poles in the upper half-plane at the complex zeros
 of \(P'\) of an exact, meromorphic \(P\)).
@@ -70,7 +69,7 @@ Because \(n_R\) is a projector, \(n_R\mu_R^2=\mu_A^2n_R\), the species-resolved
 functions need only the average \(g_{RR}\) and the transition element
 \(\langle n_Rg_{RR}\rangle\) from one chain per energy.
 
-## `asr_ed`: the AMscf form
+## `edc`: the AMscf form
 
 For a **central species** \(c\) (the start site frozen to \(c\)), one recursion
 per species and orbital:
@@ -176,14 +175,12 @@ negative values as not converged in the number of steps.
 | `depth_tol` | A chain stops early (from level 8, every 4 levels) when \(G\) changes by less than this (relative); `levels` is the maximum |
 | `contour_points` | Number of energies (and therefore chains) |
 | `fermi_kt` | Smeared occupations; makes \(N(E_F)\) smooth in the SCF |
-| `tail_scan` | Diagnostic: moments against termination depth, each tail at its own \(E_F\) |
 
 Statistics on how many chains and levels were used are kept in
 [[asr_endep]] (`ed_nchain`, `ed_nlev`).
 
-## An exact reference: KKR-ASA
+## An exact reference: k-space
 
-`potential_function = "exact"` together with `kkr_check = nk` runs, after the SCF,
-a same-model k-space KKR-ASA calculation of the *ordered* system on an \(n_k^3\)
-mesh, an independent test of the recursion route with exactly the same potential
-function.
+`method = "kspace"` ([Input: k-space](../input/kspace.html)) solves the same
+Hamiltonian for an *ordered* structure by the Brillouin-zone integral. It is the
+exact reference of the recursion at identical potential parameters.

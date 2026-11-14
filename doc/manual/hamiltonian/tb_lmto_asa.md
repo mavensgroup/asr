@@ -4,6 +4,10 @@ title: TB-LMTO-ASA
 
 # TB-LMTO-ASA
 
+This is the one Hamiltonian that `asr` implements at present. The method itself
+([Theory](../theory/index.html)) does not depend on it; see
+[Hamiltonians](index.html) for the interface.
+
 The Hamiltonian is the second-order **tight-binding linear muffin-tin orbital**
 Hamiltonian in the **atomic-sphere approximation** for an \(spd\) basis, in the
 screened (\(\alpha\)) representation. *Every* parameter is generated inside

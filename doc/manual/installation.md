@@ -166,7 +166,7 @@ cd asr
 | `src/` | Library modules (`asr_radial`, `asr_xc`, `asr_potpar`, `asr_strconst`, `asr_asa`, `asr_augspace`, `asr_ed`, `asr_endep`, …) |
 | `app/main.f90` | Command-line executable entry point (`asr <input.toml>`) |
 | `test/` | Automated verification and regression test programs (`test_*.f90`) |
-| `example/` | Ready-to-run TOML input files covering all four calculation kinds (`model`, `lmto`, `alloy`, `sublattice`) |
+| `example/` | Ready-to-run TOML input files covering ordered crystals (k-space and recursion), random alloys, a partially disordered Heusler and short-range order |
 | `data/reference/` | Independent benchmark reference data (Stuttgart LMTO, NIST, exact configurations) |
 | `tools/sqs.py` | Special Quasirandom Structure (SQS) generator script |
 | `doc/` & `ford.md` | FORD user manual (`doc/manual/`), custom stylesheet (`doc/css/asr.css`), and generated HTML (`doc/build/`) |

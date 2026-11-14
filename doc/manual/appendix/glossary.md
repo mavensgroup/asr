@@ -27,6 +27,6 @@ title: Glossary
 | **SRO** | Short-range order |
 | **Contour** | Complex-energy path for integrating Green functions |
 | **FORD** | FORtran Documentation generator used for this site |
-| **Decoration cell** | Cell whose positions assign graph sites to sublattices (`kind = "sublattice"`) |
+| **Decoration cell** | Cell whose positions assign graph sites to sublattices (`[[sublattice]]`) |
 | **Graph lattice** | The sc/bcc/fcc lattice on which hopping is defined |
 | **Class** | Inequivalent ASA sphere |

@@ -32,9 +32,9 @@ terminators](../theory/recursion.html)).
    below the physical question you ask.
 3. **Rank.** Repeat the best depth with `rank + 1`.
 4. **Supercell.** Double `supercell` once at the best depth.
-5. **Cross-check the route.** Compare `hamiltonian = "energy-independent"` with
-   `"asr_ed"` (they are identical at infinite depth). Disagreement tells you
-   truncation is still significant.
+5. **Cross-check the route.** `route = "edc"` and `route = "ed3"` differ by the
+   \(hph\) term of the Hamiltonian, not by truncation, so their difference is a
+   Hamiltonian effect. To judge truncation compare two depths of the same route.
 6. **Final.** Tighten `tolerance` and `contour_points`.
 
 !!! warning "Warning signs"
@@ -51,15 +51,15 @@ terminators](../theory/recursion.html)).
 
 The augmented-space node count grows steeply. Rough numbers measured for
 Cu-Ni without symmetry: ≈ 2·10⁶ nodes at depth 3 and ≈ 4·10⁷ at depth 4
-(rank ≤ 2). The `symmetry = true` D\(_{4h}\) reduction (default) cuts it by
-≈ 40×. For the shipped CuZn example (`levels = 3`, `rank = 2`,
-`supercell = 8`) the report shows
+(rank ≤ 2). The D\(_{4h}\) symmetry reduction (always on in the recursion) cuts it by
+≈ 40×. For an energy-independent CuZn test (`levels = 3`, `rank = 2`,
+`supercell = 8`) the report showed
 
 ```text
 augmented-space nodes 63175   D4h symmetry=T
 ```
 
-Always keep `symmetry = true` unless you are debugging: the reduction is exact.
+The reduction is exact.
 
 !!! tip "Hard walls"
     `recursion_steps` larger than `levels` runs more Lanczos steps on the node
@@ -90,4 +90,4 @@ Always keep `symmetry = true` unless you are debugging: the reduction is exact.
 
 Setting both species equal (A = B, a "trivial alloy") must reproduce the ordered
 SCF. `test_alloy_scf` verifies this, so it is a good sanity check of any new
-settings: run the A = B alloy and compare with `kind = "lmto"`.
+settings: run the A = B alloy by `method = "asr"` and compare with `method = "kspace"` on the same structure.

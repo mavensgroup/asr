@@ -11,18 +11,16 @@ Messages have the form `asr: input error: <message>`. Frequent ones:
 | Message | Cause and fix |
 |---|---|
 | `cannot read '<file>': …` | File missing or invalid TOML |
-| `unknown key "k" in [scf]` / `in top level` | Typo, or a key from another `kind`. Check the [reference](../input/index.html). |
+| `unknown key "k" in [scf]` / `in top level` | Typo, or a key that belongs to the other `method` (`[asr]` needs `method = "asr"`, `[kspace]` needs `"kspace"`). Check the [reference](../input/index.html). |
 | `[structure] alat (Angstrom) must be > 0` | `alat` missing |
 | `[[species]] needs z and nval` | Both are required |
-| `lattice b2 needs exactly two [[species]]` | Also: `fcc`/`bcc`/`sc` need exactly one (kind `lmto`) |
+| `[calculation] kind is no longer read` | Old input. Use the one format: delete `kind`, set `method` if you want k-space ([Input](../input/index.html)) |
 | `lattice "cell" needs [structure] vectors` / `[[site]] entries` | Missing blocks |
 | `[[site]] species "X" is not a [[species]] symbol` | Spelling |
-| `kind = "alloy" needs exactly two [[species]]` | Use `sublattice` for more |
-| `first [[species]] needs concentration` | Required for random fcc/bcc |
+| `method = "kspace" needs an ordered structure` | Disorder runs with `method = "asr"` |
+| `lattice = "cell" (explicit sites) runs with … method = "kspace" only` | Explicit-site cells are k-space only |
 | `concentrations must sum to 1` | |
-| `energy-dependent recursion needs symmetry = true` | Keep the default `symmetry = true` |
 | `[asr] recursion_steps must be 0 or >= levels` | |
-| `flip_spin needs start_potential` | |
 | `[[sublattice]] … concentrations must be > 0 and sum to 1` | |
 | `[[sublattice]] with several species needs concentrations` | |
 
