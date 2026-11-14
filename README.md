@@ -35,17 +35,24 @@ git clone https://github.com/mavensgroup/asr.git
 cd asr
 source env.sh                 # Intel oneAPI (ifx, MKL) + fpm flags
 asr_build --tests             # fpm build (fetches toml-f on first run)
-asr_test                      # run all tests (≈ 3 min on 16 cores)
+asr_test                      # run all tests (about 40 min on an 18-core laptop; the SCF tests dominate)
 ```
-After a module *signature* change do `rm -rf build/ifx_*` — fpm's incremental build can keep stale objects.
+After a module *signature* change do `rm -rf build/ifx_*` — fpm's incremental build can keep stale objects.  The typical
+symptom is a segmentation fault at the entry of a routine whose source did not change (seen in `asa_scf`).
+
+An MPI build (`-DUSE_MPI`, module `asr_mpi`) splits the recursion chains over ranks with no input change.  Without the flag
+the same source gives the serial program.
 
 ## Run
 ```bash
-asr example/fcc_ordered.toml         # model tight-binding s-band via Haydock recursion (1 s)
 asr example/ag_fcc.toml              # self-consistent fcc Ag: SCF → parameters → l-resolved DOS (9 s)
 asr example/fe_bcc.toml              # ferromagnetic bcc Fe
-asr example/fecu_b2.toml             # ordered B2 FeCu (two classes, Madelung, charge transfer)
+asr example/fecu_b2.toml             # ordered B2 FeCu, k-space (two classes, Madelung, charge transfer)
+asr example/cuzn_b2.toml             # ordered B2 CuZn by the energy-dependent recursion
+asr example/feco_b2_asr.toml         # ferromagnetic B2 FeCo by recursion; feco_b2_kspace.toml is the k-space counterpart
 asr example/cuzn_alloy.toml          # random binary bcc Cu50Zn50 via augmented-space recursion
+asr example/fe66ni14cr20_fcc.toml    # random fcc Fe66Ni14Cr20, multicomponent (Alam & Mookerjee 2009, Fig. 2)
+asr example/fe66ni14cr20_fcc_sro.toml  # the same with first-shell Warren-Cowley SRO, triad (1, 1, 0) (Fig. 4)
 asr example/co2fe04cr06al_l21.toml   # sublattice-disordered L2_1 Heusler Co2Fe0.4Cr0.6Al
 ```
 Outputs are written next to the input file. Input is one validated TOML record; unknown keys are errors.
@@ -54,10 +61,10 @@ One input format for every system; `[calculation] method` is `"asr"` (default, r
 ## What is inside (src/)
 | layer | modules |
 |---|---|
-| base | `asr_kinds`, `asr_operator` (abstract `linop`, CSR), `asr_testing`, `asr_tomlutil`, `asr_input`, `asr_input_lmto`, `asr_report` |
-| recursion | `asr_recursion` (Lanczos/Haydock), `asr_greens` (continued fraction, tails), `asr_terminator` (sqrt, Beer–Pettifor, Luchini–Nex join, period-p), `asr_contour`, `asr_partial` (species-resolved G) |
-| LMTO | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_lmto_cell`, `asr_ewald`, `asr_tetra`, `asr_mixing` (Anderson), `asr_asa` (ordered SCF, spin, multi-class), `asr_lmto_driver` |
-| disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augsym`, `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_symmetry` (O_h/D_4h reduction), `asr_augorb`, `asr_ed`, `asr_endep`, `asr_edc`, `asr_sublattice`, `asr_lmto_alloy`, `asr_lmto_realization`, `asr_alloy_scf`, `asr_class_scf`, `asr_alloy_driver`, `asr_class_driver`, `asr_kpm`, `asr_lattices`, `asr_kspace` |
+| base | `asr_kinds`, `asr_operator` (abstract `linop`, CSR), `asr_testing`, `asr_tomlutil`, `asr_input_lmto`, `asr_report`, `asr_driver` (the one input format and driver of `asr <input.toml>`), `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`) |
+| recursion | `asr_recursion` (Lanczos/Haydock), `asr_greens` (continued fraction, tails), `asr_terminator` (sqrt, Beer–Pettifor, Luchini–Nex join, period-p), `asr_contour`, `asr_partial` (species-resolved G), `asr_lattice_toy` (model clusters for tests) |
+| LMTO | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_pfun` (exact ASA potential function), `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_lmto_cell`, `asr_ewald`, `asr_tetra`, `asr_mixing` (Anderson), `asr_asa` (ordered SCF, spin, multi-class), `asr_lmto_driver` |
+| disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augsym`, `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_symmetry` (O_h/D_4h reduction), `asr_augorb`, `asr_ed`, `asr_edn`, `asr_endep`, `asr_edc` (route `edc`), `asr_ed3` (route `ed3`, full ASA), `asr_sro` (first-shell Warren–Cowley SRO), `asr_screening` (screened electrostatics of the charge deviations), `asr_sublattice`, `asr_lmto_alloy`, `asr_lmto_realization`, `asr_alloy_scf`, `asr_class_scf`, `asr_kpm`, `asr_lattices`, `asr_kspace` |
 
 ## Validation highlights
 * radial solver: hydrogenic levels 1e-10 Ry; free atoms He/Ne vs NIST LDA to 3e-7 Ha
