@@ -77,6 +77,17 @@ cell (Ewald, [[asr_ewald]]), plus the screened-impurity term for the deviation f
 the sublattice average. For a binary random alloy \(\bar q=0\) and this reduces to
 the SIM above; for an ordered sublattice there is no SIM term.
 
+The screened term comes from a charge-excess model of the graph lattice ([[asr_screening]]): every site responds to its
+own Madelung potential with one hardness \(a\), and `sim_beta` fixes \(a\). Without SRO it is the SIM term above. With
+first-shell **short-range order** the charge deviations respond to their drive \(\delta b\) as
+\(\delta q=\Gamma\,\delta b\) and \(V=a(1-\Gamma)\,\delta b\), so \(V=F\,\delta q\) with \(F=a(\Gamma^{-1}-1)\).
+\(\Gamma\) is the lattice average of the screening function times the SRO structure factor. The first shell alone
+gives \(\Gamma=G_{00}+G_1\hat A\). For strong clustering this has a zero, because the truncated structure factor turns
+negative. The code therefore completes the structure factor of every SRO eigenmode with the spherical-model form, which
+is positive by construction. \(\Gamma\) then stays positive. It vanishes only for complete segregation, where the
+segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite.
+`asr.out` lists the SRO modes with \(\Gamma\), the first-shell value and \(F\).
+
 For the **ordered B2** real-space route the two-site Madelung shifts are exact
 (Ewald sums with a neutralising background: \(V_i=\sum_j\Phi(i,j)\,q_j\) in
 Hartree, ×2 for Ry).

@@ -12,8 +12,12 @@
 !> Madelung of the sublattice-average charges over the decoration cell (Ewald) plus the screened potential of the deviations
 !> from the sublattice averages, F from asr_screening (charge-excess model of the graph lattice, hardness solved from sim_beta).
 !> Without SRO F = -2 sim_beta / R1 (the screened-impurity model; ordered sublattice: no deviation).  With first-shell SRO,
-!> F = (G00 + G1 Ahat)^-1 (W00 + W1 Ahat), Ahat(p, p') = z(kappa, kappa') (X_s'^(p) - x_s'): the conditional shell charge and the
-!> part of the neighbours' screening clouds on the centre (gate B3, FINDINGS_LOG "B3 re-derived").
+!> Ahat(p, p') = z(kappa, kappa') (X_s'^(p) - x_s') (the conditional shell; gate B3, FINDINGS_LOG "B3 re-derived"), and
+!> Gamma = dq/db is the closure of asr_screening on every eigenmode of Ahat (FINDINGS_LOG "B3 closure").  The SRO potential is
+!> then iterated in the drive u = db of the charge-excess model (asr_screening::screen_update, u is part of the mixing vector):
+!>     u_out = dq + (I - Gamma) u_in,   V = a (I - Gamma) u_out.
+!> The fixed point is V = F dq, F = a (Gamma^-1 - I), and dq = 0 on a mode with Gamma = 0 (full clustering, F infinite).
+!> Without SRO the potential is F dq as before (bit for bit).
 !> -> Anderson mixing of the smooth potentials and E_nu.
 !> Total energy per site (Ry, Kohn-Sham form: output density, input potential), E = sum_p w_p E_p with
 !>     E_p = E_band + sum eps_core - int n v~_in + 1/2 int n V_H[n] + int n eps_xc[n] + 1/2 q_p vm_p,
@@ -49,7 +53,7 @@ module asr_class_scf
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
-  use asr_screening, only: screen_t, screen_lattice, screen_matrix
+  use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
   implicit none
   private
@@ -97,7 +101,12 @@ module asr_class_scf
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
     real(dp), allocatable :: edos_e(:), edos(:, :, :, :)   !! DOS(e, l, component, spin) per atom
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
-    real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e)
+    real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e);
+                                                           !! huge if an SRO mode has Gamma = 0 (F infinite)
+    real(dp), allocatable :: gscr(:, :), wscr(:, :)        !! Gamma = dq/db and W = V/db of the screening model
+    real(dp), allocatable :: mode_lam(:), mode_gam(:)      !! SRO eigenmodes: eigenvalue of Ahat, Gamma of the mode
+    logical :: uform = .false.                             !! SRO potential iterated in the drive u = db (screen_update)
+    real(dp), allocatable :: udrive(:)                     !! u of the last iteration (e)
     real(dp), allocatable :: qch(:, :, :)                  !! qch(component, spin, l): sphere charge per channel, one spin channel
     !> E_nu channels held at their band window (clamp_enu) in the last iteration / in the whole run.  nclamp > 0: the E_nu fixed
     !> point lies outside the window, the result depends on the window margin, and converged is .false.
@@ -151,6 +160,9 @@ contains
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
     integer, allocatable :: pk(:), zsh(:, :)
     real(dp), allocatable :: ahat(:, :)
+    real(dp), allocatable :: ginv(:, :), dqv(:), ucur(:), uout(:), vfl(:)
+    logical :: uload
+    integer :: offu
     character(len=:), allocatable :: smsg
     integer :: p2
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
@@ -185,6 +197,8 @@ contains
       end do
     end do
     nelec = sum([(w(p) * real(inp%spec(psp(p))%nval, dp), p=1, ncomp)])
+    allocate (ucur(ncomp), uout(ncomp), vfl(ncomp), dqv(ncomp)); ucur = 0.0_dp; uout = 0.0_dp; vfl = 0.0_dp
+    uload = .false.                                    ! u read from start_potential
     ! operator classes: the sublattices, and with SRO also ncls + kappa' = first-shell sites of the origin on sublattice kappa'
     ! (same species; their concentrations are set per central component in chain_worker)
     nmc = ncls; if (inp%sro) nmc = 2 * ncls
@@ -276,11 +290,31 @@ contains
         end do
       end do
     end if
-    call screen_matrix(res%screen, ahat, res%fscr)
-    ! ---- mixing vector: per component and spin the smooth potential (n) and E_nu (3)
+    allocate (res%gscr(ncomp, ncomp), res%wscr(ncomp, ncomp), res%mode_lam(ncomp), res%mode_gam(ncomp), ginv(ncomp, ncomp))
+    res%uform = inp%sro .and. .not. res%screen%unscreened
+    call screen_matrix(res%screen, ahat, w, gm=res%gscr, wm=res%wscr, lam=res%mode_lam, gam=res%mode_gam, ginv=ginv)
+    if (minval(res%mode_gam) > 1.0e-9_dp * res%screen%g00) then
+      call screen_matrix(res%screen, ahat, w, fm=res%fscr)
+    else
+      res%fscr = huge(1.0_dp)                          ! F infinite on a mode: only the drive form is defined
+    end if
+    if (vb .and. inp%sro) then
+      print '(a)', '  SRO modes: eigenvalue lambda of Ahat, Gamma = dq/db (closure), G00 + G1 lambda (first-shell form), F (Ry/e)'
+      do p = 1, ncomp
+        if (res%mode_gam(p) > 1.0e-9_dp * res%screen%g00) then
+          print '(4x,f9.4,2f11.5,f12.4)', res%mode_lam(p), res%mode_gam(p), res%screen%g00 + res%screen%g1 * res%mode_lam(p), &
+            mode_f(res%screen, res%mode_lam(p), res%mode_gam(p))
+        else
+          print '(4x,f9.4,2f11.5,a)', res%mode_lam(p), res%mode_gam(p), res%screen%g00 + res%screen%g1 * res%mode_lam(p), &
+            '    infinite (full clustering: this charge deviation vanishes)'
+        end if
+      end do
+    end if
+    ! ---- mixing vector: per component and spin the smooth potential (n) and E_nu (3); with SRO then the drive u (ncomp)
     allocate (offx(ncomp + 1)); offx(1) = 0
     do p = 1, ncomp; offx(p + 1) = offx(p) + (cr(p)%mesh%n + 3) * nsp; end do
-    nx = offx(ncomp + 1)
+    nx = offx(ncomp + 1); offu = nx
+    if (res%uform) nx = nx + ncomp
     allocate (xin(nx), xout(nx), xnext(nx))
     call anderson_init(mixer, nx, inp%mix_history)
     allocate (mom(ncomp, 2, 0:2, 0:2), dosef(ncomp, 2, 0:2), qch(ncomp, 2, 0:2), dsm(ncomp, 2, 0:2, 0:2))
@@ -302,6 +336,7 @@ contains
           xin(i + n + 1:i + n + 3) = enu(:, sg, p)
         end do
       end do
+      if (res%uform) xin(offu + 1:offu + ncomp) = ucur
       call all_params()
       if (vb .and. it == 1) then
         call ed_moments(6.0_dp, mom, dosef, qch, dsm)
@@ -431,6 +466,18 @@ contains
       qbar = 0.0_dp
       do p = 1, ncomp; qbar(pcl(p)) = qbar(pcl(p)) + xp(p) * cr(p)%qnet; end do
       qcell = sum(inp%dec%frac * qbar)            ! residual of the E_F search: the Madelung sum needs neutral charges
+      ! SRO: potential of the charge deviations from the drive u (screen_update).  Without u from start_potential the first u
+      ! is Gamma^+ dq: on every mode with Gamma > 0 the first potential is F dq, as without the drive form.
+      if (res%uform) then
+        do p = 1, ncomp; dqv(p) = cr(p)%qnet - qbar(pcl(p)); end do
+        if (it == 1 .and. .not. uload) then
+          ucur = matmul(ginv, dqv)
+          call screen_project(xp, pcl, ucur)
+          xin(offu + 1:offu + ncomp) = ucur
+        end if
+        call screen_update(res%gscr, res%wscr, xp, pcl, dqv, ucur, uout, vfl)
+        xout(offu + 1:offu + ncomp) = uout
+      end if
       ! new potentials: sphere Hartree + xc + Madelung (sublattice averages) + SIM (deviation from the sublattice average)
       etot = 0.0_dp
       do p = 1, ncomp
@@ -446,7 +493,11 @@ contains
           call xc_eval_pol(xf, rho(:, 1), rho(:, 2), exc, vxc(:, 1), vxc(:, 2), cr(p)%mesh%r)
         end if
         vm = dot_product(phimad(pcl(p), :), qbar - qcell)
-        do p2 = 1, ncomp; vm = vm + res%fscr(p, p2) * (cr(p2)%qnet - qbar(pcl(p2))); end do
+        if (res%uform) then
+          vm = vm + vfl(p)
+        else
+          do p2 = 1, ncomp; vm = vm + res%fscr(p, p2) * (cr(p2)%qnet - qbar(pcl(p2))); end do
+        end if
         allocate (tmp(n), cum(n))
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(p)%mesh, tmp, cum)
@@ -477,7 +528,10 @@ contains
             wmix(i + 1:i + n) = (cr(p)%mesh%r(1:n) / (1.0_dp + cr(p)%mesh%r(1:n)))**2
           end do
         end do
+        if (res%uform) wmix(offu + 1:offu + ncomp) = res%screen%a**2     ! u measured as the potential a u (Ry)
       end if
+      ! the drive is part of the fixed point: its residual a |u_out - u_in| (Ry) enters dV
+      if (res%uform) dv = max(dv, res%screen%a * maxval(abs(uout - ucur)))
       ! restart safeguards only far from self-consistency (dV > 1e-2); closer the map is linear (Co2Fe0.4Cr0.6Al: the Cr response
       ! is linear to 2e-5 e for 5e-4 Ry shifts) and restarts every few iterations stalled the SCF at dV ~ 1e-4; Fe66Ni14Cr20 at
       ! levels 4 restarted at dV ~ 1.5e-3 (threshold 1e-3) 15 times in 35 iterations and never converged
@@ -501,6 +555,12 @@ contains
           end do
         end do
       end do
+      if (res%uform) then                          ! drive: the step limit of the potentials, 0.15 Ry, as a u step 0.15 / a
+        do p = 1, ncomp
+          ucur(p) = xin(offu + p) + max(-0.15_dp, min(0.15_dp, res%screen%a * (xnext(offu + p) - xin(offu + p)))) / res%screen%a
+        end do
+        call screen_project(xp, pcl, ucur)
+      end if
       res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
       res%nnode = nnode; res%nnoncausal = npsd
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
@@ -541,6 +601,7 @@ contains
     if (vb .or. abs(res%wbelow) >= wbelow_tol) print '(a,es10.2,a)', '  valence weight within 3 Ry below the contour bottom, final potential:', &
       res%wbelow, ' electrons per site (must vanish)'
     if (abs(res%wbelow) >= wbelow_tol) print '(a)', '  WARNING: states below the contour bottom: the charges and the energy miss them'
+    if (res%uform) res%udrive = ucur
     call xc_finalize(xf)
     do p = 1, ncomp
       do sg = 1, nsp
@@ -955,6 +1016,10 @@ contains
         do gg = 1, nsp; write (u, '(3es25.16)') enu(:, gg, pp_); end do
         do kk = 1, cr(pp_)%mesh%n; write (u, '(2es25.16)') cr(pp_)%v(kk, :); end do
       end do
+      if (res%uform) then                          ! older readers stop before this block
+        write (u, '(a)') '# u: drive of the SRO charge deviations (e), one value per component'
+        write (u, '(*(es25.16))') ucur
+      end if
       close (u)
     end subroutine write_potentials
 
@@ -986,8 +1051,15 @@ contains
         end do
         enu(:, 1:nsp, pp_) = ee(:, 1:nsp)
       end do
+      read (u, '(a)', iostat=ios) line              ! optional: the SRO drive u (written by runs with SRO)
+      if (ios == 0 .and. index(line, '# u:') == 1 .and. inp%sro) then
+        read (u, *, iostat=ios) vfl
+        if (ios == 0) then; ucur = vfl; uload = .true.; end if
+        vfl = 0.0_dp
+      end if
       close (u)
       if (vb) print '(3a)', '  start potentials from ', trim(inp%pot_in)
+      if (vb .and. uload) print '(a)', '  SRO drive u from the start potential'
     end subroutine read_potentials
   end subroutine class_scf
 

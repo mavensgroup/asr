@@ -1536,6 +1536,36 @@ Result (2026-11-03, all runs done).  Output q_Cu after one iteration; hopping ch
 - The frozen-potential runs have no supercell partner.  Their bare response includes no intra-sphere relaxation, so they are not
   comparable with the SCF fit value k dn.
 
+### B3 closure: the pole of the first-shell form, and a positive closure (2026-11-14; branch `sro-kcm-closure`)
+Scripts and the main output in `tools/sro_closure/`: `sro_strunc_check.py` (the identities below), `sro_exact_test.py` with
+`sro_mc.c` (exact supercells; `NSWEEP=5000 python3 -I sro_exact_test.py 32`, all cores, 11 min), `sro_closure.py`, `sro_pole_scan.py`,
+`exact_test_L32.txt`.  Problem: the FeNiCr triads with P(c | c) = 1 blew up in the SCF.  There Ahat has the
+eigenvalue z = 12, and F = a [(G00 + G1 Ahat)^-1 - 1] = +39 Ry/e at sim_beta 1.0.
+- Proven: Gamma = G00 + G1 Ahat is the BZ average of G(k) times the structure factor truncated after the first shell.  The identity
+  diag(x) Gamma = <G(k) diag(x) [(1 - 1 x^T) + c1(k) Ahat]> holds on x.db = 0 (numeric check 6e-15).  The truncated factor is
+  positive for all k only for Ahat eigenvalues in [-1, 3] (fcc) or [-1, 1] (bcc).  All clustering triads lie outside.
+- Proven: the exact model has no pole.  For a real configuration Gamma = <G S> / x with G > 0 and S >= 0.  The sum rule
+  sum_R G(R) = 0 gives Gamma -> 0 and F -> +infinity for full segregation.  The first-shell form is nearly complete at beta 1.0
+  only by accident: there z G1 = -1.318 carries 97 % of the sum rule (-G00 = -1.357).  At beta 1.2 the further shells carry +1.24.
+- The energy E = 1/2 sum w dq F dq is a minimum only for a + F > 0, so only below the pole of the first-shell form.
+- Exact test (charge-excess model solved by FFT on Monte Carlo fcc supercells of 131072 sites; binary, FeNiCr triads, built slabs):
+  at beta 1.0 the first-shell F is 10 to 35 % too low for strong clustering, and the species charges agree within 0.005 e.  At
+  beta 1.2 it has the wrong sign from lambda of about 7.7.  For fully segregated slabs the exact F grows linearly with the domain
+  size.  bcc ordering (CuZn lattice): the first-shell F is within 2 to 6 %.
+- Closure: every eigenmode of Ahat gets the spherical-model (Krivoglaz-Clapp-Moss) correlation function, positive by
+  construction.  Beyond its limits the order condenses: at k = 0 for clustering, where G(0) = 0 (Gamma = 0 at alpha_1 = 1), and at
+  the ordering point (bcc H, fcc X) for ordering (Gamma = G(H) exactly for perfect B2 order).  Against the exact supercells:
+  F within about 1 % at beta 1.0 (binary, all triads), the right sign and 10 to 30 % at beta 1.2.  The bcc ordering F stays within
+  1 % of the exact one.  Its magnitude is smaller than the first-shell F: by 3.5 % at the CuZn alpha -0.148 and by 7 % at -0.266
+  (F = -0.517 and -0.562 against -0.535 and -0.605 Ry/e).  The CuZn SRO results must be rerun.
+- A mode with Gamma = 0 has F infinite.  The SCF therefore iterates the drive u = db of the model: u_out = dq + (1 - Gamma) u_in,
+  V = a (1 - Gamma) u.  The fixed point is V = F dq wherever F is finite, and dq = 0 on a Gamma = 0 mode.  The SCF eigenvalue of
+  a stiff mode changes from -(F + U) chi (about -1000 for the triads) to about (1 - Gamma)(1 - a chi) - U chi (estimate: -60).
+  Without SRO the code keeps V = F dq, bit for bit.
+- Unit tests (`test_screening`, 60 checks): the closure equals the numpy closure to 1e-11; slope G1 at lambda = 0; Gamma > 0 and
+  decreasing on the realizable range at beta 1.0 and 1.2; continuity at both limits; the B2 limit; the drive fixed point.
+- Open: SCF runs on the desktop (FeNiCr triads, CuZn SRO against the per-atom cells); paper `tab:triads` after those.
+
 ### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
 The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA
 converged in 185 iterations, H^(2) (`second_order = true`) in 180.  Species means over 10 sites each, moments in muB, charges in e:
