@@ -8,6 +8,9 @@ Short answers.
 1. Does the SCF see F4?  The contour sum does not need an analytic approximant.  It needs the approximant to be accurate at
    the nodes.  A non-causal pole changes the charge only through its ordinary residue.  It harms the SCF in one case: when
    it lies within about 10 kT of $E_F$ and below the contour line.  Then $N(\mu)$ is not monotone there (Results 9 and 10).
+   In the production chain dumps of \ce{Fe66Ni14Cr20} (random and SRO, section 6.3) no node near $E_F$ is non-causal and
+   $N(\mu)$ is monotone.  The one violation found (the DOS notch 0.11 Ry above $E_F$) comes from the `hull` tail, not from
+   the chain.
 2. Is there a Herglotz termination inside the $H(E)$ form?  Not as a tail.  A tail acts on the last level only.  The exact
    condition under which every causal tail gives a causal $G$ is a $2 \times 2$ test on the head of the chain (Result 7).  It
    fails often.  Real band edges make the tail causal, but they do not make $G$ causal.  A causal completion of the chain
@@ -222,7 +225,33 @@ larger than the distance between the pole and the nearest zero) the vortex is fo
 6.3 Production runs (desktop `~/asr_review/trial/desk4/f4scan`, queued 2026-11-13 behind the calibration set).  Route `edc`,
 levels 3, 24 steps, `hull`, converged potentials, 33 scan energies with step 0.002 Ry around $E_F$:
 `fnc_rand_ef` (random \ce{Fe66Ni14Cr20}, spin), `fnc_sro_ef` (SRO triad (1, 1, 0)), and `fnc_rand_notch` (17 energies around
-$E_F + 0.11$ Ry, the DOS notch).  Results: to be added.
+$E_F + 0.11$ Ry, the DOS notch).  Binary `asr_36c10b1`, 32 contour points, $kT$ = 1 mRy, 1848 node values per scan energy.
+The electron counts rebuilt from the dumps equal the `ef_scan` lines of the runs.
+
+| run | node values | $-\mathrm{Im}\,G \le 0$ (`hull` / no tail) | vortices (`hull` / no tail) | $\mathcal{W}_m$ fails | `hull` $\mathrm{Im}\,t > 0$ | $N(\mu)$ steps that decrease |
+|---|---|---|---|---|---|---|
+| `fnc_rand_ef` | 60984 | 0 / 0 | 0 / 0 | 266 (0.44 %) | 9 | 0 of 32 |
+| `fnc_sro_ef` | 60984 | 0 / 0 | 0 / 0 | 478 (0.78 %) | 7 | 0 of 32 |
+| `fnc_rand_notch` | 31416 | 6 / 0 | 2 / 0 | 295 (0.94 %) | 147 | 0 of 16 |
+
+Reading.
+1. Around $E_F$ (window $\pm 0.032$ Ry) both FeNiCr states are causal at every node, with and without the tail.  There is no
+   pole or zero in the upper half plane on the scan grid.  $N(\mu)$ rises in every step (thermal DOS 19 to 25 states/Ry).
+   So for these production cases the answer to question 1 is: the SCF does not see F4.  Result 10 applies with no pole
+   inside the window.
+2. The Weyl test fails at under 1 % of the nodes, against 26 % on the test operators.  The `hull` tail never uses this
+   freedom near $E_F$.  The test is too strict to be a warning (section 7).
+3. The DOS notch is a tail effect.  The `hull` tail gives one pole and one zero of $G$ for Cr spin up d, at
+   $E \in [0.0437, 0.0457]$ (pole) and $[0.0477, 0.0497]$ (zero) Ry with $\mathrm{Im}\, z \approx 0.02$ Ry.  The six negative
+   node values lie next to the pole, in the `poles` part of the contour.  The worst one is $\mathrm{Im}\, G = +6.95$ at
+   $z = 0.0437 + 0.0220\, i$.  The tail-free chain has no negative value and no vortex there.  The `hull` tail has
+   $\mathrm{Im}\, t > 0$ at 147 nodes of this scan, against 7 to 9 near $E_F$.  So in production the chain itself stays
+   causal, and the violation comes from complex tail edges.  The test operators of section 8 showed violations without a
+   tail as well.  The notch also shows in $N(\mu)$: the step at the pole falls to 0.032 from about 0.038.  It stays
+   positive.
+4. The notch lies 0.11 Ry (110 $kT$) above $E_F$.  It does not enter the charges.
+5. By-product for part B of `DERIVATION_scf_response.md`: the bare on-site responses $\chi_p$ (1/Ry) at $E_F$ are
+   Fe 26.4, Ni 14.4, Cr 24.3 (random) and Fe 33.0, Ni 17.1, Cr 24.1 (SRO triad).  So $1/\chi_p$ is 0.030 to 0.070 Ry/e.
 
 ## 7. What the code can report (question 3)
 | quantity | cost | meaning | use |
