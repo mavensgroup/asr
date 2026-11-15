@@ -429,6 +429,37 @@ rank-1 potential (`speed/s3_e33fe0b/fnc_l3_sp_el0.005`).  It converged in 24 ite
   is probably enough.  FeRh (Fe 4.8 % low, flat in steps) should still be rerun at rank 2.  In \ce{FeNiCr} rank 2 lowers every
   moment.  So in FeRh it may widen the gap instead of closing it.
 
+Levels-2 calibration and \ce{FeCr} (desktop `~/asr_review/trial/desk4/cal` and `desk4/fecr`, binary 36c10b1, 2026-11-13/14).
+Self-consistent rank 1 and rank 2 pairs.  Each pair starts from the same converged levels-3 rank-1 potential.  Settings as
+above (24 steps, `hull`, supercell 8, 32 contour points, tolerance $10^{-5}$ Ry).  All six runs converged.  "Fixed" is the
+change after the first iteration, at the start potential.  "Gain" is the SCF change divided by the fixed change.
+
+| case | species | moment rank 1 | moment rank 2 | change SCF | change fixed | gain | qnet change (e) |
+|---|---|---|---|---|---|---|---|
+| \ce{Fe66Ni14Cr20}, levels 2, $\beta$ 1.0 | Fe | 1.6787 | 1.5735 | $-6.3$ % | $-0.6$ % | 12 | $-0.0001$ |
+| | Ni | 0.3332 | 0.3179 | $-4.6$ % | $-1.6$ % | 3.6 | $-0.0024$ |
+| | Cr | $-1.1335$ | $-0.9779$ | $-13.7$ % | $-2.4$ % | 6.9 | $+0.0021$ |
+| CoCrFeNi, levels 2, $\beta$ 1.2 | Co | 1.0332 | 0.9794 | $-5.2$ % | $-1.1$ % | 5.2 | $-0.0007$ |
+| | Cr | $-0.6800$ | $-0.5582$ | $-17.9$ % | $-5.0$ % | 3.9 | $+0.0026$ |
+| | Fe | 1.9117 | 1.8399 | $-3.8$ % | $-1.0$ % | 4.2 | $+0.0005$ |
+| | Ni | 0.2770 | 0.2650 | $-4.3$ % | $-1.1$ % | 4.1 | $-0.0024$ |
+| bcc \ce{Fe_{0.875}Cr_{0.125}}, levels 3, $\beta$ 1.0 | Fe | 2.2143 | 2.2136 | $-0.03$ % | $-0.01$ % | 4 | $-0.0001$ |
+| | Cr | $-0.9926$ | $-0.9817$ | $-1.1$ % | $-0.5$ % | 2.2 | $+0.0005$ |
+
+Changes are given in per cent of the magnitude of the moment.  Nodes per sublattice (rank 1 / 2): \ce{FeNiCr} levels 2
+2143 / 22958, CoCrFeNi levels 2 3187 / 49960, \ce{FeCr} levels 3 4555 / 58620.  Wall times on 8 to 10 threads (rank 1 / 2):
+0.11 / 3.5 h, 0.31 / 6.4 h, 0.07 / 2.9 h.  Rank 2 lowers the total energy by 0.08 mRy (\ce{FeNiCr}) and 0.25 mRy (CoCrFeNi).
+For \ce{FeCr} it raises it by 0.05 mRy.
+
+- Levels 2 calibrates the rank effect.  For \ce{FeNiCr} it gives $-6.3$ / $-4.6$ / $-13.7$ % against $-6.3$ / $-4.0$ / $-11.5$ % at
+  levels 3.  The difference is at most 2.2 points.  A levels-2 pair costs 3.6 h.  The levels-3 rank-2 run cost 27.8 h.
+- CoCrFeNi at levels 2: Cr $-17.9$ %, Co, Fe and Ni $-3.8$ to $-5.2$ %.  This is the prediction for the levels-3 rank-2 run
+  (`desk4/cfcn_L3_rank2`, ends about 20 Nov).
+- The charges are converged at rank 1 in every case (at most 0.0026 e).
+- The SCF gain is 3.6 to 12 for the moments.  It agrees with `DERIVATION_scf_response.md` (4 to 13).
+- \ce{FeCr} (Fe rich, bcc) needs no rank 2.  The moments change by 0.03 % (Fe) and 1.1 % (Cr).  This fits the stiff Fe moment
+  of that alloy.  So the rank error is large only where the moments are soft (fcc \ce{FeNiCr}, CoCrFeNi).
+
 ### 6.5 Guards added (commit 36c10b1)
 1. `E_\nu` clamp.  `class_scf` and `asa_scf` count the clamp events.  A run that reaches the dV tolerance with $E_\nu$ held at
    its window is reported as not converged, with a warning in the log and in `asr.out`.  The margin is the named variable
@@ -477,3 +508,8 @@ within 3 to 4 %) holds only at $\beta$ = 1, where the charges are 7 to 12 % off.
 compensation between electrostatics and the recursion.
 A parameter-free form exists: the hardness is the on-site response $-dV_p/dq_p$ of the recursion itself, and $\beta$ follows
 from it through `screen_lattice`.  This is not implemented.
+
+Rank 2 at levels 2 (6.4, 2026-11-14) gives a first answer.  If the levels-2 changes carry over to levels 3, as they do for
+\ce{FeNiCr}, the $\beta$ 1.2 moments become Co 0.866 ($-10$ %), Cr $-0.508$ (+4 %), Fe 1.684 ($-6$ %) and Ni 0.255 ($-10$ %)
+against the cell.  So rank 2 would remove the Cr excess, but Co and Ni would end 10 % low.  This is an estimate.  The
+levels-3 rank-2 run decides it.
