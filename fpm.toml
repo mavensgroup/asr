@@ -15,3 +15,91 @@ library = true
 
 [dependencies]
 toml-f = { git = "https://github.com/toml-f/toml-f", tag = "v0.5.2" }
+
+# Diagnostic programs (probe/): convergence studies and route comparisons that print results and take arguments.
+# They are not tests.  Build with the rest; run with `fpm run --example <name> -- <arguments>`.
+
+[[example]]
+name = "probe_ag_dos"
+source-dir = "probe"
+main = "probe_ag_dos.f90"
+
+[[example]]
+name = "probe_alloy_scf"
+source-dir = "probe"
+main = "probe_alloy_scf.f90"
+
+[[example]]
+name = "probe_asr_depth"
+source-dir = "probe"
+main = "probe_asr_depth.f90"
+
+[[example]]
+name = "probe_cuni"
+source-dir = "probe"
+main = "probe_cuni.f90"
+
+[[example]]
+name = "probe_cuni_scf"
+source-dir = "probe"
+main = "probe_cuni_scf.f90"
+
+[[example]]
+name = "probe_cuzn"
+source-dir = "probe"
+main = "probe_cuzn.f90"
+
+[[example]]
+name = "probe_ed_scan"
+source-dir = "probe"
+main = "probe_ed_scan.f90"
+
+[[example]]
+name = "probe_fe_alloy"
+source-dir = "probe"
+main = "probe_fe_alloy.f90"
+
+[[example]]
+name = "probe_feco_depth"
+source-dir = "probe"
+main = "probe_feco_depth.f90"
+
+[[example]]
+name = "probe_feco_terms"
+source-dir = "probe"
+main = "probe_feco_terms.f90"
+
+[[example]]
+name = "probe_flip"
+source-dir = "probe"
+main = "probe_flip.f90"
+
+[[example]]
+name = "probe_lmto_term"
+source-dir = "probe"
+main = "probe_lmto_term.f90"
+
+[[example]]
+name = "probe_moment_routes"
+source-dir = "probe"
+main = "probe_moment_routes.f90"
+
+[[example]]
+name = "probe_pfun"
+source-dir = "probe"
+main = "probe_pfun.f90"
+
+[[example]]
+name = "probe_pfun_cmp"
+source-dir = "probe"
+main = "probe_pfun_cmp.f90"
+
+[[example]]
+name = "probe_pfun_rec"
+source-dir = "probe"
+main = "probe_pfun_rec.f90"
+
+[[example]]
+name = "probe_route_dos"
+source-dir = "probe"
+main = "probe_route_dos.f90"

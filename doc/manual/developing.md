@@ -55,8 +55,8 @@ end program test_example
 The convention of the project: **test against an independent truth** — dense
 diagonalisation, exact enumeration of all configurations, k-space sums, NIST
 atoms, a different recursion route. A test that only checks that a function
-reproduces itself is not accepted as validation. Exploratory scripts are named
-`probe_*` and do not assert.
+reproduces itself is not accepted as validation. Exploratory programs are named
+`probe_*`, live in `probe/` (declared as fpm examples) and do not assert.
 
 ## Adding a new Hamiltonian
 

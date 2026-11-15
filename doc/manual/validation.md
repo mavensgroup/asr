@@ -43,8 +43,11 @@ asr_test test_radial      # a single test (fpm test <name>)
 | KPM | `test_kpm` | KPM on a periodic sc lattice reproduces the exact k-space DOS (independent truth for disordered tests) |
 | Input | `test_input`, `test_lmto_input`, `test_alloy_input` | Unknown keys and bad values are errors, never silent defaults |
 
-`probe_*` programs in `test/` are exploratory studies (e.g. terminator depth
-scans, route comparisons) that print results rather than assert them.
+The `probe_*` programs in `probe/` are exploratory studies (e.g. terminator depth
+scans, route comparisons) that print results rather than assert them. They are fpm
+examples, not tests: `fpm build` compiles them, `fpm test` does not run them, and
+`fpm run --example probe_cuzn -- <arguments>` runs one (the arguments are listed in
+the first line of each source file).
 
 ## Headline results
 

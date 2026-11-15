@@ -180,10 +180,11 @@ All modules link to their generated API pages.
 |---|---|
 | `src/` | The library (all modules above; `fpm.toml` sets `library = true`) |
 | `app/` | Executables |
-| `test/` | `test_*` (automatic tests, run by `fpm test`) and `probe_*` (exploratory studies, not assertions) |
+| `test/` | `test_*`: automatic tests, run by `fpm test` |
+| `probe/` | `probe_*`: exploratory studies that print results and take arguments (fpm examples, `fpm run --example NAME -- ARGS`) |
 | `example/` | Ready-to-run input files |
 | `tools/` | `sqs.py`, a SQS generator |
 | `data/reference/` | Validation data: Stuttgart Ag parameters (`ag_fcc_stuttgart`), digitised CuZn/MnCr DOS |
 | `docs/` | Working notes: `STATUS.md` (verified claims), `TODO.md`, `ROADMAP.md`, `VALIDATION_TARGETS.md`, findings |
 | `trial/` | Scratch (git-ignored except `README.md`) |
-| `doc/` | This manual (FORD pages in `doc/manual`) |
+| `doc/` | This manual (mdBook in `doc/manual`; the FORD API reference is generated into `doc/ford_api`) |
