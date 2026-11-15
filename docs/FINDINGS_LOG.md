@@ -1579,7 +1579,18 @@ eigenvalue z = 12, and F = a [(G00 + G1 Ahat)^-1 - 1] = +39 Ry/e at sim_beta 1.0
 - Unit tests (`test_screening`, 65 checks): the closure equals the numpy closure to 1e-12; exactly linear inside the realizable
   range; Gamma > 0 and decreasing at beta 1.0 and 1.2; continuity at the ends of the linear range and at the condensates; the B2
   limit; CuZn alpha -0.148 within 0.02 % of the first-shell form; the drive fixed point.
-- Open: desktop rerun of CuZn and the triads with the minimal-tail closure; paper `tab:triads` after that.
+- Desktop runs `desk9` (2026-11-15, binary `asr_3894272`, from the desk8 potentials; random point from desk8, bit-identical):
+  all ten converged in 4 to 10 iterations, largest dV 0.007.  CuZn dE / dq_Cu against the random point:
+  | alpha | per-atom cells | first-shell form | spherical model | minimal tail |
+  |---|---|---|---|---|
+  | -0.148 | -1.44 / -1.49 mRy, +0.012 e | -1.30, +0.010 | -1.14, +0.007 | -1.30, +0.010 |
+  | +0.148 | +1.48, -0.012 | +1.53, -0.011 | +1.71, -0.013 | +1.53, -0.011 |
+  | -0.266 | -2.30, +0.019 | -2.18, +0.017 | -1.77, +0.010 | -2.10, +0.015 |
+  At +-0.148 the first-shell result is back to 0.002 mRy.  At -0.266 the ordering mode lies outside the linear range of bcc; that
+  cell also has ordered shells 2 and 3 (0.07, 0.05), so no first-shell closure matches it exactly.  Triads (Fe / Ni / Cr):
+  (1,0,0) 0.046 / 0.057 / -0.192; (0,1,0) -0.021 / 0.145 / -0.033; (0,0,1) 0.024 / 0.049 / -0.113; (1,1,0) 0.000 / 0.034 /
+  -0.024; (1,0,1) 0.037 / 0.000 / -0.123; (0,1,1) -0.015 / 0.071 / 0.000; (1,1,1) 0 / 0 / 0.  All within 0.003 e of the
+  first-shell form where that converged.  Merged into main (`0af30ad`).
 
 ### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
 The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA
