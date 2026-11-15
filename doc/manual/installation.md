@@ -20,7 +20,7 @@ This guide covers everything needed to install dependencies, obtain the `asr` so
 | **BLAS & LAPACK** | Intel oneMKL *(or OpenBLAS / Netlib)* | Dense linear algebra (`dgesv`, `zheev`, `dsterf`) and threaded kernels | Bundled with Intel oneAPI (`-qmkl=parallel`) |
 | **OpenMP** | OpenMP 4.5+ | Parallel complex-energy contour and Brillouin-zone loops | Bundled with compiler (`-qopenmp`) |
 | **[fpm](https://fpm.fortran-lang.org)** | ≥ 0.10 | Build system, dependency fetcher, and test runner | Standalone binary, Conda, Pip, or Spack |
-| **[libxc](https://libxc.gitlab.io)** | **≥ 7.0** (C library) | LDA (`vbh`, `vwn`, `pw`, `pwmod`) and GGA (`pbe`) exchange–correlation | System package (`dnf`/`apt`), Conda, Spack, or built from source |
+| **[libxc](https://libxc.gitlab.io)** | **≥ 7.0** (C library) | LDA (`vbh`, `vwn`, `pw`, `pwmod`) and GGA (`pbe`) exchange–correlation | Installed by the user, see the [libxc installation guide](https://libxc.gitlab.io/installation/) |
 | **[toml-f](https://github.com/toml-f/toml-f)** | `v0.5.2` | Validated TOML input parser | **Fetched automatically** by `fpm` on first build (`build/dependencies/toml-f`) |
 | **Git** | ≥ 2.0 | Cloning `asr` and fetching `toml-f` | System package manager |
 
@@ -72,49 +72,21 @@ ifx --version
 
 ### 2.2 Exchange–Correlation Library (`libxc` ≥ 7)
 
-`fpm.toml` links against `-lxc` (`link = ["xc"]`). Ensure the `libxc` shared or static library (`libxc.so` / `libxc.a`) is installed and visible to the linker.
+`libxc` is an external library. Install it as described in the
+[libxc installation guide](https://libxc.gitlab.io/installation/); the asr
+project does not maintain installation instructions for it. Many distributions
+and conda-forge provide packages. Check that the version is at least 7.0, for
+example with `pkg-config --modversion libxc`.
 
-#### Option A: System Package Manager (Fedora 40+ / Rolling Releases)
+What asr needs from the installation:
 
-Recent Fedora and rolling-release distributions ship `libxc` ≥ 7 directly:
-
-```bash
-# Fedora
-sudo dnf install libxc libxc-devel
-
-# Verify installed version (should be >= 7.0)
-pkg-config --modversion libxc
-```
-
-#### Option B: Conda / Mamba (Cross-platform, No Root Required)
-
-```bash
-conda install -c conda-forge "libxc>=7.0"
-export LIBRARY_PATH="$CONDA_PREFIX/lib:${LIBRARY_PATH}"
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH}"
-```
-
-#### Option C: Building `libxc` ≥ 7 from Source (Ubuntu/Debian LTS, RHEL, or HPC Clusters)
-
-If your Linux distribution ships an older `libxc` (5.x or 6.x) or you do not have root privileges, build `libxc` 7.x into `~/.local` using CMake (takes under a minute):
-
-```bash
-curl -L https://gitlab.com/libxc/libxc/-/archive/7.0.0/libxc-7.0.0.tar.bz2 | tar xj
-cmake -B libxc-7.0.0/build -S libxc-7.0.0 \
-      -DCMAKE_INSTALL_PREFIX="$HOME/.local" \
-      -DBUILD_SHARED_LIBS=ON \
-      -DENABLE_FORTRAN=OFF \
-      -DBUILD_TESTING=OFF
-cmake --build libxc-7.0.0/build -j
-cmake --install libxc-7.0.0/build
-```
-
-Then expose `~/.local/lib` (or `~/.local/lib64`) in your shell profile (`~/.bashrc`):
-
-```bash
-export LIBRARY_PATH="$HOME/.local/lib:$HOME/.local/lib64:${LIBRARY_PATH}"
-export LD_LIBRARY_PATH="$HOME/.local/lib:$HOME/.local/lib64:${LD_LIBRARY_PATH}"
-```
+* `fpm.toml` links against `-lxc` (`link = ["xc"]`). The linker must find
+  `libxc.so` or `libxc.a`. For a library outside the system paths, add its
+  directory to `LIBRARY_PATH`.
+* At run time the loader must find `libxc.so`. For a library outside the system
+  paths, add its directory to `LD_LIBRARY_PATH`.
+* asr calls only the C interface, so the Fortran interface of libxc is not
+  needed and libxc need not be built with `ifx`.
 
 ### 2.3 Fortran Package Manager (`fpm`)
 

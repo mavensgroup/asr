@@ -5,3 +5,5 @@ trial/*
 *.swp
 *~
 doc/build/
+doc/ford_api/
+doc/manual/api

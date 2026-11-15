@@ -9,8 +9,7 @@ license: mit
 version: 0.1.0
 src_dir: ./src
          ./app
-page_dir: ./doc/manual
-output_dir: ./doc/build
+output_dir: ./doc/ford_api
 exclude_dir: ./build
              ./trial
              ./test
@@ -35,90 +34,20 @@ quiet: false
 warn: false
 ---
 
-<div id="cover-page" class="scientific-cover">
-  <!-- Masthead -->
-  <header class="cover-masthead">
-    <div class="masthead-brand">
-      <span class="masthead-dot"></span>
-      <span class="masthead-lab">The MAVENs Group &bull; SRMIST</span>
-    </div>
-    <div class="masthead-meta">
-      <span>Computational Condensed Matter</span>
-      <span class="sep">&bull;</span>
-      <span>v0.1.0 (2026)</span>
-    </div>
-  </header>
+# Fortran 2008/2018 API Reference
 
-  <!-- Main Stage: Asymmetric Split Grid -->
-  <main class="cover-stage">
-    <!-- Left Column: Physics & Geometry -->
-    <section class="stage-visual">
-      <div class="visual-card">
-        <div class="visual-frame">
-          <img src="media/asr.svg" class="cover-logo" alt="ASR Logo">
-        </div>
-        <p class="theory-caption">Exact disorder averaging in Mookerjee augmented space via Haydock-Lanczos recursion</p>
-        <div class="theory-tags">
-          <span class="tag">Beyond CPA</span>
-          <span class="tag">TB-LMTO-ASA</span>
-          <span class="tag">High-Entropy Alloys</span>
-          <span class="tag">Koelling–Harmon</span>
-        </div>
-      </div>
-    </section>
+Welcome to the internal source code and API reference for **asr** (Augmented-Space Recursion Suite). This documentation is extracted directly from the Fortran docstrings (`!>`, `!!`) in `src/` and `app/` using FORD.
 
-    <!-- Right Column: Identity & Access Portals -->
-    <section class="stage-content">
-      <div class="identity-header">
-        <div class="super-title">First-Principles Disordered Electronic Structure</div>
-        <h1 class="main-title">asr</h1>
-        <p class="main-subtitle">Augmented-Space Recursion Suite</p>
-        <p class="main-abstract">
-          A self-contained electronic structure code for random alloys and disordered materials.
-          Integrates exact configuration averaging, scalar-relativistic radial solvers, screened LMTO structure constants,
-          and self-consistent ASA electrostatics without empirical potential parameters.
-        </p>
-      </div>
+## API Navigation
 
-      <!-- Curated Scientific Portals -->
-      <nav class="portal-grid" aria-label="Documentation Portals">
-        <a href="page/index.html" class="portal-card portal-card-primary">
-          <div class="portal-icon"><i class="fa fa-book"></i></div>
-          <div class="portal-text">
-            <span class="portal-title">User Manual &amp; Theory</span>
-            <span class="portal-desc">Installation, input syntax, workflows, and physics guides</span>
-          </div>
-          <span class="portal-arrow">&rarr;</span>
-        </a>
+| Section | Description | Direct Link |
+| :--- | :--- | :--- |
+| **Modules** | All 52 Fortran modules implementing recursion, TB-LMTO-ASA, and SCF | [Browse Modules](lists/modules.html) |
+| **Derived Types** | Public & internal data types (`potpar_t`, `augorb_op`, `cell_t`, etc.) | [Browse Types](lists/types.html) |
+| **Procedures** | Mathematical solvers, Hamiltonians, Lanczos recursion, and utilities | [Browse Procedures](lists/procedures.html) |
+| **Source Files** | Syntax-highlighted Fortran source code | [Browse Source](lists/files.html) |
+| **Programs** | Executable drivers (`asr` CLI entrypoint) | [Browse Programs](lists/programs.html) |
 
-        <a href="lists/modules.html" class="portal-card">
-          <div class="portal-icon"><i class="fa fa-sitemap"></i></div>
-          <div class="portal-text">
-            <span class="portal-title">API &amp; Architecture Reference</span>
-            <span class="portal-desc">Fortran modules, procedures, and derived type definitions</span>
-          </div>
-          <span class="portal-arrow">&rarr;</span>
-        </a>
+---
+&larr; [Return to asr User Manual](../manual.html)
 
-        <a href="https://github.com/mavensgroup/asr" class="portal-card">
-          <div class="portal-icon"><i class="fa fa-github"></i></div>
-          <div class="portal-text">
-            <span class="portal-title">Source Code Repository</span>
-            <span class="portal-desc">GitHub repository, validation suite, and issue tracker</span>
-          </div>
-          <span class="portal-arrow">&rarr;</span>
-        </a>
-      </nav>
-    </section>
-  </main>
-
-  <!-- Colophon / Academic Provenance -->
-  <footer class="cover-colophon">
-    <div class="colophon-author">
-      Developed by <a href="https://mavens-group.github.io/author/rudra-banerjee/"><strong>Rudra Banerjee</strong></a> &bull; <a href="https://mavens-group.github.io/">The MAVENs Group</a> &bull; Department of Physics &amp; Nanotechnology, SRMIST
-    </div>
-    <div class="colophon-specs">
-      <span>Fortran 2008/2018</span> &bull; <span>OpenMP</span> &bull; <span>Libxc &ge; 7.0</span> &bull; <a href="https://opensource.org/licenses/MIT">MIT License</a>
-    </div>
-  </footer>
-</div>

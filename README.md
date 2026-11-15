@@ -40,10 +40,10 @@ output, KPM on large supercells). `docs/STATUS.md` is the status dashboard and l
 
 * **Intel oneAPI (`ifx` + oneMKL + OpenMP)**: Primary Fortran compiler and BLAS/LAPACK/threading runtime.
 * **[fpm](https://fpm.fortran-lang.org)** (≥ 0.10): Build system and test runner (`conda install -c conda-forge fpm`, `pip install --user fpm`, or download the standalone binary from [fpm releases](https://github.com/fortran-lang/fpm/releases)).
-* **[libxc](https://libxc.gitlab.io)** (≥ 7.0, C library): Exchange–correlation (`vbh`, `vwn`, `pw`, `pwmod`, `pbe`), called via its C ABI (`iso_c_binding`; no Fortran `.mod` files required). Install via `sudo dnf install libxc-devel`, `conda install -c conda-forge "libxc>=7.0"`, or CMake from source.
+* **[libxc](https://libxc.gitlab.io)** (≥ 7.0, C library): Exchange–correlation (`vbh`, `vwn`, `pw`, `pwmod`, `pbe`), called via its C ABI (`iso_c_binding`; no Fortran `.mod` files required). Install it as described in the [libxc installation guide](https://libxc.gitlab.io/installation/). asr only needs `libxc.so` (or `libxc.a`) visible to the linker (`LIBRARY_PATH`) and at run time (`LD_LIBRARY_PATH`).
 * **[toml-f](https://github.com/toml-f/toml-f)** (`v0.5.2`): Fetched automatically by `fpm` on first build and cached under `build/dependencies/toml-f`.
 
-See [`doc/manual/installation.md`](doc/manual/installation.md) for platform-specific dependency installation commands (Fedora/RHEL, Ubuntu/Debian, Conda, Spack, and building `libxc` from source).
+See [`doc/manual/installation.md`](doc/manual/installation.md) for the compiler, fpm and how the build finds libxc.
 
 ## Getting the code, building, and testing
 ```bash

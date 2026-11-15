@@ -1,0 +1,252 @@
+/* ========================================================================
+   doc/custom.css — Material 3 theme & Cover Page for asr documentation
+   ======================================================================== */
+
+/* fonts: loaded without blocking in theme/head.hbs */
+
+/* ========================================================================
+   1. COVER PAGE: SYSTEM LAYOUT (Locked Screen & Hidden UI)
+   ======================================================================== */
+
+html:has(#cover-page),
+html:has(#cover-page) body {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%) !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+html.coal:has(#cover-page) body,
+html.navy:has(#cover-page) body,
+html.ayu:has(#cover-page) body,
+html.rust:has(#cover-page) body {
+  background: linear-gradient(135deg, #0b1320 0%, #16243b 50%, #1e3557 100%) !important;
+}
+
+html:has(#cover-page) .sidebar,
+html:has(#cover-page) .menu-bar,
+html:has(#cover-page) .nav-chapters,
+html:has(#cover-page) .mobile-topbar,
+html:has(#cover-page) .nav-wrapper,
+html:has(#cover-page) .nav-wide-wrapper,
+html:has(#cover-page) a.nav-chapters,
+html:has(#cover-page) a.mobile-nav-chapters {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html:has(#cover-page) .page-wrapper {
+  background: transparent !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100vh !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ========================================================================
+   2. COVER PAGE: CONTENT STYLING
+   ======================================================================== */
+
+#cover-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100vh;
+  text-align: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: fadeIn 1.2s ease-out;
+}
+
+/* Fix for mdBook header anchors */
+#cover-page .cover-title a.header {
+  display: inline-block !important;
+  visibility: visible !important;
+  text-decoration: none !important;
+  color: inherit !important;
+  pointer-events: none !important;
+}
+
+#cover-page .cover-title::before,
+#cover-page .cover-title::after,
+#cover-page .cover-title a.header::before,
+#cover-page .cover-title a.header::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* LOGO */
+#cover-page .cover-logo {
+  max-height: 28vh !important;
+  width: auto !important;
+  margin-bottom: 2vh !important;
+  filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.18));
+  transition: transform 0.3s ease;
+}
+
+#cover-page .cover-logo:hover {
+  transform: scale(1.03);
+}
+
+/* TITLE */
+#cover-page .cover-title {
+  font-size: clamp(2.5rem, 8vmin, 5.5rem) !important;
+  font-weight: 800;
+  margin: 0;
+  color: var(--fg);
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+/* SUBTITLE */
+#cover-page .cover-subtitle {
+  font-size: clamp(1rem, 2.5vmin, 1.6rem) !important;
+  font-weight: 300;
+  color: var(--fg);
+  opacity: 0.88;
+  margin-top: 1.2vh !important;
+  max-width: 720px;
+}
+
+/* DIVIDER */
+#cover-page .cover-divider {
+  width: 120px;
+  height: 4px;
+  background: var(--links, #3b82f6);
+  margin: 2.5vh auto !important;
+  border-radius: 4px;
+}
+
+/* META INFO */
+#cover-page .cover-meta {
+  margin-bottom: 3.5vh !important;
+  color: var(--fg);
+  opacity: 0.82;
+  font-size: clamp(0.9rem, 2vmin, 1.15rem) !important;
+  line-height: 1.4 !important;
+}
+
+#cover-page .cover-meta p {
+  margin: 0.2rem 0 !important;
+  padding: 0 !important;
+}
+
+#cover-page .cover-meta .version {
+  font-size: 0.85em !important;
+  opacity: 0.75 !important;
+  margin-top: 0.6vh !important;
+  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
+}
+
+/* MATERIAL PILL BUTTON */
+#cover-page .cover-button {
+  display: inline-block;
+  padding: 1.2vh 2.8vw !important;
+  background-color: var(--links, #2563eb);
+  color: #ffffff !important;
+  text-decoration: none !important;
+  border-radius: 50px;
+  font-weight: 600;
+  font-size: clamp(1rem, 2vmin, 1.25rem) !important;
+  letter-spacing: 0.02em;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+#cover-page .cover-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+  background-color: #1d4ed8;
+  text-decoration: none !important;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========================================================================
+   3. TABLE OF CONTENTS / SIDEBAR (ASR LOGO ONLY)
+   ======================================================================== */
+
+.sidebar-logo-link {
+  display: block;
+  text-align: center;
+  width: 100%;
+  margin-top: 10px;
+  margin-bottom: 20px;
+  text-decoration: none !important;
+  border: none !important;
+}
+
+.sidebar-logo {
+  width: 50%;
+  max-width: 140px;
+  height: auto;
+  opacity: 0.95;
+  transition: transform 0.2s ease;
+}
+
+.sidebar-logo:hover {
+  transform: scale(1.05);
+  opacity: 1;
+}
+
+/* Hide first chapter link in TOC (the Cover item) since logo serves as cover link */
+.sidebar-scrollbox .chapter > li:first-child {
+  display: none !important;
+}
+
+/* ========================================================================
+   4. MATERIAL 3 LOOK & FEEL FOR CONTENT
+   ======================================================================== */
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  letter-spacing: -0.01em;
+}
+
+/* Material card feeling for code blocks */
+pre {
+  border-radius: 8px !important;
+  border: 1px solid rgba(128, 128, 128, 0.15) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Material rounded tables */
+table {
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border: 1px solid rgba(128, 128, 128, 0.18) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+table th {
+  background-color: var(--table-header-bg, rgba(128, 128, 128, 0.08)) !important;
+  font-weight: 600 !important;
+}
+
+table td, table th {
+  padding: 8px 14px !important;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12) !important;
+}
+
+/* Blockquote & Admonition Material Styling */
+blockquote {
+  border-left: 4px solid var(--links, #3b82f6) !important;
+  background-color: rgba(59, 130, 246, 0.06) !important;
+  border-radius: 0 8px 8px 0 !important;
+  padding: 12px 18px !important;
+  margin: 1.2em 0 !important;
+}
