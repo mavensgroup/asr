@@ -53,7 +53,7 @@ module asr_driver
   use asr_lmto_driver, only: run_lmto, atom_shells
   use asr_sublattice, only: decoration_t, decoration_build
   use asr_sro, only: sro_conditional
-  use asr_screening, only: screen_t, screen_lattice
+  use asr_screening, only: screen_t, screen_lattice, mode_f
   use asr_class_scf
   use asr_report
   use asr_mpi, only: par_root, par_size
@@ -670,6 +670,20 @@ contains
       write (ru, '(a,f8.4,a,f7.4,a,f8.4,a,f8.4,a,f7.4,a,f7.4)') '  screening (charge-excess model of the graph lattice): hardness a=', &
         res%screen%a, ' Ry/e  G00=', res%screen%g00, '  G1=', res%screen%g1, '  W00/G00=', res%screen%w00 / res%screen%g00, &
         '  first-shell weight lambda=', res%screen%lambda, '  beta max=', res%screen%beta_max
+    end if
+    if (inp%ci%sro .and. allocated(res%mode_lam)) then
+      write (ru, '(a)') '  SRO modes (closure of the first-shell SRO, asr_screening): eigenvalue of Ahat, Gamma = dq/db, first-shell'// &
+        ' form G00 + G1 lambda, F (Ry/e)'
+      do i = 1, size(res%mode_lam)
+        if (res%mode_gam(i) > 1.0e-9_dp * res%screen%g00) then
+          write (ru, '(4x,f9.4,2f11.5,f12.4)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
+            mode_f(res%screen, res%mode_lam(i), res%mode_gam(i))
+        else
+          write (ru, '(4x,f9.4,2f11.5,a)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
+            '    infinite (full clustering: this charge deviation vanishes)'
+        end if
+      end do
+      if (res%uform) write (ru, '(a)') '  SRO potential iterated in the drive u = db: V = a (1 - Gamma) u, u_out = dq + (1 - Gamma) u_in'
     end if
     call rep_line(ru, 'electrostatics  Madelung of the sublattice-average charges (Ewald, decoration cell) + screened deviations (SIM; with SRO'// &
                   ' the conditional first shell, asr_screening)')
