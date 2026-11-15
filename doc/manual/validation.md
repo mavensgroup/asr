@@ -43,6 +43,11 @@ asr_test test_radial      # a single test (fpm test <name>)
 | KPM | `test_kpm` | KPM on a periodic sc lattice reproduces the exact k-space DOS (independent truth for disordered tests) |
 | Input | `test_input`, `test_lmto_input`, `test_alloy_input` | Unknown keys and bad values are errors, never silent defaults |
 
+The tests in `test/` form the fast suite run by `fpm test` (about 1.5 min). Thirteen
+self-consistent and enumeration tests take 25 s to several minutes each. They live in
+`test_slow/` as fpm examples, assert in the same way, and run with `asr_test_slow`
+(`env.sh`). The table above lists both.
+
 The `probe_*` programs in `probe/` are exploratory studies (e.g. terminator depth
 scans, route comparisons) that print results rather than assert them. They are fpm
 examples, not tests: `fpm build` compiles them, `fpm test` does not run them, and

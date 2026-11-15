@@ -180,7 +180,8 @@ All modules link to their generated API pages.
 |---|---|
 | `src/` | The library (all modules above; `fpm.toml` sets `library = true`) |
 | `app/` | Executables |
-| `test/` | `test_*`: automatic tests, run by `fpm test` |
+| `test/` | `test_*`: the fast unit tests, run by `fpm test` |
+| `test_slow/` | `test_*`: slow self-consistent and enumeration tests (fpm examples, `asr_test_slow` in `env.sh`) |
 | `probe/` | `probe_*`: exploratory studies that print results and take arguments (fpm examples, `fpm run --example NAME -- ARGS`) |
 | `example/` | Ready-to-run input files |
 | `tools/` | `sqs.py`, a SQS generator |

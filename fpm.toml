@@ -103,3 +103,72 @@ main = "probe_pfun_rec.f90"
 name = "probe_route_dos"
 source-dir = "probe"
 main = "probe_route_dos.f90"
+
+# Slow tests (test_slow/): self-consistent and enumeration tests that take 25 s to several minutes each.  They assert like
+# the tests in test/, but fpm test leaves them out so that it stays fast.  Run them all with asr_test_slow (env.sh), or one with
+# `fpm run --example NAME`; a failed check gives a nonzero exit code.
+
+[[example]]
+name = "test_alloy_b2"
+source-dir = "test_slow"
+main = "test_alloy_b2.f90"
+
+[[example]]
+name = "test_alloy_scf"
+source-dir = "test_slow"
+main = "test_alloy_scf.f90"
+
+[[example]]
+name = "test_alloy_scf_spin"
+source-dir = "test_slow"
+main = "test_alloy_scf_spin.f90"
+
+[[example]]
+name = "test_asa_b2"
+source-dir = "test_slow"
+main = "test_asa_b2.f90"
+
+[[example]]
+name = "test_asa_mag"
+source-dir = "test_slow"
+main = "test_asa_mag.f90"
+
+[[example]]
+name = "test_asr_ed3_cls"
+source-dir = "test_slow"
+main = "test_asr_ed3_cls.f90"
+
+[[example]]
+name = "test_asr_ed3_prod"
+source-dir = "test_slow"
+main = "test_asr_ed3_prod.f90"
+
+[[example]]
+name = "test_asr_ed_sym"
+source-dir = "test_slow"
+main = "test_asr_ed_sym.f90"
+
+[[example]]
+name = "test_augcls"
+source-dir = "test_slow"
+main = "test_augcls.f90"
+
+[[example]]
+name = "test_augcls_blk"
+source-dir = "test_slow"
+main = "test_augcls_blk.f90"
+
+[[example]]
+name = "test_augspace"
+source-dir = "test_slow"
+main = "test_augspace.f90"
+
+[[example]]
+name = "test_band_energy"
+source-dir = "test_slow"
+main = "test_band_energy.f90"
+
+[[example]]
+name = "test_scf_guards"
+source-dir = "test_slow"
+main = "test_scf_guards.f90"

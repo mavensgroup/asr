@@ -51,7 +51,8 @@ git clone https://github.com/mavensgroup/asr.git
 cd asr
 source env.sh                 # Intel oneAPI (ifx, MKL) + fpm flags
 asr_build --tests             # fpm build (fetches toml-f on first run)
-asr_test                      # run all tests (about 40 min on an 18-core laptop; the SCF tests dominate)
+asr_test                      # fast unit tests, fpm test (38 programs, about 1.5 min on 18 cores)
+asr_test_slow                 # 13 self-consistent and enumeration tests (test_slow/, tens of minutes)
 ```
 After a module *signature* change do `rm -rf build/ifx_*` — fpm's incremental build can keep stale objects.  The typical
 symptom is a segmentation fault at the entry of a routine whose source did not change (seen in `asa_scf`).

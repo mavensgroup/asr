@@ -13,3 +13,14 @@ asr_run()   { fpm run   --compiler ifx --flag "$ASR_FFLAGS" --link-flag "$ASR_LD
 #   asr_pull : fetch the latest main (run on either machine)
 asr_sync() { git push origin main && ssh desktop 'cd ~/asr_remote4 && git pull --ff-only -q github main && git log --oneline -1'; }
 asr_pull() { if git remote | grep -qx github; then git pull --ff-only github main; else git pull --ff-only origin main; fi; }
+# asr_test      : the fast unit tests (fpm test, test/), about 2 min
+# asr_test_slow : the slow self-consistent and enumeration tests (test_slow/, fpm examples); prints the failed ones, nonzero exit if any
+asr_test_slow() {
+  local f n rc=0 failed=""
+  for f in test_slow/test_*.f90; do
+    n=$(basename "$f" .f90)
+    fpm run --compiler ifx --flag "$ASR_FFLAGS" --link-flag "$ASR_LDFLAGS" --example "$n" || { rc=1; failed="$failed $n"; }
+  done
+  [ $rc -eq 0 ] && echo "asr_test_slow: all passed" || echo "asr_test_slow: FAILED:$failed"
+  return $rc
+}

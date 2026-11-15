@@ -18,8 +18,10 @@ Then load the environment and build:
 ```bash
 source env.sh
 asr_build --tests         # build library, app, tests
-asr_test test_augspace    # one test (fpm test NAME)
-asr_test                  # everything, ≈ 3 min on 16 cores
+asr_test test_contour     # one test (fpm test NAME)
+asr_test                  # the fast suite: 38 programs, about 1.5 min on 18 cores
+asr_test_slow             # the 13 slow tests in test_slow/ (SCF, enumeration), tens of minutes
+fpm run --example test_alloy_scf   # one slow test
 ```
 
 * **After a module *signature* change**: `rm -rf build/ifx_*` (fpm's incremental
