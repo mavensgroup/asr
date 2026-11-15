@@ -9,7 +9,7 @@ module asr_contour
   use asr_kinds, only: dp, pi
   implicit none
   private
-  public :: contour_nodes, contour_nodes_closed, contour_moment, contour_nodes_fermi, fermi_npole, fermi_nodes_count
+  public :: contour_nodes, contour_nodes_closed, contour_moment, contour_nodes_fermi, fermi_npole, fermi_nodes_count, gauss_legendre
 
 contains
 

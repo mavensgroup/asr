@@ -84,3 +84,73 @@ Every \(\alpha\) up to complete clustering is allowed. A species with \(\alpha=1
 all others (only its own kind as neighbours) stays neutral. `asr.out` lists the SRO
 modes and their screened potentials. With `sim_beta` above about 1 the result for strong
 clustering depends on the order beyond the first shell, which this input does not fix.
+
+## `[epi]`
+
+Effective pair interactions of the converged alloy ([[asr_epi]]). They are the input
+of the short-range order thermodynamics (`tools/sro_alpha`). The section needs
+`method = "asr"` and `route = "edc"`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `shells` | `0` | Coordination shells per sublattice. `0` switches the calculation off |
+| `lambda_points` | `4` | Gauss–Legendre nodes of the species path |
+| `file` | `epi.toml` | Pair tables for `tools/sro_alpha` |
+
+The run computes the pair table \(U(c,s)\) for every pair type after the SCF.
+A pair type is one shell of one pair of sublattices. Species \(c\) sits on the
+origin and species \(s\) on the partner site. Every other site is averaged with
+the concentrations of its sublattice.
+
+\[
+U(c,s)=\Omega(c,s)-\Omega(c_0,s)-\Omega(c,s_0)+\Omega(c_0,s_0)
+\]
+
+\(\Omega\) is the grand potential at frozen potentials. \(c_0\) and \(s_0\) are
+the first species of the two sublattices. The pair model has the energy
+\(E=\sum_{i<j}U(s_i,s_j)\). On one sublattice the exchange interaction of an unlike
+pair is
+
+\[
+V(p,q)=U(p,p)+U(q,q)-U(p,q)-U(q,p).
+\]
+
+\(V>0\) favours unlike neighbours. The SRO energy per site is
+\(\sum_n \tfrac{z_n}{2}\sum_{p<q}x_p x_q V_n(p,q)\,\alpha_n(p,q)\).
+
+The table has two parts.
+
+* **Band part.** The species of the origin moves from \(c_0\) to \(c\) on a straight
+  path in the parameters of \(H^{(2)}\). The derivative of \(\Omega\) along the path
+  is \(\mathrm{Tr}[f(H)\,\partial H/\partial\lambda]\). It needs only the diagonal
+  blocks \(G\), \(hG\) and \(hGh\) of the origin. The expression is linear in \(G\).
+  So the configuration average is exact in augmented space. The partner site is
+  frozen. The path integral uses `lambda_points` nodes.
+* **Screened Coulomb part.** \(W(R)\,\delta b_c\,\delta b_s\) with the pair kernel
+  \(W\) of the charge-excess model and its drive deviations \(\delta b\)
+  ([SCF and electrostatics](../theory/scf_electrostatics.html)).
+
+`asr.out` lists both parts and their sum. \(U(p,q)\) and \(U(q,p)\) come from
+different chains. Their difference measures the error of the chains and of the path
+quadrature. The chains run the full `recursion_steps`. The medium around the pair is
+uncorrelated, also in a run with `[[sro]]`.
+
+Cost. One pair type needs
+\((n_1-1)\times\) `lambda_points` \(\times\,n_2\times 9\times 2\) chains per
+contour energy and spin. \(n_1\) and \(n_2\) are the numbers of species on the two
+sublattices. One Fermi-level pass of the SCF needs 4 chains per component. The pair
+group has order 2 to 4, so the node set is 4 to 8 times that of the SCF. A quaternary
+alloy with 4 path points costs roughly 200 to 400 Fermi-level passes of the SCF per
+shell. Two path points halve this. Species that are neighbours in the periodic table
+need few path points. Use MPI for alloys with four or more species.
+
+From the pair tables to \(\alpha(T)\):
+
+```sh
+python3 -I tools/sro_alpha/sro_alpha.py epi.toml -T 1200 1000 800 --cool --kcm
+```
+
+The tool runs a canonical Monte Carlo of the pair model. It prints the
+Warren–Cowley parameters of every pair type and the `[[sro]]` block of the first
+shell for each temperature. `--kcm` adds the spherical-model result and the
+mean-field instability of the random alloy (one sublattice).

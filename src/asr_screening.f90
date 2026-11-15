@@ -40,7 +40,7 @@ module asr_screening
   use asr_kinds, only: dp, pi
   implicit none
   private
-  public :: screen_t, screen_lattice, screen_matrix, screen_gamma, screen_update, screen_project, mode_f, coulomb_k
+  public :: screen_t, screen_lattice, screen_matrix, screen_gamma, screen_update, screen_project, mode_f, coulomb_k, screen_shells
 
   type :: screen_t
     real(dp) :: beta = 0.0_dp            !! input SIM parameter
@@ -190,6 +190,50 @@ contains
       beta_of = a * (g - 1.0_dp) * s%r1 / (2.0_dp * g)
     end function beta_of
   end subroutine screen_lattice
+
+  !> Lattice functions of the charge-excess model at lattice vectors rv (columns, Bohr; R = 0 allowed):
+  !>     gr = G(R) = <G(k) cos(k.R)>_BZ,     wr = W(R) = a (delta_R0 - G(R)).
+  !> W is the pair kernel of the model energy.  The model minimises sum_i a/2 (q_i - b_i)^2 + 1/2 sum_ij q_i M_ij q_j over the
+  !> charges; the minimum is E = 1/2 sum_ij b_i W_ij b_j with the drives b (species properties).  So two species with drives
+  !> b_p, b_q on sites R apart have the screened Coulomb exchange interaction W(R) (b_p - b_q)^2 (asr_epi).  In the random alloy
+  !> the drive deviations are db = dq / G00.  Unscreened (beta = 0): G = delta_R0, W = 2 / R.  Mesh as in screen_lattice.
+  subroutine screen_shells(lattice, alat, s, rv, gr, wr, nk)
+    character(len=*), intent(in) :: lattice
+    real(dp), intent(in) :: alat, rv(:, :)
+    type(screen_t), intent(in) :: s
+    real(dp), intent(out) :: gr(:), wr(:)
+    integer, intent(in), optional :: nk
+    real(dp) :: p(3, 3), b(3, 3), f(3)
+    real(dp), allocatable :: kv(:, :), m(:)
+    character(len=:), allocatable :: msg
+    integer :: n, i1, i2, i3, ik, j
+    logical :: zero
+    if (s%unscreened) then
+      do j = 1, size(rv, 2)
+        zero = norm2(rv(:, j)) < 1.0e-10_dp
+        gr(j) = merge(1.0_dp, 0.0_dp, zero)
+        wr(j) = 0.0_dp; if (.not. zero) wr(j) = 2.0_dp / norm2(rv(:, j))
+      end do
+      return
+    end if
+    n = 28; if (present(nk)) n = nk
+    call prim_vectors(lattice, p, msg); if (len(msg) > 0) error stop 'screen_shells: unknown graph lattice'
+    p = p * alat
+    b(:, 1) = cross(p(:, 2), p(:, 3)); b(:, 2) = cross(p(:, 3), p(:, 1)); b(:, 3) = cross(p(:, 1), p(:, 2))
+    b = 2.0_dp * pi * b / det3(p)
+    allocate (kv(3, n**3), m(n**3))
+    ik = 0
+    do i1 = 0, n - 1; do i2 = 0, n - 1; do i3 = 0, n - 1
+          ik = ik + 1; f = ([i1, i2, i3] + 0.5_dp) / n; kv(:, ik) = matmul(b, f)
+        end do; end do; end do
+    call coulomb_k(p, kv, m)
+    m = s%a / (s%a + m)
+    do j = 1, size(rv, 2)
+      gr(j) = sum(m * cos(matmul(rv(:, j), kv))) / n**3
+      wr(j) = -s%a * gr(j)
+      if (norm2(rv(:, j)) < 1.0e-10_dp) wr(j) = s%a * (1.0_dp - gr(j))
+    end do
+  end subroutine screen_shells
 
   !> Screened fluctuation electrostatics for the component matrix ahat (n x n) with the weights w (w_p = f_kappa x_p).
   !> gm = Gamma (dq = Gamma db), wm = a (I - Gamma) (V = wm db), fm = F = a (Gamma^-1 - I) (V = F dq), lam / gam = eigenvalues

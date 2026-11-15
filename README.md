@@ -72,6 +72,7 @@ asr example/cuzn_alloy.toml          # random binary bcc Cu50Zn50 via augmented-
 asr example/fe66ni14cr20_fcc.toml    # random fcc Fe66Ni14Cr20, multicomponent (Alam & Mookerjee 2009, Fig. 2)
 asr example/fe66ni14cr20_fcc_sro.toml  # the same with first-shell Warren-Cowley SRO, triad (1, 1, 0) (Fig. 4)
 asr example/co2fe04cr06al_l21.toml   # sublattice-disordered L2_1 Heusler Co2Fe0.4Cr0.6Al
+asr example/cuzn_alloy_epi.toml      # random Cu50Zn50 with the effective pair interactions of three shells; then tools/sro_alpha gives alpha(T)
 ```
 Outputs are written next to the input file. Input is one validated TOML record; unknown keys are errors.
 One input format for every system, solved by the energy-dependent augmented-space recursion. See [`doc/manual/quickstart.md`](doc/manual/quickstart.md); the Hamiltonian-specific input is separated in [`doc/manual/input/hamiltonian.md`](doc/manual/input/hamiltonian.md).
@@ -80,7 +81,7 @@ One input format for every system, solved by the energy-dependent augmented-spac
 | layer | modules |
 |---|---|
 | method: recursion | `asr_operator` (abstract `linop`, CSR), `asr_recursion` (Lanczos/Haydock), `asr_greens` (continued fraction, tails), `asr_terminator` (sqrt, Beer–Pettifor, Luchini–Nex join, period-p), `asr_contour`, `asr_partial` (species-resolved G), `asr_kpm` (independent DOS reference) |
-| method: disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_augsym`, `asr_symmetry` (O_h/D_4h reduction), `asr_sublattice`, `asr_sro` (first-shell Warren–Cowley SRO), `asr_lattices`, `asr_lattice_toy` (model clusters for tests) |
+| method: disorder | `asr_augspace` (binary augmented space, hashed states), `asr_augn`, `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_augsym`, `asr_symmetry` (O_h/D_4h reduction), `asr_sublattice`, `asr_sro` (first-shell Warren–Cowley SRO), `asr_epi` (effective pair interactions for the SRO thermodynamics), `asr_lattices`, `asr_lattice_toy` (model clusters for tests) |
 | Hamiltonian: TB-LMTO-ASA | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_pfun` (exact ASA potential function), `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_lmto_alloy`, `asr_lmto_realization`, `asr_augorb`, energy-dependent forms `asr_ed`, `asr_edn`, `asr_endep`, `asr_edc` (route `edc`), `asr_ed3` (route `ed3`, full ASA), `asr_input_lmto` |
 | SCF and electrostatics (joins the two) | `asr_class_scf`, `asr_alloy_scf`, `asr_mixing` (Anderson), `asr_ewald` (Madelung), `asr_screening` (screened electrostatics of the charge deviations) |
 | base and driver | `asr_kinds`, `asr_testing`, `asr_tomlutil`, `asr_report`, `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`), `asr_driver` (the one input format and driver of `asr <input.toml>`) |
@@ -89,6 +90,7 @@ One input format for every system, solved by the energy-dependent augmented-spac
 * radial solver: hydrogenic levels 1e-10 Ry; free atoms He/Ne vs NIST LDA to 3e-7 Ha
 * augmented-space recursion equals the exact average over all 2^N configurations (1e-14), also for the multi-orbital TB-LMTO form and multi-sublattice/multicomponent classes
 * SRO electrostatics: the screened charge-excess model stays finite and positive for every first-shell SRO up to complete clustering; the closure is checked against exact solutions of the model on Monte Carlo supercells (`tools/sro_closure`)
+* effective pair interactions (`[epi]`, `asr_epi`): the frozen-pair chains equal the exact configuration average of Tr[G dH/dλ] (1e-11), and the path integral equals exact grand-potential differences (0.1 % with 4 path points); `tools/sro_alpha` turns the pair tables into α(T) by Monte Carlo (exact bcc Ising T_c bracketed)
 * serial and 1, 2, 4 MPI ranks agree bit for bit (CuZn B2, random alloys on routes `edc` and `ed3`)
 
 ## Conventions
