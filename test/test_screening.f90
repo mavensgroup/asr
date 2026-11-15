@@ -2,10 +2,11 @@
 !>  Ewald M(k): CsCl (bcc H) and rock-salt (sc R) Madelung constants.  screen_lattice: beta round trip, the unscreened limit,
 !>  the reference values of the derivation (bcc a = 2.85 A: a = 1.263 Ry gives beta 1.045, lambda 0.212), the lattice maximum
 !>  of beta, mesh convergence.  screen_matrix: no SRO = SIM (linear form, bit for bit), diag(w) F symmetric, sublattice sum
-!>  rule, the unscreened limit = bare first-shell charge.  Closure (screen_gamma): reference values of the numpy closure that was
-!>  tested against exact supercells (tools/sro_closure/sro_closure.py, same nk = 28 mesh), slope G1 at lambda = 0,
+!>  rule, the unscreened limit = bare first-shell charge.  Closure (screen_gamma): reference values of the numpy minimal-tail
+!>  closure that was tested against exact supercells (tools/sro_closure/sro_closure.py `clip`, same nk = 28 mesh),
 !>  Gamma = 0 at full clustering, Gamma = G(H) for perfect B2 order (exact), positive and decreasing on the realizable range,
-!>  continuous at both limits of the spherical model, finite where the first-shell form has its pole (fcc beta 1.2).
+!>  exactly linear on the realizable first-shell range, continuous at its edges and at the condensates, finite where the
+!>  first-shell form has its pole (fcc beta 1.2).
 !>  screen_update: the drive iteration converges to V = F dq, and to dq = 0 on a mode with Gamma = 0.
 program test_screening
   use asr_kinds, only: dp, pi
@@ -89,9 +90,11 @@ program test_screening
 
   ! ---- closure: reference values (numpy closure, nk = 28; tested against exact supercells)
   call screen_lattice('fcc', afcc, 1.0_dp, s, msg)
-  call check_close(screen_gamma(s, 7.92_dp), 0.461601648026_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda 7.92 (condensate) = numpy')
-  call check_close(screen_gamma(s, 2.0_dp), 1.131680702912_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda 2 = numpy')
-  call check_close(screen_gamma(s, -1.5_dp), 1.514195756237_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda -1.5 = numpy')
+  call check_close(screen_gamma(s, 7.92_dp), 0.455347061157_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda 7.92 (clipped) = numpy')
+  call check_close(screen_gamma(s, 2.0_dp), s%g00 + 2.0_dp * s%g1, 0.0_dp, 'closure fcc beta 1.0, lambda 2: realizable, linear form exactly')
+  call check_close(screen_gamma(s, -2.5_dp), 1.620956472772_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda -2.5 (ordering, clipped) = numpy')
+  call check_close(screen_gamma(s, 5.0_dp), 0.797934787698_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda 5 = numpy')
+  call check_close(screen_gamma(s, 11.9_dp), 0.010717143990_dp, 2.0e-8_dp, 'closure fcc beta 1.0, lambda 11.9 (near the condensate) = numpy')
   call check_close(s%g00 + s%g1 * 7.92_dp, 0.486728364529_dp, 1.0e-9_dp, 'same lattice functions as numpy (G00 + G1 7.92)')
   ! slope G1 at lambda = 0 (the linear form is the first order of the closure)
   h = 0.01_dp
@@ -102,20 +105,23 @@ program test_screening
   call check_close(screen_gamma(s, real(s%z, dp)), 0.0_dp, 1.0e-15_dp, 'closure: Gamma = 0 at full clustering (lambda = z)')
   ! positive and decreasing on the realizable range z c1(X) .. z, continuous at both limits
   call check_positive_decreasing(s, 'fcc beta 1.0')
-  call check_close(screen_gamma(s, s%z * s%alpha_cl * (1.0_dp + 1.0e-7_dp)), screen_gamma(s, s%z * s%alpha_cl * (1.0_dp - 1.0e-7_dp)), &
-                   1.0e-6_dp, 'closure: continuous at the clustering limit alpha_c')
-  call check_close(screen_gamma(s, s%z * s%alpha_ord * (1.0_dp + 1.0e-7_dp)), screen_gamma(s, s%z * s%alpha_ord * (1.0_dp - 1.0e-7_dp)), &
-                   1.0e-6_dp, 'closure: continuous at the ordering limit')
-  call check(s%alpha_cl > 0.24_dp .and. s%alpha_cl < 0.26_dp, 'fcc clustering limit alpha_c near 0.256 (mesh value)')
+  call check_close(screen_gamma(s, 3.0_dp + 1.0e-7_dp), s%g00 + 3.0_dp * s%g1, 1.0e-6_dp, 'closure: continuous at lambda = 3 (end of the linear range, fcc)')
+  call check_close(screen_gamma(s, -1.0_dp - 1.0e-7_dp), s%g00 - s%g1, 1.0e-6_dp, 'closure: continuous at lambda = -1 (end of the linear range)')
+  call check_close(screen_gamma(s, s%z * s%alpha_cl * (1.0_dp + 1.0e-9_dp)), screen_gamma(s, s%z * s%alpha_cl * (1.0_dp - 1.0e-9_dp)), &
+                   1.0e-6_dp, 'closure: continuous at the clustering condensate')
+  call check_close(screen_gamma(s, s%z * s%alpha_ord * (1.0_dp + 1.0e-9_dp)), screen_gamma(s, s%z * s%alpha_ord * (1.0_dp - 1.0e-9_dp)), &
+                   1.0e-6_dp, 'closure: continuous at the ordering condensate')
   ! fcc beta 1.2: the first-shell form has its pole at lambda = 7.67; the closure is finite and positive
   call screen_lattice('fcc', afcc, 1.2_dp, s, msg)
   call check(s%g00 + s%g1 * 7.92_dp < 0.0_dp, 'fcc beta 1.2: first-shell form negative at lambda 7.92 (past its pole)')
-  call check_close(screen_gamma(s, 7.92_dp), 0.689508478842_dp, 2.0e-8_dp, 'closure fcc beta 1.2, lambda 7.92: positive, = numpy')
+  call check_close(screen_gamma(s, 7.92_dp), 0.353869681688_dp, 2.0e-8_dp, 'closure fcc beta 1.2, lambda 7.92: positive, = numpy')
   call check_positive_decreasing(s, 'fcc beta 1.2')
   ! bcc: ordering side (CuZn), and perfect B2 order = G(H) exactly
   call screen_lattice('bcc', alat, 1.0_dp, s, msg)
-  call check_close(screen_gamma(s, -1.184_dp), 1.552197257666_dp, 2.0e-8_dp, 'closure bcc beta 1.0, lambda -1.184 (CuZn alpha -0.148) = numpy')
-  call check_close(screen_gamma(s, 2.0_dp), 1.079149185461_dp, 2.0e-8_dp, 'closure bcc beta 1.0, lambda 2 = numpy')
+  call check_close(screen_gamma(s, -1.184_dp), 1.583643444846_dp, 2.0e-8_dp, 'closure bcc beta 1.0, lambda -1.184 (CuZn alpha -0.148) = numpy')
+  call check(abs(screen_gamma(s, -1.184_dp) / (s%g00 - 1.184_dp * s%g1) - 1.0_dp) < 2.0e-4_dp, 'closure: CuZn alpha -0.148 within 0.02 % of the linear form')
+  call check_close(screen_gamma(s, -2.13_dp), 1.694157745922_dp, 2.0e-8_dp, 'closure bcc beta 1.0, lambda -2.13 (CuZn alpha -0.266) = numpy')
+  call check_close(screen_gamma(s, 2.0_dp), 1.122360183532_dp, 2.0e-8_dp, 'closure bcc beta 1.0, lambda 2 (clustering, clipped) = numpy')
   call check_close(screen_gamma(s, -real(s%z, dp)), s%a / (s%a - 2.0_dp * 1.7626748_dp / s%r1), 1.0e-6_dp, &
                    'closure: perfect B2 order (alpha_1 = -1) gives Gamma = G(H) = a / (a + M(H)) exactly')
   call check_positive_decreasing(s, 'bcc beta 1.0')

@@ -83,8 +83,9 @@ first-shell **short-range order** the charge deviations respond to their drive \
 \(\delta q=\Gamma\,\delta b\) and \(V=a(1-\Gamma)\,\delta b\), so \(V=F\,\delta q\) with \(F=a(\Gamma^{-1}-1)\).
 \(\Gamma\) is the lattice average of the screening function times the SRO structure factor. The first shell alone
 gives \(\Gamma=G_{00}+G_1\hat A\). For strong clustering this has a zero, because the truncated structure factor turns
-negative. The code therefore completes the structure factor of every SRO eigenmode with the spherical-model form, which
-is positive by construction. \(\Gamma\) then stays positive. It vanishes only for complete segregation, where the
+negative. The code keeps the first-shell structure factor wherever it is non-negative, which matches the ASR's own model
+of uncorrelated sites beyond the first shell. Beyond that range it clips the structure factor at zero and renormalises it,
+so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. It vanishes only for complete segregation, where the
 segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite.
 `asr.out` lists the SRO modes with \(\Gamma\), the first-shell value and \(F\).
 

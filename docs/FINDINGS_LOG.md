@@ -1552,19 +1552,34 @@ eigenvalue z = 12, and F = a [(G00 + G1 Ahat)^-1 - 1] = +39 Ry/e at sim_beta 1.0
   at beta 1.0 the first-shell F is 10 to 35 % too low for strong clustering, and the species charges agree within 0.005 e.  At
   beta 1.2 it has the wrong sign from lambda of about 7.7.  For fully segregated slabs the exact F grows linearly with the domain
   size.  bcc ordering (CuZn lattice): the first-shell F is within 2 to 6 %.
-- Closure: every eigenmode of Ahat gets the spherical-model (Krivoglaz-Clapp-Moss) correlation function, positive by
-  construction.  Beyond its limits the order condenses: at k = 0 for clustering, where G(0) = 0 (Gamma = 0 at alpha_1 = 1), and at
-  the ordering point (bcc H, fcc X) for ordering (Gamma = G(H) exactly for perfect B2 order).  Against the exact supercells:
-  F within about 1 % at beta 1.0 (binary, all triads), the right sign and 10 to 30 % at beta 1.2.  The bcc ordering F stays within
-  1 % of the exact one.  Its magnitude is smaller than the first-shell F: by 3.5 % at the CuZn alpha -0.148 and by 7 % at -0.266
-  (F = -0.517 and -0.562 against -0.535 and -0.605 Ry/e).  The CuZn SRO results must be rerun.
+- First closure tried: the spherical-model (Krivoglaz-Clapp-Moss) correlation function per eigenmode, with condensates.  It
+  matches the exact model on the thermodynamic Monte Carlo supercells (F within about 1 % at beta 1.0).  Desktop runs `desk8`
+  (2026-11-15, binary `asr_5117056`): all seven triads converged, (1,1,1) for the first time (all charges 0, largest dV 0.30;
+  the old form diverged with dV 143).  But CuZn moved away from the per-atom cells: dE -1.14 / +1.71 / -1.77 mRy at alpha
+  -0.148 / +0.148 / -0.266 (cells -1.46 / +1.48 / -2.30; first-shell form -1.30 / +1.53 / -2.18, reproduced digit for digit by
+  `asr_36c10b1`), dq_Cu +0.007 / -0.013 / +0.010 (cells +0.012 / -0.012 / +0.019).
+- Cause: Gamma depends on the correlations beyond the first shell, which the first-shell input does not fix.  The per-atom
+  cells (tools/sqs.py --alpha) have random further shells, like the configuration model of the ASR itself.  For them the
+  first-shell form is exact.  The spherical model assumes thermodynamic tails.
+- Closure adopted: minimal tails.  Inside the realizable range of the first shell (Ahat eigenvalue in [-1, 3] fcc, [-1, 1]
+  bcc) the first-shell form is kept exactly.  Beyond it the first-shell structure factor is clipped at zero and renormalised
+  (clustering: S ~ max(0, c1 - c0); ordering: S ~ max(0, c0 - c1)), with the condensates at k = 0 (Gamma = 0 at alpha_1 = 1)
+  and at the ordering point (lowest M where c1 is minimal: bcc H, exact for perfect B2; fcc W, since on fcc alpha_1 = -1/3
+  holds on the whole X-W line and M is lowest at W, not X).  Positive, decreasing, continuous.
+- Exact test on minimal-tail supercells (`sro_mintail_test.py`: inverse Monte Carlo on shells 1 to 6, shells 2 to 6 driven to
+  zero; `mintail_L16.txt`): clipped closure within 1 % of the exact Gamma at beta 1.0 and 1.2 (fcc beta 1.2, alpha_1 0.47:
+  exact 0.765, clipped 0.713, first-shell 0.592, spherical model 1.08 with F of the wrong sign); CuZn alpha -0.144: exact 1.5796,
+  clipped 1.5796, first-shell 1.5798, spherical model 1.5495.  On the thermodynamic supercells the clipped closure is within 4 %
+  at beta 1.0 and too small by up to a factor 2 at beta 1.2.  So above beta of about 1 the SRO electrostatics depends on the
+  further-shell order, and a first-shell input cannot settle it.
 - A mode with Gamma = 0 has F infinite.  The SCF therefore iterates the drive u = db of the model: u_out = dq + (1 - Gamma) u_in,
   V = a (1 - Gamma) u.  The fixed point is V = F dq wherever F is finite, and dq = 0 on a Gamma = 0 mode.  The SCF eigenvalue of
   a stiff mode changes from -(F + U) chi (about -1000 for the triads) to about (1 - Gamma)(1 - a chi) - U chi (estimate: -60).
   Without SRO the code keeps V = F dq, bit for bit.
-- Unit tests (`test_screening`, 60 checks): the closure equals the numpy closure to 1e-11; slope G1 at lambda = 0; Gamma > 0 and
-  decreasing on the realizable range at beta 1.0 and 1.2; continuity at both limits; the B2 limit; the drive fixed point.
-- Open: SCF runs on the desktop (FeNiCr triads, CuZn SRO against the per-atom cells); paper `tab:triads` after those.
+- Unit tests (`test_screening`, 65 checks): the closure equals the numpy closure to 1e-12; exactly linear inside the realizable
+  range; Gamma > 0 and decreasing at beta 1.0 and 1.2; continuity at the ends of the linear range and at the condensates; the B2
+  limit; CuZn alpha -0.148 within 0.02 % of the first-shell form; the drive fixed point.
+- Open: desktop rerun of CuZn and the triads with the minimal-tail closure; paper `tab:triads` after that.
 
 ### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
 The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA

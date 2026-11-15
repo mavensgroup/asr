@@ -20,15 +20,18 @@
 !> Gamma = G00 + G1 Ahat keeps the correlations of the first shell only.  Its structure factor turns negative at the zone
 !> boundary for strong clustering, and G00 + G1 lambda then has a zero (fcc beta 1.0: lambda* = 12.35; beta 1.2: 7.67).  The
 !> exact model has no zero: Gamma = <G(k) S(k)> / x with G > 0 and S >= 0, and sum_R G(R) = 0 gives Gamma -> 0 (F -> +infinity)
-!> for full segregation.  The code therefore completes the correlation function of every eigenmode of Ahat (eigenvalue lambda,
-!> first-shell alpha_1 = lambda / z) with the spherical-model (Krivoglaz-Clapp-Moss) form, positive by construction:
-!>     alpha(k) = N / (1 - t c1(k)),  N = 1 / <1 / (1 - t c1)>  (so <alpha> = 1),  alpha_1(t) = (1 - N) / t,  Gamma = <G alpha>.
-!> t runs from the ordering limit 1 / c1(k_o) to the clustering limit t = 1.  Beyond the limits the order condenses: at k = 0 for
-!> clustering (alpha_1 > alpha_c; G(0) = 0, so Gamma = (1 - m) Gamma_c -> 0 at alpha_1 = 1), at the ordering point k_o (bcc H,
-!> fcc X, sc R: the zone-boundary point of lowest M) for ordering (Gamma -> G(k_o), the exact value of perfect B2 / L1_0 order).
-!> Gamma(lambda) = G00 + G1 lambda + O(lambda^2), positive on the whole realizable range, continuous at the two limits.  Tested
-!> against the exact solution of the model on Monte Carlo supercells (131072 sites): F within about 1 % at beta 1.0, the right
-!> sign at beta 1.2 where the linear form fails.  No SRO (Ahat = 0) and the unscreened limit beta = 0 keep the linear form.
+!> for full segregation.  The code therefore completes the structure factor of every eigenmode of Ahat (eigenvalue lambda,
+!> first-shell alpha_1 = lambda / z) with as few correlations beyond the first shell as possible (minimal-tail closure), the
+!> configuration model of the ASR itself and of the SQS cells of gate B3:
+!>   -1 <= lambda <= -1/c1min (fcc -1..3, bcc -1..1): S = 1 + lambda c1(k) >= 0 is realizable; Gamma = G00 + G1 lambda exactly.
+!>   lambda > -1/c1min (clustering): S ~ max(0, c1(k) - c0), c0 from c1min upwards; S concentrates at k = 0, where G = 0.
+!>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates at the ordering point k_o.
+!> c0 follows from alpha_1 = <c1 S> / <S> (bisection; it increases with c0).  Past the last mesh value the order condenses at
+!> k = 0 (Gamma -> 0 at alpha_1 = 1) or at k_o, the point of lowest M where c1 is minimal (bcc H: Gamma -> G(H), exact for
+!> perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not fix the order; sc R).  Gamma is positive, decreasing and continuous on the whole realizable range.  Tests (tools/sro_closure): exact model on
+!> minimal-tail supercells (inverse Monte Carlo): Gamma within 1 % at beta 1.0 and 1.2 where the linear form is off by 25 %;
+!> CuZn alpha -0.148 unchanged.  On thermodynamic (long-tail) supercells the closure is within 4 % at beta 1.0; at beta 1.2 the
+!> answer depends on the tails, which the first-shell input does not fix.  No SRO and beta = 0 keep the linear form.
 !>
 !> A mode with Gamma = 0 has F = +infinity: its charge deviation must vanish.  V = F dq cannot represent it, but the drive
 !> u = db can: dq = Gamma u, V = a (1 - Gamma) u (screen_update).  This form has the same fixed point wherever F is finite.
@@ -48,15 +51,12 @@ module asr_screening
     real(dp) :: g00 = 1.0_dp, g1 = 0.0_dp, w00 = 0.0_dp, w1 = 0.0_dp
     real(dp) :: lambda = 1.0_dp          !! linear first-shell weight -a G1 R1 / (2 G00^2) (1 = bare shell)
     logical :: unscreened = .true.
-    ! closure of the first-shell SRO (spherical model on the BZ mesh)
+    ! closure of the first-shell SRO (minimal-tail structure factor on the BZ mesh)
     real(dp), allocatable :: gk(:), c1k(:)   !! G(k) and c1(k) on the mesh
     real(dp) :: g_ord = 0.0_dp, c1_ord = -1.0_dp   !! G and c1 at the ordering point k_o
-    real(dp) :: t_ord = -1.0_dp              !! ordering limit of t: 1 / c1(k_o)
-    real(dp) :: alpha_cl = 0.0_dp, gam_cl = 0.0_dp   !! clustering limit t = 1: alpha_1 and Gamma of the uniform part
-    real(dp) :: alpha_ord = 0.0_dp, gam_ord = 0.0_dp !! ordering limit t = t_ord
+    real(dp) :: c0_cl = 1.0_dp, alpha_cl = 1.0_dp, gam_cl = 0.0_dp      !! last clipped point on the mesh, clustering side
+    real(dp) :: c0_ord = -1.0_dp, alpha_ord = -1.0_dp, gam_ord = 0.0_dp !! last clipped point on the mesh, ordering side
   end type screen_t
-
-  real(dp), parameter :: tlim = 1.0e-9_dp    !! the limits of t are approached to this relative distance
 
 contains
 
@@ -124,7 +124,7 @@ contains
     type(screen_t), intent(out) :: s
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk
-    real(dp) :: p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, ksp(3, 3), msp(3)
+    real(dp) :: p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, ksp(3, 3), msp(3), c1sp(3)
     real(dp), allocatable :: kv(:, :), m(:), c1(:), sh(:, :)
     integer :: n, i1, i2, i3, ik, j, nsh
     n = 28; if (present(nk)) n = nk
@@ -170,13 +170,17 @@ contains
     s%w00 = s%a * (1.0_dp - s%g00)
     s%w1 = -s%a * s%g1
     s%lambda = -s%a * s%g1 * s%r1 / (2.0_dp * s%g00**2)
-    ! closure: lattice functions on the mesh, the ordering point k_o = ksp(:, 1), the two limits of the spherical model
+    ! closure: lattice functions on the mesh, the ordering point k_o, the last clipped points (next to the extreme
+    ! c1 value of the mesh, so that S keeps support)
     s%gk = s%a / (s%a + m); s%c1k = c1
-    s%g_ord = s%a / (s%a + msp(1))
-    s%c1_ord = sum(cos(matmul(ksp(:, 1), sh))) / nsh
-    s%t_ord = 1.0_dp / s%c1_ord
-    call kcm_point(s, 1.0_dp - tlim, s%alpha_cl, s%gam_cl)
-    call kcm_point(s, s%t_ord * (1.0_dp - tlim), s%alpha_ord, s%gam_ord)
+    ! ordering point: lowest M among the special points where c1 is minimal (bcc H, fcc W on the degenerate X-W line, sc R)
+    do j = 1, 3; c1sp(j) = sum(cos(matmul(ksp(:, j), sh))) / nsh; end do
+    s%c1_ord = minval(c1sp)
+    s%g_ord = s%a / (s%a + minval(msp, mask=c1sp < s%c1_ord + 1.0e-10_dp))
+    s%c0_cl = maxval(c1, mask=c1 < maxval(c1) - 1.0e-12_dp)
+    s%c0_ord = minval(c1, mask=c1 > minval(c1) + 1.0e-12_dp)
+    call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
+    call clip_point(s, s%c0_ord, .false., s%alpha_ord, s%gam_ord)
   contains
     real(dp) function beta_of(a)
       real(dp), intent(in) :: a
@@ -265,36 +269,41 @@ contains
     y = 0.5_dp * (y + transpose(y))
   end subroutine w_sym
 
-  !> Gamma of one SRO eigenmode with Ahat eigenvalue lam (first-shell alpha_1 = lam / z): the spherical-model closure.
-  !> |alpha_1| < 1e-8: the linear form G00 + G1 lam (exact to O(lam^2)).  alpha_1 >= alpha_c: condensate at k = 0, where G = 0.
-  !> alpha_1 <= alpha_ord: condensate at the ordering point k_o.  In between: t from alpha_1(t) = alpha_1 (bisection; alpha_1(t)
-  !> increases with t), Gamma = <G / (1 - t c1)> / <1 / (1 - t c1)>.  Unscreened (beta = 0): 1.
+  !> Gamma of one SRO eigenmode with Ahat eigenvalue lam (first-shell alpha_1 = lam / z): the minimal-tail closure (module
+  !> header).  -1 <= lam <= -1/c1(k_o): the linear form G00 + G1 lam, exactly.  Clustering beyond: S ~ max(0, c1 - c0), c0 by
+  !> bisection between c1(k_o) and c0_cl, then the condensate at k = 0.  Ordering beyond: S ~ max(0, c0 - c1), c0 between c0_ord
+  !> and 1, then the condensate at k_o.  Unscreened (beta = 0): 1.
   function screen_gamma(s, lam) result(gam)
     type(screen_t), intent(in) :: s
     real(dp), intent(in) :: lam
     real(dp) :: gam, al, lo, hi, mid, a1, m
+    logical :: up
     integer :: j
     if (s%unscreened) then; gam = 1.0_dp; return; end if
     al = lam / s%z
-    if (abs(al) < 1.0e-8_dp) then
+    if (lam >= -1.0_dp .and. lam <= -1.0_dp / s%c1_ord) then
       gam = s%g00 + s%g1 * lam
-    else if (al >= s%alpha_cl) then
+      return
+    end if
+    up = lam > 0.0_dp
+    if (up .and. al >= s%alpha_cl) then
       m = min(1.0_dp, (al - s%alpha_cl) / (1.0_dp - s%alpha_cl))
       gam = (1.0_dp - m) * s%gam_cl
-    else if (al <= s%alpha_ord) then
+      return
+    else if (.not. up .and. al <= s%alpha_ord) then
       ! m > 1 only for alpha_1 below c1(k_o) (fcc: not realizable on one sublattice); G(k_o) >= gam_ord keeps Gamma > 0
       m = (s%alpha_ord - al) / max(s%alpha_ord - s%c1_ord, 1.0e-12_dp)
       gam = (1.0_dp - m) * s%gam_ord + m * s%g_ord
-    else
-      lo = s%t_ord * (1.0_dp - tlim); hi = 1.0_dp - tlim
-      do j = 1, 200
-        mid = 0.5_dp * (lo + hi)
-        call kcm_point(s, mid, a1, gam)
-        if (a1 < al) then; lo = mid; else; hi = mid; end if
-        if (hi - lo < 1.0e-15_dp) exit
-      end do
-      call kcm_point(s, 0.5_dp * (lo + hi), a1, gam)
+      return
     end if
+    if (up) then; lo = s%c1_ord; hi = s%c0_cl; else; lo = s%c0_ord; hi = 1.0_dp; end if
+    do j = 1, 200
+      mid = 0.5_dp * (lo + hi)
+      call clip_point(s, mid, up, a1, gam)
+      if (a1 < al) then; lo = mid; else; hi = mid; end if
+      if (hi - lo < 1.0e-15_dp) exit
+    end do
+    call clip_point(s, 0.5_dp * (lo + hi), up, a1, gam)
   end function screen_gamma
 
   !> F of one SRO mode (Ry/e) from its Ahat eigenvalue lam and its Gamma gam (callers check gam > 0):
@@ -309,21 +318,19 @@ contains
     end if
   end function mode_f
 
-  !> Spherical-model values at t on the mesh: alpha_1(t) = (1 - N) / t and Gamma(t) = <G alpha>, alpha(k) = N / (1 - t c1(k)).
-  subroutine kcm_point(s, t, al, gam)
+  !> Clipped first-shell structure factor at c0 on the mesh: S ~ max(0, c1 - c0) (up) or max(0, c0 - c1); returns
+  !> alpha_1 = <c1 S> / <S> and Gamma = <G S> / <S>.
+  subroutine clip_point(s, c0, up, al, gam)
     type(screen_t), intent(in) :: s
-    real(dp), intent(in) :: t
+    real(dp), intent(in) :: c0
+    logical, intent(in) :: up
     real(dp), intent(out) :: al, gam
-    real(dp) :: sf
-    sf = sum(1.0_dp / (1.0_dp - t * s%c1k))
-    gam = sum(s%gk / (1.0_dp - t * s%c1k)) / sf
-    sf = sf / size(s%c1k)
-    if (abs(t) > 1.0e-12_dp) then
-      al = (1.0_dp - 1.0_dp / sf) / t
-    else
-      al = t * sum(s%c1k**2) / size(s%c1k)
-    end if
-  end subroutine kcm_point
+    real(dp) :: w(size(s%c1k)), sw
+    if (up) then; w = max(0.0_dp, s%c1k - c0); else; w = max(0.0_dp, c0 - s%c1k); end if
+    sw = sum(w)
+    al = sum(s%c1k * w) / sw
+    gam = sum(s%gk * w) / sw
+  end subroutine clip_point
 
   !> One SCF step of the SRO electrostatics in the drive u = db of the charge-excess model:
   !>     u_out = P [dq + (I - Gamma) u_in],   v = W u_out,   W = a (I - Gamma)   (gm = Gamma, wm = W from screen_matrix).
@@ -351,7 +358,8 @@ contains
   end subroutine screen_project
 
   !> Zone-boundary high-symmetry points, where the lattice Coulomb kernel takes its lowest values (ordering vectors):
-  !> bcc H, N, P; fcc X, W, L; sc R, M, X (Cartesian, 1/Bohr).  The first one is the minimum of M and the ordering point k_o.
+  !> bcc H, N, P; fcc X, W, L; sc R, M, X (Cartesian, 1/Bohr).  The ordering point k_o is the one of lowest M among those with
+  !> minimal c1 (bcc H, fcc W, sc R).
   function special_k(lattice, alat) result(kv)
     character(len=*), intent(in) :: lattice
     real(dp), intent(in) :: alat

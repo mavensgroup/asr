@@ -51,3 +51,28 @@ long mc(int n, int8_t *spec, long nsite, const int64_t *sites, int nnb, const in
   }
   return acc;
 }
+
+/* Same with pair energies on several shells: nb[3*nnb] are the offsets of shells 1..nshell, shell[nnb] the shell (0-based) of
+ * each offset, eps[(s*nsp + a)*nsp + b] the energy (kT) of a pair (a, b) at distance shell s.  Used by the inverse Monte Carlo
+ * that builds configurations with a given first-shell alpha and as little order as possible on the further shells. */
+long mc_shells(int n, int8_t *spec, long nsite, const int64_t *sites, int nnb, const int32_t *nb, const int32_t *shell,
+               int nsp, const double *eps, long nsweep, uint64_t seed) {
+  long acc = 0;
+  st[0] = splitmix(&seed); st[1] = splitmix(&seed);
+  for (long sw = 0; sw < nsweep; sw++) {
+    for (long t = 0; t < nsite; t++) {
+      long i = sites[(long)(u01() * nsite)], j = sites[(long)(u01() * nsite)];
+      int si = spec[i], sj = spec[j];
+      if (si == sj) continue;
+      double de = 0.0;
+      for (int k = 0; k < nnb; k++) {
+        const double *e = eps + (long)shell[k] * nsp * nsp;
+        long a = nbr(n, i, nb + 3 * k), b = nbr(n, j, nb + 3 * k);
+        if (a != j) de += e[sj * nsp + spec[a]] - e[si * nsp + spec[a]];
+        if (b != i) de += e[si * nsp + spec[b]] - e[sj * nsp + spec[b]];
+      }
+      if (de <= 0.0 || u01() < exp(-de)) { spec[i] = (int8_t)sj; spec[j] = (int8_t)si; acc++; }
+    }
+  }
+  return acc;
+}
