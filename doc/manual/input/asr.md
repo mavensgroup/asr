@@ -76,3 +76,11 @@ With one sublattice the unlike pairs are symmetric and the diagonal is derived.
 With two sublattices, `[a, b, alpha]` is species `a` on the first and `b` on the
 second; unset pairs are 0 and both marginals must vanish. Example:
 `example/fe66ni14cr20_fcc_sro.toml`.
+
+The electrostatics of the SRO follow the same model: the first-shell structure factor
+is used wherever it is non-negative, and beyond that range it is completed with as
+little further-shell order as possible ([SCF and electrostatics](../theory/scf_electrostatics.html)).
+Every \(\alpha\) up to complete clustering is allowed. A species with \(\alpha=1\) to
+all others (only its own kind as neighbours) stays neutral. `asr.out` lists the SRO
+modes and their screened potentials. With `sim_beta` above about 1 the result for strong
+clustering depends on the order beyond the first shell, which this input does not fix.

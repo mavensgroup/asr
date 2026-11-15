@@ -25,7 +25,7 @@ sed -n '/=== converged results/,/=== density/p' asr.out
 |---|---|
 | *(banner)* | Code version, title, start time, input file name, OpenMP threads, units |
 | `input (verbatim)` | Echo of the input file, each line prefixed with `   | ` |
-| `method` | Method and Hamiltonian (TB-LMTO-ASA), XC functional, screening, BZ integration; for the recursion: route, depth, rank, supercell, screening \(\alpha\), number of augmented-space nodes, symmetry |
+| `method` | Method and Hamiltonian (TB-LMTO-ASA), XC functional, screening, BZ integration; for the recursion: route, depth, rank, supercell, screening \(\alpha\), number of augmented-space nodes, symmetry; with `[[sro]]` the SRO modes (eigenvalue of \(\hat A\), \(\Gamma=\delta q/\delta b\), the first-shell value and the screened potential \(F\) in Ry/e, "infinite" for a fully clustered mode) |
 | `structure` | Lattice, constant (Bohr and Å), primitive vectors, cell volume, atoms with positions and sphere radii (not for disordered alloys, which have no explicit positions) |
 | `SCF history` | Per iteration: potential change \(dV\), \(E_F\), moment and net charge per class/species; the criterion is stated |
 | `converged results` | \(E_F\), net cell charge, and per class: \(Z\), valence, \(S\), net charge, and for each spin and \(l\) the parameters and occupations |

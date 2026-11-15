@@ -41,8 +41,8 @@ Keys read with `method = "asr"` only:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sim_beta` | `1.0` | Hardness of the screened-impurity (SIM) charge-excess model, \(0\le\beta<\) the lattice maximum (about 1.39 on bcc). The net charge of a sphere is screened by its first shell, \(V=-\beta\,2q_\text{net}/R_1\) (Ry). With `[[sro]]` it also sets the screened potential of the correlated first shell. See [Electrostatics](../theory/scf_electrostatics.html) |
-| `mixing_restart` | = `mixing` | Linear step after an Anderson restart; smaller for stiff charge-transfer maps |
+| `sim_beta` | `1.0` | Hardness of the screened-impurity (SIM) charge-excess model, \(0\le\beta<\) the lattice maximum (about 1.39 on bcc). The net charge of a sphere is screened by its first shell, \(V=-\beta\,2q_\text{net}/R_1\) (Ry). With `[[sro]]` it also sets the screened potential of the SRO modes (closure of the first-shell order). See [Electrostatics](../theory/scf_electrostatics.html) |
+| `mixing_restart` | = `mixing` | Linear step after an Anderson restart; smaller for stiff charge-transfer maps. With `[[sro]]` the SRO potential is iterated in its own variable (the drive \(u=\delta b\), saved in the potential file), which keeps strong clustering stable |
 | `save_potential` | — | File written every iteration |
 | `start_potential` | — | Start from a saved potential |
 
