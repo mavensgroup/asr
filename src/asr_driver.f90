@@ -30,11 +30,14 @@
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
 !>                  energy_block (contour energies per chain block, capped by memory; default 0 = one energy per chain with the
 !>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; the 1e-4 block difference in B2 ed3 is
-!>                  rounding scatter inside the length error of the chain, docs/REVIEW_fable.md 3.8), ef_linear_max (Ry; E_F
+!>                  rounding scatter inside the length error of the chain, docs/REVIEW_fable.md 3.8; the chains of [epi] use
+!>                  the same blocks), ef_linear_max (Ry; E_F
 !>                  steps up to this size are taken to first order without a new contour, exact at self-consistency;
 !>                  default 0 = off)
 !>   [epi]          (method = "asr", route "edc") effective pair interactions after the SCF (asr_epi): shells (coordination shells
-!>                  per sublattice; default 0 = off), lambda_points (Gauss-Legendre nodes of the species path; default 4),
+!>                  per sublattice; default 0 = off), lambda_points (Gauss-Legendre nodes of the species path; default 4; 2 are
+!>                  enough for neighbours in a transition series; 1 = midpoint rule, a survey only), symmetric (default false; true: on one sublattice only
+!>                  U(c, s) with s >= c is computed and U(s, c) = U(c, s): fewer chains, no error measure),
 !>                  file (default "epi.toml": the pair tables for tools/sro_alpha)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
@@ -344,7 +347,8 @@ contains
 
     if (kspace .and. table%has_key('epi')) then; msg = '[epi] is read with method = "asr" only'; return; end if
     call section(table, 'epi', child)
-    call check_keys(child, ['shells       ', 'lambda_points', 'file         '], '[epi]', msg); if (len(msg) > 0) return
+    call check_keys(child, ['shells       ', 'lambda_points', 'file         ', 'symmetric    '], '[epi]', msg); if (len(msg) > 0) return
+    call get_value(child, 'symmetric', inp%ci%epi_sym, .false.)
     call get_value(child, 'shells', inp%ci%epi_shells, 0)
     call get_value(child, 'lambda_points', inp%ci%epi_nlam, 4)
     call get_value(child, 'file', inp%epi_file, 'epi.toml')
@@ -806,6 +810,9 @@ contains
     write (ru, '(a)') ' SRO energy per site: sum over shells of (z / 2) sum_{p<q} x_p x_q V(p, q) alpha(p, q).'
     write (ru, '(a,i0,a,es9.2,a)') ' path points: ', inp%ci%epi_nlam, ';  weight of a path site below the contour bottom: ', res%epi_wbelow, &
       ' electrons (must vanish)'
+    if (inp%ci%epi_nlam == 1) write (ru, '(a)') ' 1 path point (midpoint rule): a survey. The error can reach the size of a small table entry; check with 2 points.'
+    if (inp%ci%eblock > 0) write (ru, '(a,i0,a)') ' energy_block = ', inp%ci%eblock, ': the pair chains ran in blocks of contour energies (capped by memory).'
+    if (inp%ci%epi_sym) write (ru, '(a)') ' symmetric = true: on one sublattice U(c, s) is computed for s >= c and U(s, c) = U(c, s) is copied (no error measure).'
     if (res%epi_wbelow >= wbelow_tol) write (ru, '(a)') ' WARNING: a path species has states below the contour bottom: the pair tables miss them'
     do i = 1, size(res%epi)
       associate (t => res%epi(i))
@@ -830,7 +837,7 @@ contains
           write (ru, '(a)') '   exchange interactions V(p, q) (mRy): band, screened Coulomb, total;  |U(p,q) - U(q,p)| of the band part'
           do c = 1, n1
             do s = c + 1, n1
-              if (c > 1) then                          ! pairs with the reference species have U(p,q) = U(q,p) = 0
+              if (c > 1 .and. .not. inp%ci%epi_sym) then   ! pairs with the reference species have U(p,q) = U(q,p) = 0
                 write (ru, '(5x,a4,a,a4,3f11.4,es12.2)') trim(inp%species(inp%ci%spc(c, t%kap))%symbol), ' - ', &
                   trim(inp%species(inp%ci%spc(s, t%kap))%symbol), 1.0e3_dp * vb(c, s), 1.0e3_dp * ve(c, s), 1.0e3_dp * v(c, s), &
                   1.0e3_dp * abs(t%uband(c, s) - t%uband(s, c))
@@ -866,6 +873,8 @@ contains
     write (u, '(a,i0)') 'period = ', inp%ci%dec%period
     write (u, '(a,es22.14)') 'fermi_energy = ', res%ef
     write (u, '(a,a)') 'converged = ', trim(merge('true ', 'false', res%converged))
+    write (u, '(a,i0)') 'lambda_points = ', inp%ci%epi_nlam
+    write (u, '(a,a)') 'symmetric = ', trim(merge('true ', 'false', inp%ci%epi_sym))
     do kap = 1, inp%ci%dec%ncls
       write (u, '(/,a)') '[[sublattice]]'
       write (u, '(a,a,a)') 'name = "', trim(inp%subname(kap)), '"'

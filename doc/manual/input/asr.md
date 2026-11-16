@@ -39,7 +39,7 @@ title: Recursion and disorder (method = "asr")
 
 | Key | Default | Meaning |
 |---|---|---|
-| `energy_block` | `0` | Contour energies per chain block. `0` runs one chain per energy. `8` runs eight in one block, 1.35× faster for CoCrFeNi at about 6× the memory. Same result within the chain's length error |
+| `energy_block` | `0` | Contour energies per chain block. `0` runs one chain per energy. `8` runs eight in one block, 1.35× faster for CoCrFeNi at about 6× the memory. Same result within the chain's length error. The chains of `[epi]` use the same setting |
 | `ef_linear_max` | `0` | Ry. \(E_F\) steps up to this size are taken to first order without a new contour (exact at self-consistency); `0` = off |
 
 An MPI build (`-DUSE_MPI`) splits the chain tasks over ranks with no input change.
@@ -95,6 +95,7 @@ of the short-range order thermodynamics (`tools/sro_alpha`). The section needs
 |---|---|---|
 | `shells` | `0` | Coordination shells per sublattice. `0` switches the calculation off |
 | `lambda_points` | `4` | Gauss–Legendre nodes of the species path |
+| `symmetric` | `false` | `true`: on one sublattice only \(U(c,s)\) with \(s\ge c\) is computed, and \(U(s,c)=U(c,s)\) is copied |
 | `file` | `epi.toml` | Pair tables for `tools/sro_alpha` |
 
 The run computes the pair table \(U(c,s)\) for every pair type after the SCF.
@@ -141,8 +142,21 @@ contour energy and spin. \(n_1\) and \(n_2\) are the numbers of species on the t
 sublattices. One Fermi-level pass of the SCF needs 4 chains per component. The pair
 group has order 2 to 4, so the node set is 4 to 8 times that of the SCF. A quaternary
 alloy with 4 path points costs roughly 200 to 400 Fermi-level passes of the SCF per
-shell. Two path points halve this. Species that are neighbours in the periodic table
-need few path points. Use MPI for alloys with four or more species.
+shell. Use MPI for alloys with four or more species. Three settings reduce the cost.
+
+* **Path points.** Two points are enough for species that are close, such as neighbours
+  in a transition series. The unit test `test_epi` finds an error of 0.01 % there.
+  One point is the midpoint rule. It costs a quarter of the default. It is not safe.
+  Its error is 2 % of the largest entry and can reach a factor of two on a small entry.
+  Use it for a first survey only. Species that differ strongly need four points (0.1 %).
+* **`symmetric = true`.** The exact table of one sublattice is symmetric. The option
+  computes one half. For four species the chains drop by a quarter, for five species
+  by 30 %. The error measure \(U(p,q)-U(q,p)\) is then not available. Check one shell
+  without the option first.
+* **`energy_block` in `[asr]`.** The pair chains run in blocks of contour energies, as
+  in the SCF. The block size is capped so that one thread needs less than 400 MB. The
+  table changes at rounding level only. The gain for the pair chains is not yet
+  measured. The SCF gains 1.35× with `energy_block = 8`.
 
 From the pair tables to \(\alpha(T)\):
 

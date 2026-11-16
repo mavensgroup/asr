@@ -2,18 +2,20 @@
 !> fcc Cu-Ni-Ni' with Ni' a second label of Ni (the same atom): the pair table must not see the label.  Exact statements:
 !>   U(c, 1) = U(1, s) = 0 (reference species);  U(2,2) = U(2,3) = U(3,2) = U(3,3);  V(Ni, Ni') = 0;
 !>   the same for the screened Coulomb part.
-!> A wrong species index, start vector or frozen site in the chain loop breaks them.  The run goes through the driver, which
+!> A wrong species index, start vector or frozen site in the chain loop breaks them.  A second run with the pair-exchange
+!> symmetry option must give the same computed entries.  A third run with energy blocks ([asr] energy_block = 8, in the SCF
+!> and in the pair chains) must give the same table within the rounding scatter of the chains.  The run goes through the driver, which
 !> writes the report and the pair file (build/test_epi_scf_epi.toml).  Small settings (two SCF iterations, levels 2, first
 !> neighbours only, one path point): the numbers are not converged.
 program test_epi_scf
   use asr_kinds, only: dp
   use asr_driver, only: run_input_t, read_run_input, run_input
-  use asr_class_scf, only: class_scf_result_t, wbelow_tol
+  use asr_class_scf, only: class_scf, class_scf_result_t, wbelow_tol
   use asr_epi, only: epi_exchange
   use asr_testing
   implicit none
   type(run_input_t) :: inp
-  type(class_scf_result_t) :: r
+  type(class_scf_result_t) :: r, rs, rb
   character(len=:), allocatable :: msg
   real(dp), allocatable :: v(:, :)
   real(dp) :: u22
@@ -64,6 +66,33 @@ program test_epi_scf
     call check(ue(2, 2) > 0.0_dp, 'the screened Coulomb interaction favours unlike neighbours')
   end associate
   call check(abs(r%epi(2)%ues(2, 2)) < abs(r%epi(1)%ues(2, 2)), 'second shell: weaker screened Coulomb interaction')
+
+  ! pair-exchange symmetry ([epi] symmetric = true), first shell: the same chains for s >= c, U(3, 2) copied from U(2, 3)
+  inp%ci%epi_sym = .true.; inp%ci%epi_shells = 1; inp%ci%ndos = 0
+  call class_scf(inp%ci, rs)
+  call check(size(rs%epi) == 1, 'symmetric run: one pair type')
+  if (size(rs%epi) == 1) then
+    call check_close(maxval(abs(rs%epi(1)%uband(2:3, 3) - r%epi(1)%uband(2:3, 3))) / abs(u22), 0.0_dp, 1.0e-12_dp, &
+                     'symmetric = true: the computed entries U(2,2), U(2,3), U(3,3) equal those of the full run')
+    call check_close(abs(rs%epi(1)%uband(2, 2) - r%epi(1)%uband(2, 2)) / abs(u22), 0.0_dp, 1.0e-12_dp, 'symmetric = true: U(2,2) unchanged')
+    call check(rs%epi(1)%uband(3, 2) == rs%epi(1)%uband(2, 3), 'symmetric = true: U(3, 2) is the copy of U(2, 3)')
+    call check(all(rs%epi(1)%ues == r%epi(1)%ues), 'symmetric = true: the screened Coulomb part is unchanged')
+  end if
+
+  ! energy blocks ([asr] energy_block): block chains in the SCF and in the pair interactions, both halves of the table
+  inp%ci%epi_sym = .false.; inp%ci%eblock = 8
+  call class_scf(inp%ci, rb)
+  call check(size(rb%epi) == 1, 'energy_block run: one pair type')
+  if (size(rb%epi) == 1) then
+    print '(a,4es16.8)', '  energy_block = 8: U band (2,2) (2,3) (3,2) (3,3) (Ry) ', rb%epi(1)%uband(2:3, 2:3)
+    call check_close(maxval(abs(rb%epi(1)%uband - r%epi(1)%uband)) / abs(u22), 0.0_dp, 1.0e-6_dp, &
+                     'energy_block = 8: the band table equals that of the single-energy chains')
+    call check_close(maxval(abs(rb%epi(1)%ues - r%epi(1)%ues)) / abs(r%epi(1)%ues(2, 2)), 0.0_dp, 1.0e-6_dp, &
+                     'energy_block = 8: the screened Coulomb table equals that of the single-energy chains')
+    call check_close(maxval(abs(rb%epi(1)%uband(2:3, 2:3) - rb%epi(1)%uband(2, 2))) / abs(u22), 0.0_dp, 1.0e-7_dp, &
+                     'energy_block = 8: U(2,2) = U(2,3) = U(3,2) = U(3,3) for the relabelled species')
+    call check(rb%epi_wbelow < wbelow_tol, 'energy_block = 8: no weight of a path site below the contour bottom')
+  end if
 
   ! the driver: pair file
   inquire (file='build/test_epi_scf_epi.toml', exist=ex)

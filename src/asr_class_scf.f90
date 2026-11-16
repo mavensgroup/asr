@@ -92,6 +92,7 @@ module asr_class_scf
     real(dp) :: ebot_offset = 1.2_dp                   !! the contour starts ebot_offset (Ry) below the lowest E_nu; res%wbelow checks it
     integer :: epi_shells = 0                          !! effective pair interactions (asr_epi) on this many shells after the SCF; 0: off
     integer :: epi_nlam = 4                            !! Gauss-Legendre nodes of the species path
+    logical :: epi_sym = .false.                       !! one sublattice: compute U(c, s) for s >= c only, U(s, c) = U(c, s)
   end type class_scf_input_t
 
   type :: class_scf_result_t
@@ -967,7 +968,7 @@ contains
       real(dp), allocatable :: pd(:, :, :), chi(:, :), xl(:), wl(:), db(:), rvs(:, :), gr(:), wr(:)
       complex(dp), allocatable :: zq(:), wq(:), tz(:, :, :, :, :, :), zb(:), wb(:), tb(:, :, :, :, :, :)
       real(dp) :: vec(9, 9), tailmax, ebot, dls, dl0, acc
-      integer :: lo(9), kp, k2, ip, nq, n1, n2, nlam, ntab, c, s, il, gg, ia, j, jsite, nfr
+      integer :: lo(9), kp, k2, ip, nq, n1, n2, nlam, ntab, c, s, il, gg, ia, j, jsite, nfr, nbe
       character(len=:), allocatable :: emsg
       integer, parameter :: nba = 16, nbv = 4
       nlam = inp%epi_nlam
@@ -987,7 +988,8 @@ contains
         do c = 1, ncomp; db(c) = (cr(c)%qnet - qbar(pcl(c))) / res%screen%g00; end do
       end if
       res%epi_wbelow = 0.0_dp; ntab = 0
-      if (vb) print '(a,i0,a,i0,a)', '  effective pair interactions: ', inp%epi_shells, ' shells, ', nlam, ' path points'
+      if (vb) print '(a,i0,a,i0,a,a,a,i0)', '  effective pair interactions: ', inp%epi_shells, ' shells, ', nlam, ' path points', &
+        trim(merge(', pair-exchange symmetry used', '                             ', inp%epi_sym)), ', energy_block ', inp%eblock
       do kp = 1, ncls
         call decoration_classes(inp%dec, coord, mg, kp, cl0)
         call epi_pair_list(coord, mg, cl0, inp%epi_shells, prs, emsg)
@@ -1020,9 +1022,13 @@ contains
             ': the partner site is outside the node set (increase [asr] levels); this pair table is zero'
           allocate (tz(nq, 9, nsp, n2, nlam, n1), tb(nba + nbv, 9, nsp, 1, nlam, n1))
           tz = (0.0_dp, 0.0_dp); tb = (0.0_dp, 0.0_dp); tailmax = 0.0_dp
+          ! energies per chain block ([asr] energy_block, as in chain_greens): the same on every thread, one thread's block
+          ! work space (10 vectors per member) below 400 MB
+          nbe = 0
+          if (inp%eblock > 0) nbe = blk_nbmax(inp%eblock, pop%dim(), 10, 400.0_dp)
           !$omp parallel
-          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zq(1:nq), xl, n2, .false., tz, tailmax)
-          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zb, xl, 1, .true., tb, tailmax)
+          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zq(1:nq), xl, n2, .false., min(nbe, nq), tz, tailmax)
+          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zb, xl, 1, .true., min(nbe, nba + nbv), tb, tailmax)
           !$omp end parallel
           if (par_size() > 1) then
             call par_sum_z(tz, size(tz)); call par_sum_z(tb, size(tb))
@@ -1037,6 +1043,7 @@ contains
               do il = 1, nlam
                 dl0 = 0.0_dp
                 do s = 1, n2
+                  if (epi_skip(inp%epi_sym, kp == k2, c, s)) cycle
                   dls = 0.0_dp
                   do gg = 1, nsp; do ia = 1, 9; do j = 1, nq
                     dls = dls - fs * aimag(wq(j) * tz(j, ia, gg, s, il, c)) / pi
@@ -1054,10 +1061,11 @@ contains
                 t%ues(c, s) = wr(ip) * (db(mdl%spc(c, kp)) - db(mdl%spc(1, kp))) * (db(mdl%spc(s, k2)) - db(mdl%spc(1, k2)))
               end do
             end do
+            if (inp%epi_sym .and. kp == k2) call epi_mirror(t%uband)
             if (vb) then
-              print '(a,i0,a,i0,a,i0,a,3i3,a,f8.4,a,i0,a,i0,a,i0,a,es9.2)', '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, &
+              print '(a,i0,a,i0,a,i0,a,3i3,a,f8.4,a,i0,a,i0,a,i0,a,i0,a,es9.2)', '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, &
                 '  vector (a/2)', t%vec, '  R=', t%dist, ' Bohr  sites ', t%mult, '  group order ', t%nop, '  nodes ', t%nodes, &
-                '  X1 mismatch ', t%tail
+                '  energies per block ', max(1, min(nbe, nq)), '  X1 mismatch ', t%tail
               do c = 2, n1
                 print '(a,i0,a,*(f10.4))', '    U(', c, ', s) band (mRy), s = 2..:', 1.0e3_dp * t%uband(c, 2:n2)
                 print '(a,i0,a,*(f10.4))', '    U(', c, ', s) screened Coulomb (mRy):', 1.0e3_dp * t%ues(c, 2:n2)
@@ -1075,13 +1083,14 @@ contains
     end subroutine epi_run
 
     !> one thread's share of the chains of one pair type (called inside the parallel region; locals are private).  Tasks:
-    !> (path species c = 2..n1) x (path point) x (partner species 1..ns2) x spin x (start vector) x (energy zs).  tz gets the
-    !> integrand of asr_epi, or with g0 the block X0 alone (weight below the contour bottom).  tl: largest X1 mismatch.
-    subroutine epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zs, xl, ns2, g0, tz, tl)
+    !> (path species c = 2..n1) x (path point) x (partner species 1..ns2) x spin x (start vector) x (energy zs, or block of nbe
+    !> energies; nbe = 0: one energy per chain, real kernels).  tz gets the integrand of asr_epi, or with g0 the block X0 alone
+    !> (weight below the contour bottom).  tl: largest X1 mismatch.
+    subroutine epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zs, xl, ns2, g0, nbe, tz, tl)
       type(augcls_op), intent(in) :: pop
       type(class_alloy_t), intent(in) :: mp
       type(epi_par_t), intent(in) :: par(:, :)
-      integer, intent(in) :: kp, k2, jsite, lo(9), ns2
+      integer, intent(in) :: kp, k2, jsite, lo(9), ns2, nbe
       real(dp), intent(in) :: vec(9, 9), chi(:, :), xl(:)
       complex(dp), intent(in) :: zs(:)
       logical, intent(in) :: g0
@@ -1089,26 +1098,30 @@ contains
       real(dp), intent(inout) :: tl
       type(augcls_op) :: lop
       type(epi_work_t) :: wk
+      type(blk_work_t) :: bw
       type(class_alloy_t) :: ml
       type(edn_t) :: edl
       type(epi_path_t) :: pt
-      complex(dp) :: x(0:3)
+      complex(dp) :: xb(0:3, max(nbe, 1))
       real(dp) :: tloc
-      integer :: cur(4), cura, t, r, j, ia, gg, s, il, c, nz, nl, n1, rk, nr
+      integer :: cur(4), cura, t, r, j, jb, j1, j2, ia, gg, s, il, c, nz, nl, n1, rk, nr, ntg
       nz = size(zs); nl = size(xl); n1 = inp%nsc(kp)
+      ntg = nz; if (nbe > 0) ntg = (nz + nbe - 1) / nbe          ! tasks per (start vector, spin, partner, path point, path species)
       rk = par_rank(); nr = par_size()
       lop = pop
       nullify (lop%wk); allocate (lop%wk(size(pop%wk, 1), size(pop%wk, 2)))
       call epi_work_init(wk, lop%dim())
+      if (nbe > 0) call blk_work_init(bw, nbe, lop%dim())
       cur = -1; cura = -1; tloc = 0.0_dp
       !$omp do schedule(dynamic)
-      do t = 1, nz * 9 * nsp * ns2 * nl * (n1 - 1)
-        if (mod(t - 1 + (t - 1) / nz, nr) /= rk) cycle
-        j = mod(t - 1, nz) + 1; r = (t - 1) / nz
+      do t = 1, ntg * 9 * nsp * ns2 * nl * (n1 - 1)
+        if (mod(t - 1 + (t - 1) / ntg, nr) /= rk) cycle
+        jb = mod(t - 1, ntg) + 1; r = (t - 1) / ntg
         ia = mod(r, 9) + 1; r = r / 9
         gg = mod(r, nsp) + 1; r = r / nsp
         s = mod(r, ns2) + 1; r = r / ns2
         il = mod(r, nl) + 1; c = r / nl + 2
+        if (.not. g0 .and. epi_skip(inp%epi_sym, kp == k2, c, s)) cycle
         if (any(cur /= [c, il, s, gg])) then
           pt = epi_path(par(mp%spc(1, kp), gg), par(mp%spc(c, kp), gg), xl(il))
           ml = mp
@@ -1121,13 +1134,21 @@ contains
           lop%chi = chi(1:lop%nop, ia)
           call epi_start(lop, wk, vec(:, ia)); cura = ia
         end if
-        call epi_blocks(lop, wk, edl, zs(j), nlev, x)
-        if (g0) then
-          tz(j, ia, gg, s, il, c) = x(0)
+        if (nbe == 0) then
+          j1 = jb; j2 = jb
+          call epi_blocks(lop, wk, edl, zs(j1), nlev, xb(:, 1))
         else
-          tz(j, ia, gg, s, il, c) = epi_integrand(pt, lo(ia), zs(j), x)
-          tloc = max(tloc, abs(x(3)) / max(abs(x(1)), tiny(1.0_dp)))
+          j1 = (jb - 1) * nbe + 1; j2 = min(nz, jb * nbe)
+          call epi_blocks_blk(lop, wk, bw, edl, zs(j1:j2), nlev, xb(:, 1:j2 - j1 + 1))
         end if
+        do j = j1, j2
+          if (g0) then
+            tz(j, ia, gg, s, il, c) = xb(0, j - j1 + 1)
+          else
+            tz(j, ia, gg, s, il, c) = epi_integrand(pt, lo(ia), zs(j), xb(:, j - j1 + 1))
+            tloc = max(tloc, abs(xb(3, j - j1 + 1)) / max(abs(xb(1, j - j1 + 1)), tiny(1.0_dp)))
+          end if
+        end do
       end do
       !$omp end do
       !$omp critical (epi_tail)

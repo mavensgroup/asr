@@ -31,10 +31,22 @@
 !> one dimensional.  The nine start vectors are symmetry-adapted combinations of the real harmonics of one l (epi_adapted), and
 !> the trace over L is the sum over them.
 !>
+!> Pair exchange.  On one sublattice the exact table is symmetric, U(c, s) = U(s, c).  The two entries come from different
+!> chains (path site and frozen site interchanged), so their difference measures the error of the chains and of the path
+!> quadrature.  The option sym computes one of them only (epi_skip, epi_mirror): fewer chains, no error measure.
+!>
+!> Path points (test_epi): two Gauss-Legendre nodes give 0.01 % for species that are close (neighbours in a transition
+!> series); one node is not safe (2 % of the largest entry, a factor 2 on a small one); far species need four (0.1 %).
+!>
+!> Energy blocks.  epi_blocks_blk runs the two chains for a block of contour energies in lock step with the kernels of
+!> asr_augblk (one pass over the operator tables per step for all members), as edc_green_blk does in the SCF.  The chains are
+!> those of epi_blocks; the results differ at rounding level.
+!>
 !> Route: H^(2) (route = 'edc').  The screened Coulomb part of the pair table comes from asr_screening::screen_shells.
 module asr_epi
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c
+  use asr_augblk, only: blk_work_t, blk_hamx, blk_project
   use asr_edn, only: edn_t
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_endep, only: cf_species, ed_project, ed_nchain, ed_nlev
@@ -44,7 +56,7 @@ module asr_epi
   private
   public :: epi_par_t, epi_path_t, epi_work_t, epi_pair_t, epi_table_t
   public :: epi_species, epi_path, epi_setup, epi_integrand, epi_adapted, epi_pair_ops, epi_pair_list
-  public :: epi_work_init, epi_start, epi_blocks, epi_exchange
+  public :: epi_work_init, epi_start, epi_blocks, epi_blocks_blk, epi_exchange, epi_skip, epi_mirror
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
@@ -164,6 +176,25 @@ contains
       end do
     end do
   end function epi_exchange
+
+  !> Pair-exchange symmetry on one sublattice: the exact table is symmetric, U(c, s) = U(s, c).  With sym the entries below
+  !> the diagonal (1 < s < c) are not computed (epi_skip) and are copied from above it (epi_mirror).  The column s = 1 is
+  !> always computed: it is the reference of every row.
+  pure logical function epi_skip(sym, same, c, s)
+    logical, intent(in) :: sym, same               !! option; origin and partner on the same sublattice
+    integer, intent(in) :: c, s
+    epi_skip = sym .and. same .and. s > 1 .and. s < c
+  end function epi_skip
+
+  pure subroutine epi_mirror(u)
+    real(dp), intent(inout) :: u(:, :)
+    integer :: c, s
+    do c = 3, size(u, 1)
+      do s = 2, c - 1
+        u(c, s) = u(s, c)
+      end do
+    end do
+  end subroutine epi_mirror
 
   !> Symmetry-adapted start vectors for an abelian group of involutions with the orbital matrices d(9, 9, nop) (asr_symmetry::
   !> orbital_rep): vec(:, a), a = 1..9, orthonormal, each inside one l, with D(g) vec = chi(g, a) vec, chi = +-1.  lo(a) is an
@@ -392,6 +423,108 @@ contains
     x(1) = 0.5_dp * (fa + fb)
     x(3) = fa - fb
   end subroutine epi_blocks
+
+  !> chain for a block of energies zs(1:nb) in lock step (asr_augblk): every member starts from s0 (s0^T s0 = 1) and runs the full
+  !> depth nlev; g(j), f(j) as chain at zs(j) with the projection vector tv.  A member whose chain closes leaves the block (zero
+  !> rows from then on) and gets no tail.  bw%nb >= nb; idle members pad a short block.
+  subroutine chain_blk(op, bw, ed, zs, nlev, s0, tv, g, f)
+    type(augcls_op), intent(in) :: op
+    type(blk_work_t), intent(inout) :: bw
+    type(edn_t), intent(in) :: ed
+    complex(dp), intent(in) :: zs(:), s0(:), tv(:)
+    integer, intent(in) :: nlev
+    complex(dp), intent(out) :: g(:), f(:)
+    real(dp) :: pa(9, ed%ns), pb(9, ed%ns), keep(bw%nb)
+    complex(dp) :: a(nlev, bw%nb), b(nlev, bw%nb), c(nlev, bw%nb), acc(bw%nb), zp(bw%nb)
+    integer :: k, l, s, nb, j, i, m(bw%nb)
+    logical :: act(bw%nb), closed(bw%nb)
+    nb = size(zs)
+    zp(1:nb) = zs; zp(nb + 1:) = zs(nb)
+    do s = 1, ed%ns
+      do l = 1, 9
+        pa(l, s) = 1.0_dp - ed%dc(l) / ed%del(l, s)          ! e_s(z) = z - D_c (z - E_nu,s) / D_s = z pa + pb
+        pb(l, s) = ed%dc(l) * ed%enu(l, s) / ed%del(l, s)
+      end do
+    end do
+    a = (0.0_dp, 0.0_dp); b = (0.0_dp, 0.0_dp); c = (0.0_dp, 0.0_dp)
+    m = nlev; closed = .false.; act = .false.; act(1:nb) = .true.
+    associate (u => bw%u, up => bw%up, w => bw%w)
+      do i = 1, size(u, 2); u(1:nb, i) = s0(i); u(nb + 1:, i) = (0.0_dp, 0.0_dp); end do
+      up = (0.0_dp, 0.0_dp)
+      do k = 1, nlev
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(u, 2); acc = acc + tv(i) * u(:, i); end do
+        do j = 1, nb
+          if (act(j)) c(k, j) = acc(j)
+        end do
+        call blk_hamx(op, bw, pa, pb, zp, u, w)
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(u, 2); acc = acc + u(:, i) * w(:, i); end do
+        do j = 1, nb
+          if (act(j)) then; a(k, j) = acc(j); m(j) = k; end if
+        end do
+        if (k == nlev) exit
+        do i = 1, size(u, 2)
+          w(:, i) = w(:, i) - a(k, :) * u(:, i)
+          if (k > 1) w(:, i) = w(:, i) - b(k - 1, :) * up(:, i)
+        end do
+        if (ed_project) call blk_project(op, w)
+        acc = (0.0_dp, 0.0_dp)
+        do i = 1, size(w, 2); acc = acc + w(:, i) * w(:, i); end do
+        do j = 1, bw%nb
+          if (.not. act(j)) cycle
+          b(k, j) = sqrt(acc(j))
+          if (abs(b(k, j)) < 1.0e-12_dp) then; act(j) = .false.; closed(j) = .true.; end if
+        end do
+        if (.not. any(act)) exit
+        do j = 1, bw%nb                                       ! members that left: zero rows, they stay zero
+          if (act(j)) then
+            acc(j) = 1.0_dp / b(k, j); keep(j) = 1.0_dp
+          else
+            acc(j) = (0.0_dp, 0.0_dp); keep(j) = 0.0_dp
+          end if
+        end do
+        do i = 1, size(u, 2)
+          up(:, i) = keep * u(:, i)
+          u(:, i) = acc * w(:, i)
+        end do
+      end do
+    end associate
+    do j = 1, nb
+      if (closed(j)) then
+        call cf_species(a(:, j), b(:, j), c(:, j), m(j), zs(j), g(j), f(j), tail_in='none')
+      else
+        call cf_species(a(:, j), b(:, j), c(:, j), m(j), zs(j), g(j), f(j))
+      end if
+    end do
+    !$omp atomic
+    ed_nchain = ed_nchain + nb
+    !$omp atomic
+    ed_nlev = ed_nlev + sum(m(1:nb))
+  end subroutine chain_blk
+
+  !> epi_blocks for a block of energies zs(1:nb) in lock step (asr_augblk).  ws holds the start vectors of epi_start, bw the
+  !> block work space (bw%nb >= nb); x(0:3, j) as epi_blocks at zs(j).
+  subroutine epi_blocks_blk(op, ws, bw, ed, zs, nlev, x)
+    type(augcls_op), intent(in) :: op
+    type(epi_work_t), intent(in) :: ws
+    type(blk_work_t), intent(inout) :: bw
+    type(edn_t), intent(in) :: ed
+    complex(dp), intent(in) :: zs(:)
+    integer, intent(in) :: nlev
+    complex(dp), intent(out) :: x(0:, :)
+    complex(dp) :: g(size(zs)), fa(size(zs)), fb(size(zs))
+    integer :: nb
+    nb = size(zs)
+    if (bw%nb < nb) error stop 'epi_blocks_blk: block work space too small'
+    call chain_blk(op, bw, ed, zs, nlev, ws%s0, ws%vv, g, fa)
+    x(0, 1:nb) = g
+    call chain_blk(op, bw, ed, zs, nlev, ws%vv / ws%nv, ws%s0, g, fb)
+    x(2, 1:nb) = ws%nv**2 * g
+    fb = ws%nv * fb
+    x(1, 1:nb) = 0.5_dp * (fa + fb)
+    x(3, 1:nb) = fa - fb
+  end subroutine epi_blocks_blk
 
   pure function itoa(i) result(s)
     integer, intent(in) :: i

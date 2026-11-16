@@ -3,13 +3,19 @@
 !>  (D) disorder at one energy: the frozen-pair chains with the trace formula of asr_epi equal the exact average of
 !>      Tr[G dH/dlambda] over all configurations of the random sites (ternary; dH by finite differences of the dense unscaled
 !>      H^(2)).  This checks the trace formula, the scaling, the conditional average and the group reduction;
+!>  (B) energy blocks: epi_blocks_blk == epi_blocks on the same operator for a block of energies, a short block padded with
+!>      idle members, and chains that close inside the block;
 !>  (T) thermodynamic integration: U(c, s) from the Fermi contour and Gauss-Legendre in lambda equals the mixed second
 !>      difference of the exact grand potentials (ordered medium);
+!>  (P) path points: the error of 1 to 4 Gauss-Legendre nodes for species that are close to each other (the case of neighbours
+!>      in a transition series) and for the far species of (T).  Result: 2 nodes are enough for close species (0.01 %); 1 node
+!>      is not safe (2 % of the largest entry, a factor 2 on a small one); far species need 4 (0.1 %);
 !>  (S) the shell values of the screening kernel.
 program test_epi
   use asr_kinds, only: dp, pi
   use asr_augspace, only: graph_t
   use asr_augcls
+  use asr_augblk, only: blk_work_t, blk_work_init
   use asr_augorb, only: orb_alloy_t
   use asr_edn, only: edn_t
   use asr_epi
@@ -58,6 +64,7 @@ program test_epi
   call part_groups()
   call part_disorder()
   call part_ti()
+  call part_path()
   call part_screen()
   call report()
 
@@ -259,8 +266,61 @@ contains
       call check_close(abs(tr - ref) / abs(ref), 0.0_dp, 1.0e-8_dp, 'frozen-pair chains (pair group) == exact configuration average of Tr[G dH/dlambda]')
       call check_close(abs(tru - ref) / abs(ref), 0.0_dp, 1.0e-8_dp, 'frozen-pair chains (no symmetry) == exact configuration average')
     end do
+    call part_block(op, mdl, d)
     deallocate (cls, op%wk, opu%wk)
   end subroutine part_disorder
+
+  ! ---------------------------------------------------------------- (B)
+  !> Block chains against single chains on the operator of (D): the four blocks X0, X1, X2 and the X1 mismatch for every start
+  !> vector at five energies.  12 steps: the chains are open and the two agree to rounding (1e-15 to 1e-12).  A work space of
+  !> 8 members holds the block of 5 (three idle members).  400 steps: every chain closes, so every member leaves the block
+  !> and takes the fraction without a tail (1e-13).  Between the two depths the 16-site cell is close to exhaustion: the
+  !> chains then amplify the rounding-level kernel difference (1e-7 at 30 steps), as on the ring of test_augcls_blk.
+  subroutine part_block(op, mdl, dd)
+    type(augcls_op), intent(inout) :: op
+    type(class_alloy_t), intent(in) :: mdl
+    real(dp), intent(in) :: dd(:, :, :)
+    integer, parameter :: nz = 5
+    type(class_alloy_t) :: ml
+    type(edn_t) :: ed
+    type(epi_work_t) :: wk
+    type(blk_work_t) :: bw5, bw8
+    type(epi_path_t) :: pt
+    complex(dp) :: zs(nz), x(0:3), xb(0:3, nz), xp(0:3, nz)
+    real(dp) :: vec(9, 9), chi(16, 9), e5, e8, ec, sc
+    integer :: lo(9), ia, j
+    do j = 1, nz
+      zs(j) = cmplx(-0.3_dp + 0.17_dp * j, 0.6_dp / real(j, dp), dp)
+    end do
+    ml = mdl
+    pt = epi_path(par(1), par(2), 0.35_dp)
+    call epi_setup(ml, par, pt, ed)
+    call augcls_set_params(op, ml)
+    call augcls_freeze_any(op, 1, 4); call augcls_freeze_any(op, jp, 3)
+    call epi_adapted(dd, vec, chi, lo)
+    call epi_work_init(wk, op%dim())
+    call blk_work_init(bw5, nz, op%dim()); call blk_work_init(bw8, 8, op%dim())
+    e5 = 0.0_dp; e8 = 0.0_dp; ec = 0.0_dp
+    do ia = 1, 9
+      op%chi = chi(1:op%nop, ia)
+      call epi_start(op, wk, vec(:, ia))
+      call epi_blocks_blk(op, wk, bw5, ed, zs, 12, xb)
+      call epi_blocks_blk(op, wk, bw8, ed, zs, 12, xp)
+      do j = 1, nz
+        call epi_blocks(op, wk, ed, zs(j), 12, x)
+        sc = maxval(abs(x(0:2)))
+        e5 = max(e5, maxval(abs(xb(:, j) - x)) / sc); e8 = max(e8, maxval(abs(xp(:, j) - x)) / sc)
+      end do
+      call epi_blocks_blk(op, wk, bw8, ed, zs(1:3), 400, xp(:, 1:3))
+      do j = 1, 3
+        call epi_blocks(op, wk, ed, zs(j), 400, x)
+        ec = max(ec, maxval(abs(xp(0:2, j) - x(0:2))) / maxval(abs(x(0:2))))
+      end do
+    end do
+    call check_close(e5, 0.0_dp, 1.0e-11_dp, 'energy block: epi_blocks_blk == epi_blocks (X0, X1, X2, X1 mismatch), 5 energies, 12 steps')
+    call check_close(e8, 0.0_dp, 1.0e-11_dp, 'energy block: the same with a short block (3 idle members)')
+    call check_close(ec, 0.0_dp, 1.0e-10_dp, 'energy block: closed chains (400 steps) == single chains')
+  end subroutine part_block
 
   ! ---------------------------------------------------------------- (T)
   !> exact dOmega/dlambda = sum_i f(e_i) <i|dH/dlambda|i> of the dense H on the path a -> b at lam, partner species sj
@@ -296,7 +356,7 @@ contains
     type(augcls_op) :: op
     logical :: fl(g%n)
     integer :: spsite(g%n), c, s, nq, j, il, nlam, n, info
-    real(dp) :: om(3, 3), uex(3, 3), uti(3, 3), mu, ebot, xl(8), wl(8), dl(3), acc, dref, err(4), asy(4)
+    real(dp) :: om(3, 3), uex(3, 3), uti(3, 3), mu, ebot, xl(8), wl(8), dl(3), acc, dref, err(5), asy(5)
     real(dp), allocatable :: h(:, :), ev(:), work(:)
     complex(dp), allocatable :: zq(:), wq(:)
     type(epi_path_t) :: pt
@@ -335,8 +395,8 @@ contains
       uex(c, s) = om(c, s) - om(1, s) - om(c, 1) + om(1, 1)
     end do; end do
     ! lambda integration of the exact derivative
-    do il = 1, 4
-      nlam = merge(8, il + 1, il == 4)
+    do il = 1, 5
+      nlam = merge(8, il, il == 5)
       call gauss_legendre(nlam, xl(1:nlam), wl(1:nlam))
       xl(1:nlam) = 0.5_dp * (1.0_dp + xl(1:nlam)); wl(1:nlam) = 0.5_dp * wl(1:nlam)
       uti = 0.0_dp
@@ -350,10 +410,10 @@ contains
       print '(a,i0,a,4f11.6,a,es9.2,a,es9.2)', '  ', nlam, ' lambda nodes: U(2,2) U(2,3) U(3,2) U(3,3) (mRy) ', 1.0e3_dp * uti(2:3, 2:3), &
         '   max error (Ry) ', err(il), '  |U(2,3) - U(3,2)| ', asy(il)
     end do
-    call check_close(err(3), 0.0_dp, 4.0e-5_dp, 'U(c, s) from 4 lambda nodes == exact grand-potential differences (0.1 %)')
-    call check_close(err(4), 0.0_dp, 2.0e-7_dp, 'U(c, s) from 8 lambda nodes == exact grand-potential differences')
-    call check(err(3) < err(2) .and. err(2) < err(1), 'the lambda quadrature converges')
-    call check(all(asy <= 2.0_dp * err + 1.0e-12_dp) .and. asy(1) > 0.2_dp * err(1), &
+    call check_close(err(4), 0.0_dp, 4.0e-5_dp, 'U(c, s) from 4 lambda nodes == exact grand-potential differences (0.1 %)')
+    call check_close(err(5), 0.0_dp, 2.0e-7_dp, 'U(c, s) from 8 lambda nodes == exact grand-potential differences')
+    call check(err(4) < err(3) .and. err(3) < err(2), 'the lambda quadrature converges')
+    call check(all(asy <= 2.0_dp * err + 1.0e-12_dp) .and. asy(2) > 0.2_dp * err(2), &
                'the asymmetry U(c, s) - U(s, c) measures the quadrature error')
     print '(a,4f11.6)', '  exact:          U(2,2) U(2,3) U(3,2) U(3,3) (mRy) ', 1.0e3_dp * uex(2:3, 2:3)
     call check(maxval(abs(uex(2:3, 2:3))) > 1.0e-4_dp, 'the test pair interactions are not trivially small')
@@ -361,6 +421,13 @@ contains
     print '(a,3f11.6)', '  exchange interactions V(1,2) V(1,3) V(2,3) (mRy) ', 1.0e3_dp * [uti(2, 2), uti(3, 3), uti(2, 2) + uti(3, 3) - uti(2, 3) - uti(3, 2)]
     uex = epi_exchange(uti)
     call check_close(uex(1, 2), uti(2, 2), 1.0e-14_dp, 'epi_exchange: V(1, q) = U(q, q) for the reference species 1')
+    call check(epi_skip(.true., .true., 3, 2) .and. .not. epi_skip(.true., .true., 3, 1) .and. .not. epi_skip(.true., .true., 2, 3) &
+               .and. .not. epi_skip(.true., .true., 3, 3) .and. .not. epi_skip(.false., .true., 3, 2) .and. .not. epi_skip(.true., .false., 3, 2), &
+               'epi_skip: only the entries 1 < s < c of one sublattice, only with the option')
+    uex = uti; uex(3, 2) = 99.0_dp
+    call epi_mirror(uex)
+    call check(uex(3, 2) == uti(2, 3) .and. all(uex(2, :) == uti(2, :)) .and. uex(3, 3) == uti(3, 3) .and. all(uex(:, 1) == uti(:, 1)), &
+               'epi_mirror: U(3, 2) = U(2, 3), nothing else changes')
     ! Fermi contour of the chains at one path point against the exact derivative
     nq = fermi_nodes_count(npl, nmain, nstep)
     allocate (zq(nq), wq(nq))
@@ -377,6 +444,70 @@ contains
     call check_close(acc, dref, 1.0e-6_dp, 'dOmega/dlambda: Fermi contour of the chains == sum_i f(e_i) <i|dH/dlambda|i>')
     deallocate (cls, op%wk)
   end subroutine part_ti
+
+  ! ---------------------------------------------------------------- (P)
+  !> Path-point convergence for close species.  Species 2 and 3 are species 1 with band centres shifted by +0.03 and -0.04 Ry
+  !> and band widths changed by +10 and -10 %.  The midpoint rule (one node) has an error of third order in the species
+  !> difference, but the table entries are themselves small differences.  Exact reference: grand-potential differences of
+  !> the dense matrices, as in (T).
+  subroutine part_path()
+    real(dp), parameter :: kt = 0.04_dp
+    type(epi_par_t) :: keep(3)
+    type(potpar_t) :: q
+    integer :: spsite(g%n), c, s, j, il, n, info
+    real(dp) :: om(3, 3), uex(3, 3), uti(3, 3), mu, xl(4), wl(4), dl(3), rel(4), sc
+    real(dp), allocatable :: h(:, :), ev(:), work(:)
+    keep = par
+    q = pp(1); q%c = q%c + 0.03_dp; q%enu = q%enu + 0.01_dp; q%sqrdel = 1.05_dp * q%sqrdel; q%gamma = 1.04_dp * q%gamma
+    q%alpha_rep = q%gamma; par(2) = epi_species(q, alpha)
+    q = pp(1); q%c = q%c - 0.04_dp; q%enu = q%enu - 0.01_dp; q%sqrdel = 0.95_dp * q%sqrdel; q%gamma = 0.97_dp * q%gamma
+    q%alpha_rep = q%gamma; par(3) = epi_species(q, alpha)
+    spsite = 1; mu = 0.0_dp
+    do c = 1, 3
+      do s = 1, 3
+        call dense_h(spsite, epi_path(par(c), par(c), 0.0_dp), s, h)
+        n = size(h, 1)
+        if (.not. allocated(ev)) allocate (ev(n), work(8 * n))
+        call dsyev('N', 'U', n, h, n, ev, work, size(work), info)
+        if (c == 1 .and. s == 1) mu = 0.5_dp * (ev(n / 3) + ev(n / 3 + 1)) + 0.013_dp
+        om(c, s) = 0.0_dp
+        do j = 1, n
+          if (ev(j) < mu) then
+            om(c, s) = om(c, s) + (ev(j) - mu) - kt * log(1.0_dp + exp((ev(j) - mu) / kt))
+          else
+            om(c, s) = om(c, s) - kt * log(1.0_dp + exp(-(ev(j) - mu) / kt))
+          end if
+        end do
+        deallocate (h)
+      end do
+    end do
+    do c = 1, 3; do s = 1, 3
+      uex(c, s) = om(c, s) - om(1, s) - om(c, 1) + om(1, 1)
+    end do; end do
+    sc = maxval(abs(uex(2:3, 2:3)))
+    print '(a,4f11.6)', '  close species, exact:    U(2,2) U(2,3) U(3,2) U(3,3) (mRy) ', 1.0e3_dp * uex(2:3, 2:3)
+    do il = 1, 4
+      call gauss_legendre(il, xl(1:il), wl(1:il))
+      xl(1:il) = 0.5_dp * (1.0_dp + xl(1:il)); wl(1:il) = 0.5_dp * wl(1:il)
+      uti = 0.0_dp
+      do c = 2, 3
+        do j = 1, il
+          do s = 1, 3; dl(s) = dense_d(spsite, 1, c, xl(j), s, mu, kt); end do
+          do s = 2, 3; uti(c, s) = uti(c, s) + wl(j) * (dl(s) - dl(1)); end do
+        end do
+      end do
+      rel(il) = maxval(abs(uti - uex)) / sc
+      print '(a,i0,a,4f11.6,a,es9.2)', '  close species, ', il, ' node(s): U(2,2) U(2,3) U(3,2) U(3,3) (mRy) ', 1.0e3_dp * uti(2:3, 2:3), &
+        '   max error / max |U| ', rel(il)
+    end do
+    call check(sc > 1.0e-4_dp, 'close species: the pair interactions are not trivially small')
+    call check_close(rel(1), 0.0_dp, 5.0e-2_dp, 'close species: the midpoint rule (1 path point) is within 5 % of the largest U')
+    call check(abs(uex(2, 3)) < 0.05_dp * sc .and. rel(1) * sc > 0.5_dp * abs(uex(2, 3)), &
+               'close species: the midpoint error is as large as a small table entry (1 path point is not safe)')
+    call check_close(rel(2), 0.0_dp, 2.0e-4_dp, 'close species: 2 path points are within 0.02 %')
+    call check(rel(4) < rel(2) .and. rel(2) < 1.0e-2_dp * rel(1), 'close species: 2 path points are 100 times better than 1; the quadrature converges')
+    par = keep
+  end subroutine part_path
 
   ! ---------------------------------------------------------------- (S)
   subroutine part_screen()

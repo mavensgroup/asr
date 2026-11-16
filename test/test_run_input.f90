@@ -43,12 +43,14 @@ program test_run_input
   call put(bccfe//'[asr]'//nl//'levls = 3'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, 'unknown key') > 0, 'typo in [asr] rejected')
-  call put(bccfe//'[epi]'//nl//'shells = 2'//nl//'lambda_points = 6'//nl//'file = "pairs.toml"'//nl)
+  call put(bccfe//'[epi]'//nl//'shells = 2'//nl//'lambda_points = 6'//nl//'file = "pairs.toml"'//nl//'symmetric = true'//nl)
   call read_run_input(f, inp, msg)
-  call check(len(msg) == 0 .and. inp%ci%epi_shells == 2 .and. inp%ci%epi_nlam == 6 .and. inp%epi_file == 'pairs.toml', '[epi] read')
+  call check(len(msg) == 0 .and. inp%ci%epi_shells == 2 .and. inp%ci%epi_nlam == 6 .and. inp%epi_file == 'pairs.toml' &
+             .and. inp%ci%epi_sym, '[epi] read')
   call put(bccfe)
   call read_run_input(f, inp, msg)
-  call check(inp%ci%epi_shells == 0 .and. inp%ci%epi_nlam == 4 .and. inp%epi_file == 'epi.toml', '[epi] defaults: off, 4 path points')
+  call check(inp%ci%epi_shells == 0 .and. inp%ci%epi_nlam == 4 .and. inp%epi_file == 'epi.toml' .and. .not. inp%ci%epi_sym, &
+             '[epi] defaults: off, 4 path points, both halves of the table')
   call put(bccfe//'[epi]'//nl//'shels = 2'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, 'unknown key') > 0, 'typo in [epi] rejected')
