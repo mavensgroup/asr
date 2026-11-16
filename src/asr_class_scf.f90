@@ -17,6 +17,7 @@
 !> then iterated in the drive u = db of the charge-excess model (asr_screening::screen_update, u is part of the mixing vector):
 !>     u_out = dq + (I - Gamma) u_in,   V = a (I - Gamma) u_out.
 !> The fixed point is V = F dq, F = a (Gamma^-1 - I), and dq = 0 on a mode with Gamma = 0 (full clustering, F infinite).
+!> u starts at zero unless start_potential holds it: a potential without an SRO part has no drive.
 !> Without SRO the potential is F dq as before (bit for bit).
 !> -> Anderson mixing of the smooth potentials and E_nu.
 !> Total energy per site (Ry, Kohn-Sham form: output density, input potential), E = sum_p w_p E_p with
@@ -160,7 +161,7 @@ contains
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
     integer, allocatable :: pk(:), zsh(:, :)
     real(dp), allocatable :: ahat(:, :)
-    real(dp), allocatable :: ginv(:, :), dqv(:), ucur(:), uout(:), vfl(:)
+    real(dp), allocatable :: dqv(:), ucur(:), uout(:), vfl(:)
     logical :: uload
     integer :: offu
     character(len=:), allocatable :: smsg
@@ -198,7 +199,7 @@ contains
     end do
     nelec = sum([(w(p) * real(inp%spec(psp(p))%nval, dp), p=1, ncomp)])
     allocate (ucur(ncomp), uout(ncomp), vfl(ncomp), dqv(ncomp)); ucur = 0.0_dp; uout = 0.0_dp; vfl = 0.0_dp
-    uload = .false.                                    ! u read from start_potential
+    uload = .false.                                    ! u read from start_potential; otherwise u starts at zero
     ! operator classes: the sublattices, and with SRO also ncls + kappa' = first-shell sites of the origin on sublattice kappa'
     ! (same species; their concentrations are set per central component in chain_worker)
     nmc = ncls; if (inp%sro) nmc = 2 * ncls
@@ -290,9 +291,9 @@ contains
         end do
       end do
     end if
-    allocate (res%gscr(ncomp, ncomp), res%wscr(ncomp, ncomp), res%mode_lam(ncomp), res%mode_gam(ncomp), ginv(ncomp, ncomp))
+    allocate (res%gscr(ncomp, ncomp), res%wscr(ncomp, ncomp), res%mode_lam(ncomp), res%mode_gam(ncomp))
     res%uform = inp%sro .and. .not. res%screen%unscreened
-    call screen_matrix(res%screen, ahat, w, gm=res%gscr, wm=res%wscr, lam=res%mode_lam, gam=res%mode_gam, ginv=ginv)
+    call screen_matrix(res%screen, ahat, w, gm=res%gscr, wm=res%wscr, lam=res%mode_lam, gam=res%mode_gam)
     if (minval(res%mode_gam) > 1.0e-9_dp * res%screen%g00) then
       call screen_matrix(res%screen, ahat, w, fm=res%fscr)
     else
@@ -466,15 +467,14 @@ contains
       qbar = 0.0_dp
       do p = 1, ncomp; qbar(pcl(p)) = qbar(pcl(p)) + xp(p) * cr(p)%qnet; end do
       qcell = sum(inp%dec%frac * qbar)            ! residual of the E_F search: the Madelung sum needs neutral charges
-      ! SRO: potential of the charge deviations from the drive u (screen_update).  Without u from start_potential the first u
-      ! is Gamma^+ dq: on every mode with Gamma > 0 the first potential is F dq, as without the drive form.
+      ! SRO: potential of the charge deviations from the drive u (screen_update).  u_out = dq + (I - Gamma) u_in is the bare
+      ! charge deviation of the model, dq + v_in / a, if the input potential holds the SRO potential v_in = W u_in.  A start
+      ! without u (free atoms, a potential of a run without SRO) holds none, so u starts at zero.  The first SRO potential is
+      ! then W dq, at most a |dq|, and it follows the charges.  (Until 2026-11 the first u was Gamma^+ dq.  That stands for
+      ! an input potential that holds F dq.  From free atoms the first charges are several electrons, the drive moves by
+      ! 0.15 / a per iteration only, and W (I - Gamma) u kept several Ry of them in every later output potential.)
       if (res%uform) then
         do p = 1, ncomp; dqv(p) = cr(p)%qnet - qbar(pcl(p)); end do
-        if (it == 1 .and. .not. uload) then
-          ucur = matmul(ginv, dqv)
-          call screen_project(xp, pcl, ucur)
-          xin(offu + 1:offu + ncomp) = ucur
-        end if
         call screen_update(res%gscr, res%wscr, xp, pcl, dqv, ucur, uout, vfl)
         xout(offu + 1:offu + ncomp) = uout
       end if
