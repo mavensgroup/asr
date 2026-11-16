@@ -1,3 +1,4 @@
+# Internal test input of the k-space reference solver (test tool, not a production route; read by test_run_input).
 # Ordered B2 FeCu, k-space, unequal ASA spheres.
 [calculation]
 name = "B2 FeCu"

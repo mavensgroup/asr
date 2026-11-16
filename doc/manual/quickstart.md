@@ -4,7 +4,7 @@ title: Quick start
 
 # Quick start
 
-This tutorial walks through **four calculations** with the one input format of `asr`: an ordered crystal by the exact k-space reference, the same kind of crystal by the augmented-space recursion, a random binary alloy, and a site-disordered Heusler compound. The Hamiltonian is the same in all four (TB-LMTO-ASA, the only one implemented; see [Hamiltonians](hamiltonian/index.html)). Only the structure and the `method` change.
+This tutorial walks through **four calculations** with the one input format of `asr`, all by the augmented-space recursion: an ordered compound, a ferromagnetic ordered compound, a random binary alloy, and a site-disordered Heusler compound. The Hamiltonian is the same in all four (TB-LMTO-ASA, the only one implemented; see [Hamiltonians](hamiltonian/index.html)). Only the structure changes.
 
 ---
 
@@ -32,101 +32,108 @@ In the commands below, `asr` refers to the installed binary (`asr_run -- <file>`
 
 ---
 
-## 1. Ordered Crystal by k-space: fcc Ag (`method = "kspace"`, ≈ 9 s)
+## 1. Ordered Compound: B2 CuZn (≈ 2 min)
 
-With `method = "kspace"`, `asr` runs a complete self-consistent TB-LMTO-ASA calculation from scratch: it solves the free-atom scalar-relativistic equation for the starting potential, computes screened canonical structure constants \(S^\alpha\), integrates the Brillouin zone by the Blöchl tetrahedron method, updates the sphere potential via libxc + Poisson, and mixes to self-consistency with Anderson mixing. This is the exact reference for ordered structures; the recursion in the next section solves the same model.
+An ordered crystal needs no special method. Every sublattice holds one species, so there is no disorder to average, and the recursion runs on the ordered real-space Hamiltonian. `asr` runs a complete self-consistent TB-LMTO-ASA calculation from scratch: it solves the free-atom scalar-relativistic equation for the starting potential, computes the screened structure constants \(S^\alpha\), integrates the recursion Green function on a complex-energy contour, updates the sphere potentials via libxc + Poisson, and mixes to self-consistency with Anderson mixing.
 
-### Input (`ag_fcc.toml`)
+### Input (`cuzn_b2.toml`)
 
 ```toml
-# fcc Ag, k-space TB-LMTO-ASA (the exact reference of the ordered crystal).
+# Ordered B2 CuZn by the energy-dependent recursion.
 [calculation]
-name = "fcc Ag"
-method = "kspace"
+name = "B2 CuZn"
 
 [structure]
-lattice = "fcc"
-alat = 4.0900            # Angstrom (experimental)
-centering = "F"          # one sublattice: the fcc lattice itself
+lattice = "bcc"
+alat = 2.92055
+period = 1
+centering = "P"          # two sublattices: cube corner and cube centre
 
 [[sublattice]]
-name = "fcc"
+name = "a"
 positions = [[0.0, 0.0, 0.0]]
-species = ["Ag"]
+species = ["Cu"]
+
+[[sublattice]]
+name = "b"
+positions = [[0.5, 0.5, 0.5]]
+species = ["Zn"]
 
 [[species]]
-symbol = "Ag"
-z = 47
+symbol = "Cu"
+z = 29
 nval = 11
-konfig = [5, 5, 4, 4]
+konfig = [4, 4, 3, 4]
 occupations = [1.0, 10.0]
+
+[[species]]
+symbol = "Zn"
+z = 30
+nval = 12
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 10.0]
 
 [scf]
 spin = 1
 xc = "vbh"
 mixing = 0.3
-tolerance = 1.0e-6
-max_iterations = 100
+tolerance = 1.0e-5
+max_iterations = 80
 
-[kspace]
-nk = 12
-bz = "tetra"
-dos_nk = 24
+[asr]
+recursion_steps = 24
+supercell = 12
+contour_points = 32
 
 [dos]
 emin = -0.9
-emax = 1.0
-npoints = 801
+emax = 0.6
+npoints = 401
 eta = 0.01
 
 [output]
-dos_file = "ag_fcc_dos.dat"
-params_file = "ag_fcc_params.dat"
+dos_file = "cuzn_b2_dos.dat"
 ```
 
 ### Run & Output
 
 ```bash
-asr /tmp/run/ag_fcc.toml
+asr /tmp/run/cuzn_b2.toml
 ```
 
-The terminal prints a short summary (SCF convergence, \(E_F\), per-class charge and moment) and the files written.
+The terminal prints a short summary (SCF convergence, \(E_F\), per-class charge and moment) and the files written. The run converges in 37 iterations, in about 2 min on 8 threads.
 
 Inspect `/tmp/run/asr.out`. The converged potential parameters and \(l\)-resolved charges are summarized in:
 
 ```text
-=== converged results =====================================================
- Fermi energy                   -0.17371795 Ry
- class 1  Ag   Z=  47.0  valence=11  S=   3.02046 Bohr   atoms/cell=1
+=== converged results (per component atom; cell = decoration cell) ========
+ Fermi energy                   -0.04550604 Ry
+ class 1  Cu@a   Z=  29.0  valence=11  S=   2.71742 Bohr   atoms/cell=1
+   qnet (electrons in sphere - Z)      0.13477 e
    spin  l      E_nu         C        sqrt(Delta)       p         gamma        occ(q0)
-      1  s   -0.533991   -0.449414     0.364910    0.081764    0.424921     0.68472
-      1  p   -0.437422    0.425053    -0.365166    0.036272    0.115341     0.66416
-      1  d   -0.485924   -0.488864    -0.104418    2.061327    0.005199     9.50980
+      1  s   -0.527072   -0.441189    -0.398659    0.063845    0.421305     0.72072
+      1  p   -0.374622    0.520164     0.388781    0.031766    0.111313     0.83541
+      1  d   -0.311871   -0.305992     0.091900    2.931075   -0.003933     9.57863
+ class 2  Zn@b   Z=  30.0  valence=12  S=   2.71742 Bohr   atoms/cell=1
+   qnet (electrons in sphere - Z)     -0.13477 e
 ```
 
-These `s/p/d` occupations (`0.685 / 0.664 / 9.510`) and potential parameters (\(\sqrt{\Delta}\), \(\gamma\), \(p\)) agree with the Stuttgart TB-LMTO-ASA reference to \(\approx 1\%\) without importing any external parameters (see [Validation](validation.html)).
+Charge flows from Zn to Cu (0.135 e per atom), and the cell stays neutral.
 
-!!! tip "Plot the l-resolved DOS"
-    Plot the Ag \(4d\) band from `/tmp/run/ag_fcc_dos.dat` using `gnuplot`:
-
-        gnuplot -p -e "plot '/tmp/run/ag_fcc_dos.dat' u 1:4 w l lw 2 t 'Ag 4d'"
-
-    Columns are `E  s  p  d` (states/Ry/atom per spin channel), and `E_F` is printed in the second header comment line.
-
-!!! tip "Spin-polarized and multi-class ordered crystals"
-    Try running ferromagnetic bcc Fe (`asr /tmp/run/fe_bcc.toml`, which converges to \(m \approx 2.21\,\mu_B\)) and ordered B2 FeCu (`asr /tmp/run/fecu_b2.toml`, which demonstrates a two-class crystal with Ewald Madelung electrostatics and inter-sublattice charge transfer).
+!!! tip "Plot the DOS"
+    `/tmp/run/cuzn_b2_dos.dat` holds the total and class/\(l\)-projected densities of states. The columns are described in [Output files](output.html).
 
 !!! note "Harmless IEEE floating-point notices on exit"
     Intel `ifx` binaries may print `forrtl: warning (525): IEEE_DIVIDE_BY_ZERO is signaling` (or `527: IEEE_OVERFLOW`) upon program termination. These are standard Fortran runtime summaries indicating that an IEEE floating-point status flag was raised during execution; the calculation still exits with status `0` and all numerical results are unaffected.
 
 ---
 
-## 2. The Same Structure by Recursion: B2 FeCo (default `method = "asr"`)
+## 2. Ferromagnetic Ordered Compound: B2 FeCo (`spin = 2`, ≈ 2.5 min)
 
-Leave out `method` and the same structure block runs by the energy-dependent augmented-space recursion, the default solver. For an ordered crystal there is no disorder to average, and the recursion reproduces the k-space result to the accuracy of the chain length. Compare `example/feco_b2_asr.toml` with `example/feco_b2_kspace.toml`: the `[structure]`, `[[sublattice]]` and `[[species]]` blocks are identical, and only `method`, `[kspace]` (k mesh) and `[asr]` (recursion) differ. This pairing is the basic validation of the recursion ([Validation](validation.html)).
+`spin = 2` switches on spin polarisation. Everything else works as in the previous section. The input is `example/feco_b2_asr.toml`:
 
 ```toml
-# Ordered B2 FeCo, ferromagnetic, by the energy-dependent recursion (default method).  k-space: example/feco_b2_kspace.toml.
+# Ordered B2 FeCo, ferromagnetic, by the energy-dependent recursion (default method).
 [calculation]
 name = "B2 FeCo FM, recursion"
 
