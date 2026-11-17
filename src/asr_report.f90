@@ -283,15 +283,12 @@ contains
     end do
   end function fnv1a64_file
 
-  !> Write a line trimmed, ensuring length at most 90 columns.
+  !> Write a line, trimmed.  Lines are laid out to at most 90 columns (test_report checks it); a longer line is written
+  !> whole, never cut, because a cut number reads as a different number.
   subroutine wline(u, text)
     integer, intent(in) :: u
     character(len=*), intent(in) :: text
-    if (len_trim(text) > 90) then
-      write (u, '(a)') text(1:90)
-    else
-      write (u, '(a)') trim(text)
-    end if
+    write (u, '(a)') trim(text)
   end subroutine wline
 
   !> Write fixed section header with width exactly 90.
@@ -345,7 +342,7 @@ contains
   subroutine rep_banner(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=32) :: git_status
     character(len=24), parameter :: ind = '                      '
 
@@ -393,7 +390,7 @@ contains
   subroutine rep_method(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     integer :: i
 
     call rep_section(u, 'method')
@@ -478,7 +475,7 @@ contains
   subroutine rep_structure(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=64) :: item
     integer :: k, i
     real(dp) :: vsite, vsph
@@ -511,7 +508,7 @@ contains
       write (line, '(a,f9.5)') ' sphere / cell volume    : ', vsph / max(r%cell_vol, tiny(1.0_dp))
       call wline(u, line)
     else
-      write (line, '(a,i0,a,i0,a)') ' decoration cell         : ', r%period, '^3 conventional cubes, ', r%nsite, ' sites'
+      write (line, '(a,i0,a,i0)') ' decoration cell         : ', r%period, '^3 conventional cubes;  sites ', r%nsite
       call wline(u, line)
       write (line, '(a,f11.6,a)') ' sphere radius S         : ', r%sws_avg, ' Bohr (equal spheres, space filling)'
       call wline(u, line)
@@ -531,7 +528,7 @@ contains
             item = trim(r%sub(k)%species(i)) // ' ' // trim(ftoa(r%sub(k)%conc(i), 4))
             if (len_trim(line) + len_trim(item) + 3 > 88) then
               call wline(u, line)
-              line = repeat(' ', 27) // trim(item)
+              line = repeat(' ', 29) // trim(item)
             else
               line = line(1:max(27, len_trim(line))) // '  ' // trim(item)
             end if
@@ -553,63 +550,44 @@ contains
     end if
   end subroutine rep_structure
 
-  !> Section 4.5: Short-range order (only with [[sro]])
+  !> Section 4.5: Short-range order (only with [[sro]]): P(j|i) and Warren-Cowley alpha in blocks of 7 species, then the
+  !> screening modes and the drive u
   subroutine rep_sro(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=32) :: buf
-    character(len=64) :: ustr
-    integer :: i, j
+    character(len=2048) :: ustr
+    integer :: i, j, j0, j1, n
 
     if (.not. r%sro%has_sro) return
-
     call rep_section(u, 'short-range order')
-    write (line, '(a,a,a,a,a,i0,a)') ' first shell: centre on ', trim(r%sro%sub_centre), ', neighbours on ', &
-      trim(r%sro%sub_neigh), ', ', r%sro%coord_num, ' sites'
-    call wline(u, line)
-
+    call wline(u, ' first shell: centre on ' // trim(r%sro%sub_centre) // ', neighbours on ' // trim(r%sro%sub_neigh) // ', ' // &
+               trim(itoa(r%sro%coord_num)) // ' sites')
     if (allocated(r%sro%species) .and. allocated(r%sro%cond_p)) then
-      line = '   centre '
-      do j = 1, r%sro%nspec
-        line = trim(line) // '   P(' // trim(r%sro%species(j)) // '|centre)'
-      end do
-      do j = 1, r%sro%nspec
-        line = trim(line) // '  alpha(' // trim(r%sro%species(j)) // ')'
-      end do
-      call wline(u, line)
-      call wline(u, '   --------------------------------------------------------------')
-      do i = 1, r%sro%nspec
-        write (line, '(3x,a8)') r%sro%species(i)
-        do j = 1, r%sro%nspec
-          write (buf, '(f14.4)') r%sro%cond_p(i, j)
-          line = trim(line) // buf
-        end do
-        if (allocated(r%sro%alpha)) then
-          do j = 1, r%sro%nspec
-            write (buf, '(f11.4)') r%sro%alpha(i, j)
-            line = trim(line) // buf
-          end do
-        end if
-        call wline(u, line)
-      end do
+      n = r%sro%nspec
+      call wline(u, '')
+      call wline(u, ' conditional probability P(j|i) of species j on a first-shell site, centre species i')
+      call table(r%sro%cond_p, 'P(')
+      if (allocated(r%sro%alpha)) then
+        call wline(u, '')
+        call wline(u, ' Warren-Cowley alpha_ij = 1 - P(j|i) / c_j;  i /= j: alpha > 0 fewer unlike neighbours')
+        call wline(u, ' (clustering), alpha < 0 more (ordering)')
+        call table(r%sro%alpha, 'a(')
+      end if
     end if
 
-    call wline(u, ' alpha_ij = 1 - P(j|i) / c_j.  For i /= j: alpha > 0 means fewer unlike neighbours')
-    call wline(u, ' (clustering), alpha < 0 more (ordering).')
-    call wline(u, '')
-
     if (allocated(r%sro%mode_lam) .and. r%sro%nmodes > 0) then
+      call wline(u, '')
       call wline(u, ' screening modes of the SRO closure')
-      call wline(u, '   mode  lambda(Ahat)    Gamma=dq/db    G00+G1 lam    F [Ry/e]')
-      call wline(u, '   -------------------------------------------------------------')
+      call wline(u, '   mode' // rj('lambda(Ahat)', 14) // rj('Gamma = dq/db', 15) // rj('G00 + G1 lambda', 17) // rj('F [Ry/e]', 12))
+      call wline(u, '   ' // repeat('-', 62))
       do i = 1, r%sro%nmodes
+        write (line, '(3x,i4,f14.4,f15.5,f17.5)') i, r%sro%mode_lam(i), r%sro%mode_gam(i), r%sro%mode_gform(i)
         if (r%sro%mode_inf(i)) then
-          write (line, '(3x,i4,f14.4,2f15.5,a)') i, r%sro%mode_lam(i), r%sro%mode_gam(i), &
-            r%sro%mode_gform(i), '   infinite (clustered)'
+          line = trim(line) // '   infinite (full clustering: this deviation vanishes)'
         else
-          write (line, '(3x,i4,f14.4,2f15.5,f12.4)') i, r%sro%mode_lam(i), r%sro%mode_gam(i), &
-            r%sro%mode_gform(i), r%sro%mode_f(i)
+          write (buf, '(f12.4)') r%sro%mode_f(i); line = trim(line) // buf(1:12)
         end if
         call wline(u, line)
       end do
@@ -617,11 +595,39 @@ contains
 
     if (allocated(r%sro%udrive) .and. allocated(r%comp)) then
       ustr = ''
-      do i = 1, size(r%sro%udrive)
-        ustr = trim(ustr) // ' ' // trim(r%comp(i)%label) // ' ' // trim(ftoa(r%sro%udrive(i), 5))
+      do i = 1, min(size(r%sro%udrive), size(r%comp))
+        ustr = trim(ustr) // '   ' // trim(r%comp(i)%label) // ' ' // trim(ftoa(nz(r%sro%udrive(i), 5), 5))
       end do
-      call wline(u, ' drive u [e] (last iteration): ' // trim(ustr))
+      call wline(u, '')
+      call write_wrapped(u, ' drive u [e], last iteration:', trim(ustr), '   ')
     end if
+  contains
+    subroutine table(a, tag)
+      real(dp), intent(in) :: a(:, :)
+      character(len=*), intent(in) :: tag
+      j0 = 1
+      do while (j0 <= n)
+        j1 = min(n, j0 + 6)
+        line = '   centre'
+        do j = j0, j1
+          if (tag == 'P(') then
+            line = line(1:len_trim(line)) // rj('P(' // trim(r%sro%species(j)) // '|i)', 11)
+          else
+            line = line(1:len_trim(line)) // rj('alpha(' // trim(r%sro%species(j)) // ')', 11)
+          end if
+        end do
+        call wline(u, line)
+        call wline(u, '   ' // repeat('-', len_trim(line) - 3))
+        do i = 1, n
+          line = '   ' // lj(r%sro%species(i), 6)
+          do j = j0, j1
+            write (buf, '(f11.4)') nz(a(i, j), 4); line = line(1:9 + (j - j0) * 11) // buf(1:11)
+          end do
+          call wline(u, line)
+        end do
+        j0 = j1 + 1
+      end do
+    end subroutine table
   end subroutine rep_sro
 
 
@@ -629,7 +635,7 @@ contains
   subroutine rep_scf_history(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=32) :: buf
     integer :: it, p, pstart, pend, bsize
     real(dp) :: sitem
@@ -683,7 +689,7 @@ contains
       bsize = 3
     else
       call wline(u, ' per component:  qnet [e per atom]')
-      bsize = 7
+      bsize = 6
     end if
     pstart = 1
     do while (pstart <= r%ncomp)
@@ -720,7 +726,7 @@ contains
   subroutine rep_energy(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=32) :: buf
     character(len=22), parameter :: tname(n_et) = [character(len=22) :: 'valence band energy', 'core eigenvalue sum', &
       'double counting', 'sphere Hartree', 'exchange-correlation', 'Madelung', 'screened deviations']
@@ -755,9 +761,9 @@ contains
       pend = min(r%ncomp, pstart + bsize - 1)
       line = ' ' // lj('term', 22)
       do p = pstart, pend
-        line = line(1:len_trim(line)) // rj(r%comp(p)%label, 16)
+        line = line(1:23 + (p - pstart) * 16) // rj(r%comp(p)%label, 16)
       end do
-      if (pend == r%ncomp) line = line(1:len_trim(line)) // rj('per site', 16)
+      if (pend == r%ncomp) line = line(1:23 + (pend - pstart + 1) * 16) // rj('per site', 16)
       call wline(u, line)
       call wline(u, ' ' // repeat('-', len_trim(line) - 1))
       do k = 1, n_et
@@ -789,7 +795,7 @@ contains
   subroutine rep_components(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=1), parameter :: lname(0:2) = ['s', 'p', 'd']
     integer :: p, s, l
     real(dp) :: qtot, ntot
@@ -809,7 +815,7 @@ contains
         '   Z ', r%comp(p)%z, '   valence ', r%comp(p)%valence, '   c ', r%comp(p)%concentration, &
         '   weight per site ', r%comp(p)%weight_per_site
       call wline(u, line)
-      write (line, '(a,f8.5,a,f10.5,a,f9.5,a,f9.5,a)') '   S ', r%comp(p)%sws, ' Bohr   electrons in sphere ', &
+      write (line, '(a,f7.5,a,f9.5,a,f9.5,a,f9.5,a)') '   S ', r%comp(p)%sws, ' Bohr   electrons ', &
         r%comp(p)%z + r%comp(p)%qnet, ' e   qnet ', nz(r%comp(p)%qnet, 5), ' e   moment ', nz(r%comp(p)%moment, 5), ' mu_B'
       call wline(u, line)
       call wline(u, '')
@@ -863,7 +869,7 @@ contains
   subroutine rep_fermi(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     real(dp) :: nef, nef_ev, ge, chi
     integer :: p
 
@@ -1019,7 +1025,7 @@ contains
   subroutine rep_files(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=28) :: fn
     call rep_section(u, 'files written')
     if (len_trim(r%dos_file) > 0) then
@@ -1054,7 +1060,7 @@ contains
   subroutine rep_close(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
+    character(len=256) :: line
     character(len=128), allocatable :: w(:)
 
     call collect_warnings(r, w)
