@@ -21,11 +21,24 @@ program test_inputdump
   call check(.not. has_default(t, 'levels = 4'), 'a given key is not marked')
   call check(has_default(t, 'konfig = [4, 4, 3, 4]') .or. index(t, 'konfig = [4, 4, 3, 4]') > 0, 'species konfig present')
 
+  call read_run_input('example/co2fe04cr06al_l21.toml', inp, msg)
+  call check(len(msg) == 0 .and. maxline(inp%resolved) <= 87, 'Heusler input: every resolved line fits the report (87 + 3)')
+
   call read_run_input('data/kspace/ag_fcc.toml', inp, msg)
   call check(len(msg) == 0 .and. index(inp%resolved, '[kspace]') > 0 .and. index(inp%resolved, '[asr]') == 0, &
              'method = kspace: [kspace] shown, [asr] left out')
   call report()
 contains
+  integer function maxline(text)
+    character(len=*), intent(in) :: text
+    integer :: p, q
+    maxline = 0; p = 1
+    do while (p <= len(text))
+      q = index(text(p:), new_line('a')); if (q == 0) q = len(text) - p + 2
+      maxline = max(maxline, q - 1); p = p + q
+    end do
+  end function maxline
+
   !> the line that starts with key = value carries the default mark
   logical function has_default(text, kv)
     character(len=*), intent(in) :: text, kv

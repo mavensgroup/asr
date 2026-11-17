@@ -132,12 +132,32 @@ contains
     skip_key = method == 'asr' .and. section == 'output' .and. key == 'params_file'
   end function skip_key
 
+  !> 'key = value' with the default mark; an array longer than the report width is wrapped after top-level elements
+  !> (a multi-line TOML array), the continuation lines indented under its first element
   function entry(key, val, dflt) result(line)
     character(len=*), intent(in) :: key, val
     logical, intent(in) :: dflt
-    character(len=:), allocatable :: line
+    character(len=:), allocatable :: line, cur
+    integer, parameter :: width = 84           !! the report indents by 3 columns: 87 of 90
+    integer :: i, depth, start, ind
     line = key // ' = ' // val
-    if (dflt) line = line // repeat(' ', max(2, mark_col - len(line))) // '# default'
+    if (len(line) > width .and. val(1:1) == '[') then
+      ind = len(key) + 4
+      line = ''; cur = key // ' = '; depth = 0; start = 1
+      do i = 1, len(val)
+        if (val(i:i) == '[') depth = depth + 1
+        if (val(i:i) == ']') depth = depth - 1
+        if ((depth == 1 .and. val(i:i) == ',') .or. i == len(val)) then
+          if (len(cur) + (i - start + 1) > width .and. len(trim(cur)) > ind) then
+            line = line // trim(cur) // new_line('a'); cur = repeat(' ', ind)
+          end if
+          cur = cur // adjustl(val(start:i)) // ' '
+          start = i + 1
+        end if
+      end do
+      line = line // trim(cur)
+    end if
+    if (dflt) line = line // repeat(' ', max(2, mark_col - (len(line) - index(line, new_line('a'), back=.true.)))) // '# default'
   end function entry
 
   !> TOML text of a value (scalar or array, arrays recursively)
