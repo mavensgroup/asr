@@ -143,17 +143,19 @@ program test_run_input
   call check(index(msg, 'method = "asr"') > 0, '[[sro]] with method = kspace rejected')
 
   ! every shipped example is a valid input (fpm test runs from the project root)
-  call example('ag_fcc.toml', 'kspace'); call example('fe_bcc.toml', 'kspace'); call example('feco_b2_kspace.toml', 'kspace')
-  call example('fecu_b2.toml', 'kspace'); call example('feco_b2_asr.toml', 'asr'); call example('cuzn_b2.toml', 'asr')
-  call example('cuzn_alloy.toml', 'asr'); call example('co2fe04cr06al_l21.toml', 'asr')
-  call example('fe66ni14cr20_fcc.toml', 'asr'); call example('fe66ni14cr20_fcc_sro.toml', 'asr')
+  call example('example/feco_b2_asr.toml', 'asr'); call example('example/cuzn_b2.toml', 'asr')
+  call example('example/cuzn_alloy.toml', 'asr'); call example('example/co2fe04cr06al_l21.toml', 'asr')
+  call example('example/fe66ni14cr20_fcc.toml', 'asr'); call example('example/fe66ni14cr20_fcc_sro.toml', 'asr')
+  ! the internal k-space reference inputs (test tool only, not shipped as examples)
+  call example('data/kspace/ag_fcc.toml', 'kspace'); call example('data/kspace/fe_bcc.toml', 'kspace')
+  call example('data/kspace/feco_b2_kspace.toml', 'kspace'); call example('data/kspace/fecu_b2.toml', 'kspace')
   call report()
 contains
-  subroutine example(name, method)
-    character(len=*), intent(in) :: name, method
-    call read_run_input('example/'//name, inp, msg)
+  subroutine example(path, method)
+    character(len=*), intent(in) :: path, method
+    call read_run_input(path, inp, msg)
     if (len(msg) > 0) print '(a)', '        '//msg
-    call check(len(msg) == 0 .and. inp%method == method, 'example/'//name//' reads (method = '//method//')')
+    call check(len(msg) == 0 .and. inp%method == method, path//' reads (method = '//method//')')
   end subroutine example
 
   subroutine put(text)

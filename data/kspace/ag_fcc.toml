@@ -1,3 +1,4 @@
+# Internal test input of the k-space reference solver (test tool, not a production route; read by test_run_input).
 # fcc Ag, k-space TB-LMTO-ASA (the exact reference of the ordered crystal).
 [calculation]
 name = "fcc Ag"

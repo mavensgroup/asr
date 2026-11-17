@@ -48,10 +48,9 @@ no key to select a Hamiltonian ([Hamiltonians](../hamiltonian/index.html)).
 | Key | Default | Meaning |
 |---|---|---|
 | `name` | `asr` | Free text, echoed in output headers |
-| `method` | `asr` | `asr`: augmented-space recursion, any decorated structure, ordered or disordered (the default, also for an ordered crystal). `kspace`: Brillouin-zone solution of the same Hamiltonian, ordered structures only; the exact reference |
+| `method` | `asr` | `asr`: augmented-space recursion, any decorated structure, ordered or disordered (the default, also for an ordered crystal). `kspace`: Brillouin-zone solution of the same Hamiltonian, ordered structures only; an internal test tool, not a production route |
 
-The same structure block runs under both methods: delete `method = "kspace"` and
-`[kspace]` from `example/fe_bcc.toml` and the recursion runs it.
+The same structure block runs under both methods.  The test inputs in `data/kspace/` show the `[kspace]` section.
 
 ## `[dos]`
 

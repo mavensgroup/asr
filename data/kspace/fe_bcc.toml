@@ -1,3 +1,4 @@
+# Internal test input of the k-space reference solver (test tool, not a production route; read by test_run_input).
 # bcc Fe, ferromagnetic, k-space TB-LMTO-ASA.  Delete the method line (and [kspace]) to run the same input by the recursion.
 [calculation]
 name = "bcc Fe"

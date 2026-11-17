@@ -1,4 +1,4 @@
-# Ordered B2 FeCo, ferromagnetic, by the energy-dependent recursion (default method).  k-space: example/feco_b2_kspace.toml.
+# Ordered B2 FeCo, ferromagnetic, by the energy-dependent recursion (default method).
 [calculation]
 name = "B2 FeCo FM, recursion"
 

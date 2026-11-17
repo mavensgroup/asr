@@ -71,8 +71,8 @@ the solver; the structure decides whether the system is ordered or disordered.
 
 | `method` | System | Solver | Self-consistent? | Example |
 |---|---|---|---|---|
-| `asr` (default) | Any decorated sc/bcc/fcc structure: pure metal, ordered compound (B2, Heusler), partial disorder, binary to high-entropy alloys, first-shell short-range order | Energy-dependent augmented-space recursion | yes (spin 1 or 2) | `example/cuzn_alloy.toml`, `fe66ni14cr20_fcc.toml`, `co2fe04cr06al_l21.toml`, `fe66ni14cr20_fcc_sro.toml` |
-| `kspace` | Ordered structures of any cell, SQS supercells | Brillouin zone, tetrahedra: the exact reference | yes | `example/fe_bcc.toml`, `feco_b2_kspace.toml` |
+| `asr` (default) | Any decorated sc/bcc/fcc structure: pure metal, ordered compound (B2, Heusler), partial disorder, binary to high-entropy alloys, first-shell short-range order | Energy-dependent augmented-space recursion | yes (spin 1 or 2) | `example/cuzn_b2.toml`, `feco_b2_asr.toml`, `cuzn_alloy.toml`, `fe66ni14cr20_fcc.toml`, `co2fe04cr06al_l21.toml`, `fe66ni14cr20_fcc_sro.toml` |
+| `kspace` | Ordered structures of any cell, SQS supercells | Brillouin zone, tetrahedra: internal test tool for the developers, not a production route | yes | `data/kspace/` (test inputs) |
 
 ## Reading guide
 

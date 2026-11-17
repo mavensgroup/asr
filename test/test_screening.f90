@@ -18,7 +18,7 @@ program test_screening
   character(len=:), allocatable :: msg
   real(dp) :: p(3, 3), kv(3, 1), m(1), alat, afcc, al, x(3), at(3, 3), ah(3, 3), f(3, 3), w(3), f2(2, 2), ah2(2, 2), ev
   real(dp) :: g3(3, 3), w3(3, 3), gi3(3, 3), g2(2, 2), w2(2, 2), gi2(2, 2), lam2(2), gam2(2), lam3(3), gam3(3)
-  real(dp) :: h, gp, gm_, gprev, gnow, lam, dmax
+  real(dp) :: h, gp, gm_, gprev, gnow, lam, dmax, dq3(3), u3(3), uo3(3), v3(3)
   real(dp), allocatable :: cond(:, :)
   integer :: i, j, k
   logical :: ok
@@ -160,6 +160,22 @@ program test_screening
   call drive_fixed_point(g3, w3, x, [0.10_dp, -0.30_dp, -0.06_dp], 2.0_dp, ok, dmax)
   call check(ok, 'drive iteration converges with a Gamma = 0 mode (F infinite)')
   call check_close(dmax, 0.0_dp, 1.0e-10_dp, 'drive fixed point: dq has no component on the Gamma = 0 mode')
+  ! (c) the start of the SCF.  A potential without an SRO part has u = 0: then u_out = dq and v = W dq, at most a |dq| per
+  ! mode (0 <= Gamma <= 2), and v follows the charges: dq = 0 gives v = 0.  The start u = Gamma^+ dq stands for an input
+  ! potential that already holds F dq.  It keeps the first charges: with dq = 0 in the next iteration v = W (I - Gamma) u is
+  ! still several Ry for the free-atom charges of the triad (1,1,0) (desk10, iteration 1).
+  dq3 = [1.5062_dp, 0.5614_dp, -5.3635_dp]; dq3 = dq3 - sum(x * dq3)
+  u3 = 0.0_dp
+  call screen_update(g3, w3, x, [1, 1, 1], dq3, u3, uo3, v3)
+  call check_close(maxval(abs(uo3 - dq3)), 0.0_dp, 1.0e-13_dp, 'drive start u = 0: u_out = dq')
+  call check_close(maxval(abs(v3 - matmul(w3, dq3))), 0.0_dp, 1.0e-13_dp, 'drive start u = 0: v = W dq')
+  call check(sqrt(sum(w * v3**2)) <= s%a * sqrt(sum(w * dq3**2)) * (1.0_dp + 1.0e-12_dp), 'drive start u = 0: |v| <= a |dq| (w norm)')
+  call screen_update(g3, w3, x, [1, 1, 1], [0.0_dp, 0.0_dp, 0.0_dp], u3, uo3, v3)
+  call check_close(maxval(abs(v3)), 0.0_dp, 0.0_dp, 'drive start u = 0: no charge deviation, no SRO potential')
+  u3 = matmul(gi3, dq3)
+  call screen_project(x, [1, 1, 1], u3)
+  call screen_update(g3, w3, x, [1, 1, 1], [0.0_dp, 0.0_dp, 0.0_dp], u3, uo3, v3)
+  call check(maxval(abs(v3)) > 2.0_dp, 'old start u = Gamma^+ dq: the first charges stay in the potential (> 2 Ry at dq = 0)')
   call report()
 
 contains

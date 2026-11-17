@@ -47,7 +47,7 @@ max_iterations = 100
 tolerance = 1e-05
 
 [asr]
-levels = 4
+levels = 3                # at levels 4 the non-magnetic SCF does not converge (it alternates between two states)
 recursion_steps = 24
 rank = 1
 contour_points = 32
