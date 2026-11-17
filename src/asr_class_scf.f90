@@ -35,6 +35,7 @@
 !> -Im / pi is the DOS of the sphere charge, so dos_final and ef_scan need no other change.
 module asr_class_scf
   use asr_kinds, only: dp, pi
+  use asr_lapack, only: zheev
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree
@@ -131,6 +132,9 @@ module asr_class_scf
     !> (relative; off-site and on-site); the number of (E, k, spin) points with A < 0 and the most negative A relative to the largest;
     !> the energy integral of A at the first and the last k point (per spin; 9 for a window that holds every band)
     real(dp), allocatable :: spec_rsh(:), spec_decay(:), spec_sum(:, :)
+    !> one sublattice with one species: the eigenvalues of H^(2)(k) at the path points (9, k, spin), from the same structure
+    !> constant blocks and parameters as the recursion (exact bands of the operator; internal check of A)
+    real(dp), allocatable :: spec_bands(:, :, :)
     real(dp) :: spec_rdef = 0.0_dp, spec_spread = 0.0_dp, spec_spread0 = 0.0_dp, spec_amin = 0.0_dp
     integer :: spec_nneg = 0, spec_nt = 0, spec_maxhop = 0, spec_hoplim = 0, spec_nsteps = 0
     integer, allocatable :: spec_nodes(:)
@@ -1161,6 +1165,7 @@ contains
           end do
         end do
       end do
+      if (ncls == 1 .and. inp%nsc(1) == 1) call ordered_bands(ms, es)
       amax = maxval(sum(res%spec_a, dim=3))
       res%spec_nneg = count(sum(res%spec_a, dim=3) < -1.0e-9_dp * amax)
       res%spec_amin = minval(sum(res%spec_a, dim=3)) / max(amax, tiny(1.0_dp))
@@ -1184,6 +1189,42 @@ contains
         print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; 9 = every band inside) ', res%spec_sum
       end if
     end subroutine spectral_final
+
+    !> eigenvalues of H^(2)(k) = E_nu + h - h o h, h = c + d S(k) d, S(k) = block0 + sum_slot block(slot) exp(2 pi i k . d_slot),
+    !> d_slot the displacement of the slot-th graph neighbour of the origin (the slots of asr_augcls::apply_h)
+    subroutine ordered_bands(ms, es)
+      type(class_alloy_t), intent(in) :: ms(:, :)
+      type(edn_t), intent(in) :: es(:, :)
+      complex(dp) :: sk(9, 9), hk(9, 9), cw(36)
+      real(dp) :: rw(27), ev(9), dsl(3)
+      integer :: ks_, ns_, info_, m_, n_, gg, ik, nkp
+      nkp = size(res%spec_dist)
+      ns_ = g%nbr_ptr(2) - g%nbr_ptr(1)
+      allocate (res%spec_bands(9, nkp, nsp))
+      do gg = 1, nsp
+        do ik = 1, nkp
+          sk = ms(1, gg)%block0
+          do ks_ = 1, ns_
+            dsl = 0.5_dp * real(modulo(coord(:, g%nbr(g%nbr_ptr(1) + ks_ - 1)) + mg / 2, mg) - mg / 2, dp)
+            sk = sk + ms(1, gg)%block(:, :, ks_) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
+          end do
+          sk = 0.5_dp * (sk + conjg(transpose(sk)))
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = ms(1, gg)%d(m_, 1) * sk(m_, n_) * ms(1, gg)%d(n_, 1); end do
+            hk(n_, n_) = hk(n_, n_) + ms(1, gg)%c(n_, 1)
+          end do
+          sk = hk
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = sk(m_, n_) - sum(sk(m_, :) * ms(1, gg)%o(:, 1) * sk(:, n_)); end do
+            hk(n_, n_) = hk(n_, n_) + es(1, gg)%enu(n_, 1)
+          end do
+          hk = 0.5_dp * (hk + conjg(transpose(hk)))
+          call zheev('N', 'U', 9, hk, 9, ev, cw, 36, rw, info_)
+          if (info_ /= 0) error stop 'class_scf: zheev failed (spectral bands)'
+          res%spec_bands(:, ik, gg) = ev
+        end do
+      end do
+    end subroutine ordered_bands
 
     !> one thread's share of the spectral chains (inside the parallel region of spectral_final): tasks (energy, start orbital,
     !> component, spin), a private copy of the origin-class operator per thread

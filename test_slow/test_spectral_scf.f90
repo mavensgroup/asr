@@ -124,5 +124,15 @@ program test_spectral_scf
   call check(opu%nn == g%n, 'reference: the node set is the whole periodic cell')
   print '(a,es10.2)', '  sum over every site of the cell: min A / max A = ', minval(afull) / maxval(afull)
   call check(minval(afull) > 0.0_dp, 'sum over every site of the cell (exact A of the cell at commensurate k): A > 0')
+  ! the H^(2)(k) bands of class_scf give the same exact A of the cell: A(k, E) = sum_n -Im 1/(E + i eta - e_n(k)) / pi
+  call check(allocated(r%spec_bands), 'ordered, one species: class_scf returns the bands of H^(2)(k)')
+  err = 0.0_dp
+  do ik = 1, nkp
+    do j = 1, ne
+      err = max(err, abs(afull(j, ik) + sum(aimag(1.0_dp / (cmplx(r%spec_e(j), inp%ci%spectral%eta, dp) - r%spec_bands(:, ik, 1)))) / pi))
+    end do
+  end do
+  print '(a,es10.2)', '  max |A(bands) - A(full cell)| / max A = ', err / maxval(afull)
+  call check_close(err / maxval(afull), 0.0_dp, 1.0e-8_dp, 'bands of H^(2)(k) = exact A of the cell (Lorentzians of width eta)')
   call report()
 end program test_spectral_scf

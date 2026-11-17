@@ -850,6 +850,16 @@ contains
       end do
       close (us)
       print '(a,a)', '  wrote ', sfile
+      if (allocated(res%spec_bands)) then              ! ordered, one species: the exact bands of the same H^(2)
+        open (newunit=us, file=sfile//'.bands', status='replace', action='write')
+        write (us, '(a)') '# '//inp%name//'   eigenvalues of H^(2)(k) (Ry) from the structure constant blocks and parameters of the recursion'
+        write (us, '(a)') '# dist kx ky kz  9 eigenvalues per spin channel'
+        do ik = 1, nkp
+          write (us, '(f10.5,3f9.5,*(f11.6))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_bands(:, ik, :)
+        end do
+        close (us)
+        print '(a,a)', '  wrote ', sfile//'.bands'
+      end if
     end subroutine write_spectral
   end subroutine run_asr
 end module asr_driver
