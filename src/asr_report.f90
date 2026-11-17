@@ -596,14 +596,15 @@ contains
       call wline(u, '   mode' // rj('lambda(Ahat)', 14) // rj('Gamma = dq/db', 15) // rj('G00 + G1 lambda', 17) // rj('F [Ry/e]', 12))
       call wline(u, '   ' // repeat('-', 62))
       do i = 1, r%sro%nmodes
-        write (line, '(3x,i4,f14.4,f15.5,f17.5)') i, r%sro%mode_lam(i), r%sro%mode_gam(i), r%sro%mode_gform(i)
+        write (line, '(3x,i4,f14.4,f15.5,f17.5)') i, nz(r%sro%mode_lam(i), 4), nz(r%sro%mode_gam(i), 5), nz(r%sro%mode_gform(i), 5)
         if (r%sro%mode_inf(i)) then
-          line = trim(line) // '   infinite (full clustering: this deviation vanishes)'
+          line = trim(line) // rj('infinite', 12)
         else
           write (buf, '(f12.4)') r%sro%mode_f(i); line = trim(line) // buf(1:12)
         end if
         call wline(u, line)
       end do
+      if (any(r%sro%mode_inf)) call wline(u, ' F infinite: Gamma = 0, full clustering on that mode; its charge deviation vanishes')
     end if
 
     if (allocated(r%sro%udrive) .and. allocated(r%comp)) then
