@@ -64,6 +64,7 @@ module asr_driver
 
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
+    character(len=:), allocatable :: spec_file          !! [spectral] file (method = "asr")
     type(class_scf_input_t) :: ci                      !! method = "asr"
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
@@ -98,7 +99,7 @@ contains
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
     call check_keys(table, ['calculation', 'structure  ', 'species    ', 'sublattice ', 'site       ', 'scf        ', 'asr        ', &
-                            'kspace     ', 'dos        ', 'output     ', 'sro        '], 'top level', msg)
+                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'spectral   '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -366,6 +367,45 @@ contains
     call get_value(child, 'dos_file', inp%dos_file, 'dos.dat')
     call get_value(child, 'out_file', inp%out_file, 'asr.out')
     call get_value(child, 'params_file', inp%li%params_file, 'params.dat')
+
+    if (table%has_key('spectral')) then                ! Bloch spectral function after the SCF (asr_spectral)
+      if (kspace) then; msg = '[spectral] is read with method = "asr" only'; return; end if
+      call section(table, 'spectral', child)
+      call check_keys(child, ['kpath  ', 'labels ', 'nk     ', 'emin   ', 'emax   ', 'npoints', 'eta    ', 'rmax   ', 'steps  ', &
+                              'file   '], '[spectral]', msg)
+      if (len(msg) > 0) return
+      if (trim(inp%ci%route) /= 'edc') then; msg = '[spectral] needs route = "edc"'; return; end if
+      nullify (arr); call get_value(child, 'kpath', arr, requested=.false.)
+      if (.not. associated(arr)) then; msg = '[spectral] needs kpath = [[kx, ky, kz], ...] (Cartesian, units 2 pi / a)'; return; end if
+      if (len(arr) < 2) then; msg = '[spectral] kpath needs at least two points'; return; end if
+      allocate (inp%ci%spectral%kpts(3, len(arr)), inp%ci%spectral%labels(len(arr))); inp%ci%spectral%labels = ''
+      do i = 1, len(arr)
+        nullify (ka); call get_value(arr, i, ka)
+        if (.not. associated(ka)) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        if (len(ka) /= 3) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        do j = 1, 3; call get_value(ka, j, x); inp%ci%spectral%kpts(j, i) = x; end do
+      end do
+      nullify (arr); call get_value(child, 'labels', arr, requested=.false.)
+      if (associated(arr)) then
+        if (len(arr) /= size(inp%ci%spectral%kpts, 2)) then; msg = '[spectral] labels needs one label per kpath point'; return; end if
+        do i = 1, len(arr); call get_value(arr, i, str); inp%ci%spectral%labels(i) = str; end do
+      end if
+      call get_value(child, 'nk', inp%ci%spectral%nk, 30)
+      call get_value(child, 'emin', inp%ci%spectral%emin, inp%emin)
+      call get_value(child, 'emax', inp%ci%spectral%emax, inp%emax)
+      call get_value(child, 'npoints', inp%ci%spectral%ne, 201)
+      call get_value(child, 'eta', inp%ci%spectral%eta, 0.01_dp)
+      call get_value(child, 'rmax', inp%ci%spectral%rmax, 2.0_dp)
+      call get_value(child, 'steps', inp%ci%spectral%nsteps, 0)
+      call get_value(child, 'file', inp%spec_file, 'spectral.dat')
+      if (inp%ci%spectral%nk < 1) then; msg = '[spectral] nk must be >= 1'; return; end if
+      if (inp%ci%spectral%ne < 2) then; msg = '[spectral] npoints must be >= 2'; return; end if
+      if (inp%ci%spectral%eta <= 0.0_dp) then; msg = '[spectral] eta must be > 0'; return; end if
+      if (inp%ci%spectral%rmax <= 0.0_dp) then; msg = '[spectral] rmax must be > 0'; return; end if
+      if (inp%ci%spectral%emax <= inp%ci%spectral%emin) then; msg = '[spectral] emax must be above emin'; return; end if
+      if (inp%ci%spectral%nsteps < 0) then; msg = '[spectral] steps must be >= 0'; return; end if
+      inp%ci%spectral%on = .true.
+    end if
 
     ! ---- validation
     if (inp%ci%nspin /= 1 .and. inp%ci%nspin /= 2) msg = '[scf] spin must be 1 or 2'
@@ -647,6 +687,7 @@ contains
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
+    if (allocated(res%spec_a)) call write_spectral()
 
     nthr = 1
     !$ nthr = omp_get_max_threads()
@@ -741,10 +782,26 @@ contains
     end if
     write (ru, '(a)') ' components are (species@sublattice); qnet/moments per atom of that component; cell moment per decoration cell'
     call rep_dos_at_ef(ru, labels, res%edos_e, res%edos, res%ef, inp%eta, res%nspin, 'per-component LDOS from the recursion (eta broadening)')
+    if (allocated(res%spec_a)) then
+      call rep_section(ru, 'Bloch spectral function')
+      write (ru, '(a)') ' A(k, E) unfolded on the graph lattice (asr_spectral; docs/DERIVATION_spectral_argon.md), route edc'
+      write (ru, '(a,i0,a,f7.4,a,i0,a,i0,a,f6.3,a)') ' energies ', inp%ci%spectral%ne, ', eta ', inp%ci%spectral%eta, ' Ry, chain steps ', &
+        res%spec_nsteps, ', target sites ', res%spec_nt, ' (rmax ', inp%ci%spectral%rmax, ' alat)'
+      write (ru, '(a,*(i0,1x))') ' D2h-reduced nodes per origin class: ', res%spec_nodes
+      write (ru, '(a,i0,a,i0)') ' largest graph distance of a target ', res%spec_maxhop, '; interior of the node set ', res%spec_hoplim
+      write (ru, '(a,es10.2)') ' reciprocity defect max|G(0L,RL) - G(0L,-RL)| / max|G| (two origins; averaged in A) ', res%spec_rdef
+      write (ru, '(a,es10.2,a,es10.2)') ' change of G when the chains are cut 4 steps earlier: off-site ', res%spec_spread, ', on-site ', &
+        res%spec_spread0
+      write (ru, '(a,i0,a,es10.2)') ' points with A < 0: ', res%spec_nneg, ';  min A / max A ', res%spec_amin
+      write (ru, '(a,*(f7.3))') ' shell radius (alat)          ', res%spec_rsh
+      write (ru, '(a,*(f7.3))') ' max |Im G| / on-site value   ', res%spec_decay
+      write (ru, '(a,*(f8.3))') ' energy integral of A per spin at the first and the last k (9 when every band lies inside) ', res%spec_sum
+    end if
     call rep_section(ru, 'timing')
     write (ru, '(a,f10.2,a)') ' SCF + DOS  ', t_scf, ' s'
     write (ru, '(a)') ' files written:'
     write (ru, '(a)') '   '//dfile
+    if (allocated(res%spec_a)) write (ru, '(a)') '   '//inp%workdir//inp%spec_file
     call rep_close(ru, res%converged, rep_wall() - t0)
     print '(a,a)', '  wrote ', inp%workdir//inp%out_file
     ok = res%converged
@@ -754,5 +811,45 @@ contains
       character(len=*), intent(in) :: kind
       avg_ws = avg_ws_radius(kind)
     end function avg_ws
+
+    !> [spectral] file: one block per k point (blank line between blocks), columns path distance, k (2 pi / a), E (Ry), A summed
+    !> over spin, A_s A_p A_d, per spin channel (spin 2), per origin sublattice (states/Ry per graph site)
+    subroutine write_spectral()
+      character(len=:), allocatable :: sfile
+      integer :: us, ik, je, kp, nkp, gs
+      real(dp) :: fs_
+      sfile = inp%workdir//inp%spec_file
+      fs_ = 2.0_dp / real(res%nspin, dp)
+      nkp = size(res%spec_dist)
+      open (newunit=us, file=sfile, status='replace', action='write')
+      write (us, '(a)') '# '//inp%name//'   Bloch spectral function A(k, E), states/Ry per graph site, unfolded on the graph lattice'
+      write (us, '(a,f12.8,a,f8.5,a)') '# E_F = ', res%ef, ' Ry;  eta = ', inp%ci%spectral%eta, ' Ry;  k Cartesian in units 2 pi / a'
+      write (us, '(a)') '# corners: label, block index, path distance, k'
+      do ik = 1, size(res%spec_icorner)
+        write (us, '(a,a8,i6,f10.5,3f9.5)') '#   ', inp%ci%spectral%labels(ik), res%spec_icorner(ik), res%spec_dist(res%spec_icorner(ik)), &
+          inp%ci%spectral%kpts(:, ik)
+      end do
+      if (res%nspin == 2) then
+        write (us, '(a,*(a))') '# dist kx ky kz E A A_s A_p A_d A_up A_down', ('  A_'//trim(inp%subname(kp)), kp=1, size(res%spec_ac, 3))
+      else
+        write (us, '(a,*(a))') '# dist kx ky kz E A A_s A_p A_d', ('  A_'//trim(inp%subname(kp)), kp=1, size(res%spec_ac, 3))
+      end if
+      do ik = 1, nkp
+        do je = 1, size(res%spec_e)
+          if (res%nspin == 2) then
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (sum(res%spec_a(je, ik, :, gs)), gs=1, 2), (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          else
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          end if
+        end do
+        write (us, '(a)') ''
+      end do
+      close (us)
+      print '(a,a)', '  wrote ', sfile
+    end subroutine write_spectral
   end subroutine run_asr
 end module asr_driver

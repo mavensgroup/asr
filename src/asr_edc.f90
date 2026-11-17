@@ -6,14 +6,14 @@
 !> with T = 1 on the central site holds exactly as for the binary.  The chain is the complex-symmetric Lanczos of asr_edn.
 module asr_edc
   use asr_kinds, only: dp
-  use asr_augcls, only: class_alloy_t, augcls_op, augcls_rand_c, augcls_project_c
+  use asr_augcls, only: class_alloy_t, augcls_op, augcls_rand_c, augcls_project_c, augcls_amp_c
   use asr_edn, only: edn_t, edn_work_t, edn_work_init
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
   use asr_augblk, only: blk_work_t, blk_hamx, blk_project
   implicit none
   private
-  public :: edc_setup, edc_green, edc_green_blk, edn_t, edn_work_t, edn_work_init
+  public :: edc_setup, edc_green, edc_green_blk, edc_green_proj, edn_t, edn_work_t, edn_work_init
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
@@ -109,6 +109,74 @@ contains
     if (present(bcoef)) bcoef(1:m) = b(1:m)
     if (present(mused)) mused = m
   end subroutine edc_green
+
+  !> G_c(E) of the start component iv as edc_green, and its projections on target vectors (asr_spectral; docs/DERIVATION_spectral_argon.md,
+  !> Form 2B).  With x = (E - H(E))^-1 |iv> from the chain and its tail,
+  !>     gp(l, t) = sum_k tw(l, k, t) psi_x(node k of t, l),
+  !> where node k of target t is (site of t in local state k - 1, all other sites in the reference state), psi_x its amplitude in the
+  !> unreduced space (augcls_amp_c, links tnode / tgop of build_augcls_operator) and tw(l, k, t) the dressing weight of the state:
+  !> sum_s x_s T_s(l) phi_{k-1}(s) with the scaling T_s(l) = (D_c / D_s)^1/2 of the target site.  Then sum_c x_c gp is the average
+  !> off-site element <G^(2)_{0 iv, t l}>.  The projections are first order in the chain residual, the on-site element g second
+  !> order.  The chain runs all nlev steps (no early exit by depth_tol).  gp4: the same with the chain cut four steps earlier.
+  subroutine edc_green_proj(op, wk, ed, z, iv, nlev, tnode, tgop, tw, g, gp, gp4)
+    type(augcls_op), intent(in) :: op
+    type(edn_work_t), intent(inout) :: wk
+    type(edn_t), intent(in) :: ed
+    complex(dp), intent(in) :: z
+    integer, intent(in) :: iv, nlev, tnode(:, :), tgop(:, :)
+    real(dp), intent(in) :: tw(:, :, :)
+    complex(dp), intent(out) :: g, gp(:, :), gp4(:, :)
+    complex(dp), allocatable :: cpr(:, :, :)
+    complex(dp) :: ep(9, ed%ns), a(nlev), b(nlev), cc(nlev), pv(nlev), fa, g4, amp(9)
+    integer :: k, l, m, s, t, ks, nt, m4
+    nt = size(tnode, 2)
+    allocate (cpr(nlev, 9, nt)); cpr = (0.0_dp, 0.0_dp)
+    do s = 1, ed%ns
+      do l = 1, 9
+        ep(l, s) = z - ed%dc(l) * (z - ed%enu(l, s)) / ed%del(l, s)
+      end do
+    end do
+    wk%u = (0.0_dp, 0.0_dp); wk%up = (0.0_dp, 0.0_dp)
+    wk%u(iv) = (1.0_dp, 0.0_dp)
+    a = 0.0_dp; b = 0.0_dp; cc = 0.0_dp; m = 0
+    do k = 1, nlev
+      do t = 1, nt                                          ! projections of u_k on the target states
+        do ks = 1, size(tnode, 1)
+          if (tnode(ks, t) == 0) cycle
+          amp = augcls_amp_c(op, wk%u, tnode(ks, t), tgop(ks, t))
+          cpr(k, :, t) = cpr(k, :, t) + tw(:, ks, t) * amp
+        end do
+      end do
+      wk%re = real(wk%u); wk%im = aimag(wk%u)
+      call op%apply(wk%re, wk%sre)
+      call op%apply(wk%im, wk%sim)
+      call augcls_rand_c(op, ep, wk%u, wk%dg)
+      wk%w = cmplx(wk%sre, wk%sim, dp) + wk%dg
+      a(k) = sum(wk%u * wk%w)
+      m = k
+      if (k == nlev) exit
+      wk%w = wk%w - a(k) * wk%u
+      if (k > 1) wk%w = wk%w - b(k - 1) * wk%up
+      if (ed_project) call augcls_project_c(op, wk%w)
+      b(k) = sqrt(sum(wk%w * wk%w))
+      if (abs(b(k)) < 1.0e-12_dp) exit
+      wk%up = wk%u
+      wk%u = wk%w / b(k)
+    end do
+    !$omp atomic
+    ed_nchain = ed_nchain + 1
+    !$omp atomic
+    ed_nlev = ed_nlev + m
+    call cf_species(a, b, cc, m, z, g, fa, pv=pv)
+    do t = 1, nt
+      do l = 1, 9; gp(l, t) = sum(cpr(1:m, l, t) * pv(1:m)); end do
+    end do
+    m4 = max(1, m - 4)
+    call cf_species(a, b, cc, m4, z, g4, fa, pv=pv)
+    do t = 1, nt
+      do l = 1, 9; gp4(l, t) = sum(cpr(1:m4, l, t) * pv(1:m4)); end do
+    end do
+  end subroutine edc_green_proj
 
   !> edc_green for a block of energies zs(1:nb) in lock step (asr_augblk): the same chains, one pass over the operator per step for
   !> all members.  A member leaves the block at its own depth (the test of edc_green); its rows are then zeroed and stay zero, so
