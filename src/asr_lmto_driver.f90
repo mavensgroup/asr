@@ -200,6 +200,7 @@ contains
     rep%dos_file = inp%dos_file
     rep%params_file = inp%params_file
     rep%title = inp%name
+    if (allocated(inp%resolved)) rep%resolved = inp%resolved
 
     ! Method
     rep%method = 'kspace'

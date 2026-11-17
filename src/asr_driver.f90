@@ -47,7 +47,8 @@
 !> Al (0,0,0); Fe/Cr (1/2,1/2,1/2); Co (1/4,1/4,1/4) and (3/4,3/4,3/4).  Unknown sections/keys are errors.
 module asr_driver
   use asr_kinds, only: dp
-  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, len
+  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, set_value, len
+  use asr_inputdump, only: resolved_input
   use asr_tomlutil, only: section, check_keys
   use asr_input_lmto, only: lmto_species_t, lmto_input_t
   use asr_asa, only: core_shells_for, asa_class_result_t
@@ -66,6 +67,7 @@ module asr_driver
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
     character(len=:), allocatable :: spec_file          !! [spectral] file (method = "asr")
+    character(len=:), allocatable :: resolved           !! every input key with the value used (asr_inputdump); for the report
     type(class_scf_input_t) :: ci                      !! method = "asr"
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
@@ -175,6 +177,8 @@ contains
       if (associated(ka)) then
         if (len(ka) /= 4) then; msg = '[[species]] konfig needs 4 integers (s,p,d,f)'; return; end if
         do j = 1, 4; call get_value(ka, j, inp%species(i)%konfig(j - 1)); end do
+      else                                             ! the default, written into the table for the resolved input
+        call get_value(sp, 'konfig', ka); call set_value(ka, inp%species(i)%konfig)
       end if
       nullify (ka)
       call get_value(sp, 'occupations', ka, requested=.false.)
@@ -182,6 +186,8 @@ contains
         if (len(ka) /= 2) then; msg = '[[species]] occupations needs 2 numbers (s,d)'; return; end if
         call get_value(ka, 1, x); inp%species(i)%occ_s = x
         call get_value(ka, 2, x); inp%species(i)%occ_d = x
+      else
+        call get_value(sp, 'occupations', ka); call set_value(ka, [inp%species(i)%occ_s, inp%species(i)%occ_d])
       end if
       if (inp%species(i)%z <= 0.0_dp .or. inp%species(i)%nval <= 0) then; msg = '[[species]] needs z and nval'; return; end if
       do j = 1, i - 1
@@ -259,6 +265,7 @@ contains
         else
           if (nsc /= 1) then; msg = '[[sublattice]] with several species needs concentrations'; return; end if
           inp%ci%conc(1, i) = 1.0_dp
+          call get_value(sp, 'concentrations', ka); call set_value(ka, [1.0_dp])
         end if
         if (any(inp%ci%conc(1:nsc, i) <= 0.0_dp) .or. abs(sum(inp%ci%conc(1:nsc, i)) - 1.0_dp) > 1.0e-8_dp) then
           msg = '[[sublattice]] concentrations must be > 0 and sum to 1'; return
@@ -425,9 +432,11 @@ contains
     if (ratio <= 0.0_dp) msg = '[kspace] sphere_ratio must be > 0'
     if (inp%emax <= inp%emin) msg = '[dos] emax must exceed emin'
     if (len(msg) > 0) return
+    call resolved_input(table, filename, inp%method, inp%resolved)
 
     if (kspace) then
       ! the k-space input of the same structure
+      inp%li%resolved = inp%resolved
       inp%li%name = inp%name; inp%li%infile = inp%infile; inp%li%workdir = inp%workdir
       inp%li%dos_file = inp%dos_file; inp%li%out_file = inp%out_file
       inp%li%alat_angstrom = alat; inp%li%xc = trim(inp%ci%xc); inp%li%spin = inp%ci%nspin
@@ -852,6 +861,7 @@ contains
     rep%dos_file = inp%dos_file
     if (len_trim(inp%ci%pot_out) > 0) rep%pot_file = inp%ci%pot_out
     rep%title = inp%name
+    if (allocated(inp%resolved)) rep%resolved = inp%resolved
 
     ! Method
     rep%method = 'asr'
