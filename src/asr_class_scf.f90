@@ -42,6 +42,8 @@ module asr_class_scf
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start
   use asr_strconst, only: avg_ws_radius, standard_alpha
+  use asr_kinds, only: i8
+  use asr_runstats
   use asr_augspace, only: graph_t, graph_distances
   use asr_augorb, only: orb_alloy_t
   use asr_augcls
@@ -101,6 +103,22 @@ module asr_class_scf
     logical :: converged = .false.
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
     real(dp), allocatable :: edos_e(:), edos(:, :, :, :)   !! DOS(e, l, component, spin) per atom
+    !> report data, from the last iteration.  eterm(n_et): the terms of etot per site (asr_runstats et_*; their sum is etot to
+    !> rounding); ecomp(n_et, component): the same per atom of the component (eterm = sum_p w_p ecomp(:, p)).
+    real(dp) :: eterm(n_et) = 0.0_dp
+    real(dp), allocatable :: ecomp(:, :)
+    !> dosef(component, spin, 0:2): DOS at E_F + i ed_eta per atom and per spin channel, s p d (states/Ry; nspin = 1 holds one
+    !> channel, so the total is twice the sum); ed3: the DOS of the channel charge q0 + p q2.  qcell: the cell charge
+    !> sum_p w_p qnet_p (e per site) that the Madelung sum removes (the residual of the E_F search; 0 = neutral).
+    real(dp), allocatable :: dosef(:, :, :)
+    real(dp) :: qcell = 0.0_dp
+    !> per iteration, rows 1:iter: E_F passes (contour evaluations), wall seconds, largest change of E_nu before mixing (Ry)
+    integer, allocatable :: hist_npass(:)
+    real(dp), allocatable :: hist_wall(:), hist_denu(:)
+    !> last iteration: mean recursion depth used per chain (edc) and bp tail fallbacks; Anderson restarts in the run, history used
+    real(dp) :: depth_mean = 0.0_dp
+    integer :: nfall = 0, mix_nrestart = 0, mix_nh = 0
+    type(run_timer_t) :: timer                            !! wall / CPU time per part of the run (asr_runstats)
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e);
                                                            !! huge if an SRO mode has Gamma = 0 (F infinite)
@@ -163,6 +181,8 @@ contains
     real(dp), allocatable :: ahat(:, :)
     real(dp), allocatable :: dqv(:), ucur(:), uout(:), vfl(:)
     logical :: uload
+    real(dp) :: tw0, tc0, tw_it
+    real(dp), allocatable :: ecp(:, :)
     integer :: offu
     character(len=:), allocatable :: smsg
     integer :: p2
@@ -187,6 +207,8 @@ contains
     if (len(smsg) > 0) error stop smsg
     ngen = inp%nlevels
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec
+    tw0 = wall_seconds(); tc0 = cpu_seconds()
+    call timer_start(res%timer, tb_setup)
     ! ---- components
     ncomp = sum(inp%nsc)
     allocate (pcl(ncomp), psp(ncomp), pk(ncomp), w(ncomp), xp(ncomp))
@@ -238,7 +260,9 @@ contains
     ef_in = huge(1.0_dp)
     if (len_trim(inp%pot_in) > 0) call read_potentials()
     allocate (y(2, 0:2, nmax, 0:2, ncomp, 2)); y = 0.0_dp
+    call timer_stop(res%timer, tb_setup)
     call all_params()
+    call timer_start(res%timer, tb_setup)
     ! ---- graph, S blocks, one class operator per sublattice (origin on it)
     call build_lmto_alloy(trim(inp%lattice), inp%lsuper, inp%rcl, 0.7_dp, pps(1, 1), pps(1, 1), 0.5_dp, g, coord, m0, &
                           max(inp%rcl, inp%rinv), alpha)
@@ -324,10 +348,15 @@ contains
     if (ef_in < huge(1.0_dp)) ef = ef_in                 ! E_F of the start potential's run
     allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncomp), res%hist_qnet(inp%maxit, ncomp), &
               res%hist_etot(inp%maxit), esum(ncomp))
+    allocate (res%hist_npass(inp%maxit), res%hist_wall(inp%maxit), res%hist_denu(inp%maxit), ecp(n_et, ncomp), &
+              res%dosef(ncomp, nsp, 0:2))
+    res%hist_npass = 0; res%hist_wall = 0.0_dp; res%hist_denu = 0.0_dp; ecp = 0.0_dp; res%dosef = 0.0_dp
     br = inp%beta; if (inp%beta_restart > 0.0_dp) br = inp%beta_restart
+    call timer_stop(res%timer, tb_setup)
 
     do it = 1, inp%maxit
       ed_nchain = 0; ed_nlev = 0; ed_nfall = 0; res%nclamp = 0
+      tw_it = wall_seconds()
       do p = 1, ncomp
         n = cr(p)%mesh%n
         do sg = 1, nsp
@@ -425,16 +454,18 @@ contains
         ef = ef + e; efshift = e; efmode = 2
       end if
       ! densities, core, charges; esum = band + core eigenvalue sums - int n v~_in (kinetic energy + int n 2Z/r)
+      call timer_start(res%timer, tb_density)
       dv = 0.0_dp; pdv = 0; sgdv = 0; kdv = 0; denu = 0.0_dp
       do p = 1, ncomp
         n = cr(p)%mesh%n
         allocate (nval(n, nsp), ncore(n, nsp), ntot(n), tmp(n), cum(n), yc(2, 0:0, n))
-        nval = 0.0_dp; ncore = 0.0_dp; esum(p) = 0.0_dp
+        nval = 0.0_dp; ncore = 0.0_dp; esum(p) = 0.0_dp; ecp(:, p) = 0.0_dp
         do sg = 1, nsp
           do l = 0, 2
             ! band energy of the channel: E_nu times the sphere charge (edc: M0; ed3: q0 + p^gamma q2, since
             ! e z^T O z = z^T H z = sum_RL [q1 + E_nu (q0 + p^gamma q2)]; test_band_energy) plus the first moment
             esum(p) = esum(p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * qch(p, sg, l))
+            ecp(et_band, p) = ecp(et_band, p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * qch(p, sg, l))
             nval(:, sg) = nval(:, sg) + fs * ( &
                 mom(p, sg, 0, l) * (y(1, 0, 1:n, l, p, sg)**2 + y(2, 0, 1:n, l, p, sg)**2 / c**2) &
               + 2.0_dp * mom(p, sg, 1, l) * (y(1, 0, 1:n, l, p, sg) * y(1, 1, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 1, 1:n, l, p, sg) / c**2) &
@@ -447,13 +478,14 @@ contains
                              -1.6_dp * inp%spec(psp(p))%z**2 - 20.0_dp, cr(p)%v(n, sg) - 1.0e-6_dp, e, yc, core_ok)
             ncore(:, sg) = ncore(:, sg) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * (yc(1, 0, :)**2 + yc(2, 0, :)**2 / c**2)
             esum(p) = esum(p) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * e
+            ecp(et_core, p) = ecp(et_core, p) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * e
           end do
         end do
         cr(p)%nrad = nval + ncore
         do sg = 1, nsp
           tmp(1) = 0.0_dp
           tmp(2:n) = cr(p)%nrad(2:n, sg) * (cr(p)%v(2:n, sg) + 2.0_dp * inp%spec(psp(p))%z / cr(p)%mesh%r(2:n))
-          call cumint(cr(p)%mesh, tmp, cum); esum(p) = esum(p) - cum(n)
+          call cumint(cr(p)%mesh, tmp, cum); esum(p) = esum(p) - cum(n); ecp(et_dc, p) = ecp(et_dc, p) - cum(n)
         end do
         ntot = sum(cr(p)%nrad, dim=2)
         tmp = ntot; call cumint(cr(p)%mesh, tmp, cum)
@@ -498,11 +530,17 @@ contains
         else
           do p2 = 1, ncomp; vm = vm + res%fscr(p, p2) * (cr(p2)%qnet - qbar(pcl(p2))); end do
         end if
+        ecp(et_mad, p) = 0.5_dp * cr(p)%qnet * dot_product(phimad(pcl(p), :), qbar - qcell)
+        ecp(et_sim, p) = 0.5_dp * cr(p)%qnet * vm - ecp(et_mad, p)
         allocate (tmp(n), cum(n))
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(p)%mesh, tmp, cum)
         ep = esum(p) + cum(n) + 0.5_dp * cr(p)%qnet * vm
         etot = etot + w(p) * ep
+        tmp = 0.5_dp * ntot * vh; tmp(1) = 0.0_dp
+        call cumint(cr(p)%mesh, tmp, cum); ecp(et_hartree, p) = cum(n)
+        tmp = ntot * exc; tmp(1) = 0.0_dp
+        call cumint(cr(p)%mesh, tmp, cum); ecp(et_xc, p) = cum(n)
         deallocate (tmp, cum)
         do sg = 1, nsp
           i = offx(p) + (sg - 1) * (n + 3)
@@ -519,6 +557,8 @@ contains
         end do
         deallocate (ntot, vh, vxc, rho, exc)
       end do
+      call timer_stop(res%timer, tb_density)
+      call timer_start(res%timer, tb_mix)
       if (.not. allocated(wmix)) then           ! Anderson metric = the dV measure (r/(1+r))^2 on the potentials, 1 on E_nu
         allocate (wmix(nx)); wmix = 1.0_dp
         do p = 1, ncomp
@@ -561,10 +601,17 @@ contains
         end do
         call screen_project(xp, pcl, ucur)
       end if
+      call timer_stop(res%timer, tb_mix)
       res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
       res%nnode = nnode; res%nnoncausal = npsd
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       res%hist_moment(it, :) = cr(:)%moment; res%hist_qnet(it, :) = cr(:)%qnet
+      res%hist_npass(it) = npass; res%hist_denu(it) = denu
+      res%ecomp = ecp; res%eterm = matmul(ecp, w)
+      res%dosef = dosef(:, 1:nsp, :); res%qcell = qcell
+      res%mix_nrestart = mixer%nrestart; res%mix_nh = mixer%nh
+      res%depth_mean = 0.0_dp; if (ed_nchain > 0) res%depth_mean = real(ed_nlev, dp) / real(ed_nchain, dp)
+      res%nfall = int(ed_nfall)
       if (vb) then
         print '(a,i3,a,es10.3,a,f10.6,a,*(f8.4))', 'it', it, '  dV=', dv, '  EF=', ef, '  qnet=', cr(:)%qnet
         if (nsp == 2) print '(a,*(f8.4))', '                                      m   =', cr(:)%moment
@@ -586,7 +633,10 @@ contains
           trim(merge('bracket', 'dos    ', efmode == 1)), ' shift ', efshift, '  |r|_2=', r2n, '  max dV: comp ', pdv, ' spin ', sgdv, &
           ' r=', cr(max(pdv, 1))%mesh%r(max(kdv, 1)), '  max dE_nu=', denu
       end if
-      if (len_trim(inp%pot_out) > 0) call write_potentials()       ! every iteration: a stopped run restarts from here
+      if (len_trim(inp%pot_out) > 0) then                          ! every iteration: a stopped run restarts from here
+        call timer_start(res%timer, tb_io); call write_potentials(); call timer_stop(res%timer, tb_io)
+      end if
+      res%hist_wall(it) = wall_seconds() - tw_it
       ! dV below the tolerance with E_nu held at its window is not a fixed point (the result would depend on the window margin)
       if (dv < inp%tol .and. it > 3) then; res%converged = (res%nclamp == 0); exit; end if
     end do
@@ -618,11 +668,13 @@ contains
     res%comp = cr
     res%moment_site = sum(w * cr(:)%moment)
     res%qch = qch
+    res%timer%wall_total = wall_seconds() - tw0; res%timer%cpu_total = cpu_seconds() - tc0
 
   contains
 
     subroutine all_params()
       integer :: pp_, gg, ll
+      call timer_start(res%timer, tb_params)
       do pp_ = 1, ncomp
         do gg = 1, nsp
           do ll = 0, 2
@@ -635,6 +687,7 @@ contains
         end do
         if (nsp == 1) pps(pp_, 2) = pps(pp_, 1)
       end do
+      call timer_stop(res%timer, tb_params)
     end subroutine all_params
 
     !> occupied moments mo(component, spin, k, l) on the contour to efv, the DOS at E_F (node nq + 1), the channel charges qc
@@ -803,15 +856,18 @@ contains
     !> G + 2 o hG + p hGh, and gb(.., 0:3) gets the blocks of ed3_blocks.  With MPI each rank computes its share of the chain
     !> tasks (chain_worker) and holds zeros elsewhere; one sum over the ranks then gives every rank the full arrays.  Each entry
     !> has one non-zero term, so the sum is exact and the same on every rank in any reduction order.
-    subroutine chain_greens(zs, gz, gb)
+    subroutine chain_greens(zs, gz, gb, tbk)
       complex(dp), intent(in) :: zs(:)
       complex(dp), intent(out) :: gz(:, :, :, :)
       complex(dp), intent(out), optional :: gb(:, :, :, :, 0:)
+      integer, intent(in), optional :: tbk           !! timer bucket (asr_runstats); default tb_chains
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
-      integer :: gg, pp_, nbe, kp
+      integer :: gg, pp_, nbe, kp, ib
       integer(8) :: cnt0(3), cnt(3)
+      ib = tb_chains; if (present(tbk)) ib = tbk
+      call timer_start(res%timer, ib)
       allocate (ms(ncomp, nsp), es(ncomp, nsp), e3(ncomp, nsp))
       do gg = 1, nsp
         do pp_ = 1, ncomp
@@ -850,6 +906,7 @@ contains
         call par_sum_i8(cnt, 3)
         ed_nchain = cnt0(1) + cnt(1); ed_nlev = cnt0(2) + cnt(2); ed_nfall = cnt0(3) + cnt(3)
       end if
+      call timer_stop(res%timer, ib, int(size(zs), i8) * int(4 * ncomp * nsp, i8))
     end subroutine chain_greens
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
@@ -976,7 +1033,7 @@ contains
       ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
       call contour_nodes_closed(ebot - 3.0_dp, ebot, 0.05_dp, na, nv, zq, wq)
       allocate (gz(na + nv, 4, ncomp, nsp))
-      call chain_greens(zq, gz)
+      call chain_greens(zq, gz, tbk=tb_below)
       wb = 0.0_dp
       do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, na + nv
         wb = wb - fs * w(pp_) * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
@@ -993,7 +1050,7 @@ contains
       call all_params()
       zs = cmplx(res%edos_e, inp%dos_eta, dp)
       allocate (gz(inp%ndos, 4, ncomp, nsp))
-      call chain_greens(zs, gz)
+      call chain_greens(zs, gz, tbk=tb_dos)
       do gg = 1, nsp
         do pp_ = 1, ncomp
           do o = 1, 4

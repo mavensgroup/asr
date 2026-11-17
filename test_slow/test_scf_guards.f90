@@ -7,6 +7,7 @@ program test_scf_guards
   use asr_class_scf, only: class_scf, class_scf_result_t, wbelow_tol
   use asr_potpar, only: enu_window_margin
   use asr_testing
+  use asr_runstats, only: tb_chains
   implicit none
   type(run_input_t) :: inp
   type(class_scf_result_t) :: r0, r1, r2, r3
@@ -38,6 +39,14 @@ program test_scf_guards
   call check(r0%nnode > 0 .and. r0%nnoncausal == 0, 'one species: all contour node values are causal (-Im G > 0)')
   call check(r0%below_ok .and. abs(r0%wbelow) < 1.0e-5_dp .and. abs(r0%wbelow1) < 1.0e-5_dp, &
              'no valence weight below the contour bottom (< 1e-5 e, first and final potential)')
+  ! report data: energy terms add up to etot (per site and per component), the timers lie inside the total, the DOS at E_F is positive
+  print '(a,7f16.8)', '    energy terms (Ry/site): ', r0%eterm
+  call check_close(sum(r0%eterm), r0%etot, 1.0e-8_dp, 'energy terms sum to etot')
+  call check_close(sum(matmul(r0%ecomp, r0%comp_w)), r0%etot, 1.0e-8_dp, 'component energy terms sum to etot')
+  call check(r0%timer%wall_total > 0.0_dp .and. sum(r0%timer%wall) <= r0%timer%wall_total * (1.0_dp + 1.0e-9_dp) + 1.0e-6_dp, &
+             'timer buckets lie inside the total wall time')
+  call check(r0%timer%work(tb_chains) > 0 .and. all(r0%hist_npass(1:r0%iter) >= 1), 'chains counted, E_F passes recorded')
+  call check(all(r0%dosef >= 0.0_dp) .and. sum(r0%dosef) > 0.0_dp, 'DOS at E_F recorded and positive')
 
   ! (1) the margin is inert while the clamp does not fire: a looser margin (silent a fortiori) gives the same bits
   enu_window_margin = 0.01_dp
