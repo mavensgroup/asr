@@ -719,7 +719,7 @@ contains
       fs_ = 2.0_dp / real(res%nspin, dp)
       nkp = size(res%spec_dist)
       open (newunit=us, file=sfile, status='replace', action='write')
-      call spectral_header(us, 'Bloch spectral function A(k, E)')
+      call spectral_header(us, 'Bloch spectral function A(k, E)', .false.)
       write (us, '(a)') '# blocks     : one block of energies per k point, blocks separated by one blank line (gnuplot index)'
       write (us, '(a)') '# columns    : A summed over spins and over s p d unless the label says;  A <sublattice>: part of each'
       write (us, '(a)') '#              origin sublattice (the parts add up to A)'
@@ -754,7 +754,7 @@ contains
       print '(a,a)', '  wrote ', sfile
       if (allocated(res%spec_bands)) then              ! ordered, one species: the exact bands of the same H^(2)
         open (newunit=us, file=sfile//'.bands', status='replace', action='write')
-        call spectral_header(us, 'eigenvalues of H^(2)(k), from the structure constant blocks and parameters of the recursion')
+        call spectral_header(us, 'eigenvalues of H^(2)(k), from the structure constant blocks and parameters of the recursion', .true.)
         write (us, '(a)') '# columns    : 9 eigenvalues per spin channel, ascending (Ry)'
         nl = 4 + 9 * size(res%spec_bands, 3)
         deallocate (lab, wid); allocate (lab(nl), wid(nl))
@@ -776,17 +776,23 @@ contains
     end subroutine write_spectral
 
     !> common header of the spectral files: run, route, E_F, path corners, units
-    subroutine spectral_header(us, what)
+    subroutine spectral_header(us, what, bands)
       integer, intent(in) :: us
       character(len=*), intent(in) :: what
+      logical, intent(in) :: bands                    !! the .bands file: no energy mesh, no A
       integer :: ic
       write (us, '(a)') '# ASR ' // what
       write (us, '(a)') '# run        : ' // trim(rep%title) // '   (' // trim(rep%infile) // ', git ' // trim(rep%git_rev) // ')'
       write (us, '(a,i0,a,f8.5,a,i0,a,f6.3,a)') '# route      : recursion edc, levels ', inp%ci%nlevels, ';  eta ', inp%ci%spectral%eta, &
         ' Ry;  chain steps ', res%spec_nsteps, ';  rmax ', inp%ci%spectral%rmax, ' alat'
       write (us, '(a,f12.8,a)') '# E_F        : ', res%ef, ' Ry'
-      write (us, '(a,i0,a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points x ', size(res%spec_e), ' energies'
-      write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; E in Ry; A in states/Ry per graph site'
+      if (bands) then
+        write (us, '(a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points'
+        write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; eigenvalues in Ry'
+      else
+        write (us, '(a,i0,a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points x ', size(res%spec_e), ' energies'
+        write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; E in Ry; A in states/Ry per graph site'
+      end if
       write (us, '(a)') '# corners    :  label   block   dist        kx       ky       kz'
       do ic = 1, size(res%spec_icorner)
         write (us, '(a,a8,i6,f10.5,3f9.5)') '#              ', inp%ci%spectral%labels(ic), res%spec_icorner(ic), &

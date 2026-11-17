@@ -1573,7 +1573,8 @@ contains
     character(len=1024) :: path
     character(len=256) :: line
     character(len=16) :: b1, b2
-    integer :: i, n
+    integer :: i, j, n
+    integer, allocatable :: ord(:)
 
     call rep_section(u, 'Bloch spectral function')
     call kv(u, 'method', 'A(k, E) unfolded on the graph lattice, route edc')
@@ -1584,7 +1585,7 @@ contains
         path = trim(path) // ' ' // trim(r%spec%clabel(i)) // ' (' // trim(ftoa(r%spec%cdist(i), 4)) // ')'
       end do
     end if
-    call write_wrapped(u, ' k path (distance) :', trim(path), repeat(' ', 22))
+    call write_wrapped(u, ' ' // lj('k path (distance)', 19) // ':', trim(path), repeat(' ', 22))
     call kv(u, 'k units', 'Cartesian, 2 pi / a;  ' // trim(itoa(r%spec%nk)) // ' k points')
     call kv(u, 'energies', trim(itoa(r%spec%ne)) // ' from ' // trim(ftoa(r%spec%emin, 4)) // ' to ' // &
             trim(ftoa(r%spec%emax, 4)) // ' Ry;  eta ' // trim(ftoa(r%spec%eta, 4)) // ' Ry')
@@ -1612,19 +1613,27 @@ contains
         write (b1, '(f8.3)') r%spec%sumrule(i, 1)
         write (b2, '(f8.3)') r%spec%sumrule(i, size(r%spec%sumrule, 2))
         call wcheck(u, 'integral of A, first / last k, spin ' // trim(itoa(i)), trim(adjustl(b1)) // ' / ' // trim(adjustl(b2)), &
-                    '9 (all bands)', 'info')
+                    '9 all bands', 'info')
       end do
     end if
     if (allocated(r%spec%rsh) .and. allocated(r%spec%decay)) then
       call wline(u, '')
       call wline(u, ' decay of the off-site Green function with distance')
       n = min(size(r%spec%rsh), size(r%spec%decay))
+      allocate (ord(n)); ord = [(i, i=1, n)]
+      do i = 2, n                                     ! shells in order of distance (insertion sort, few shells)
+        j = i
+        do while (j > 1)
+          if (r%spec%rsh(ord(j - 1)) <= r%spec%rsh(ord(j))) exit
+          ord([j - 1, j]) = ord([j, j - 1]); j = j - 1
+        end do
+      end do
       do i = 1, n, 6
         line = '   shell radius [alat]   '
-        call row(r%spec%rsh(i:min(n, i + 5)), '(f10.3)')
+        call row(r%spec%rsh(ord(i:min(n, i + 5))), '(f10.3)')
         call wline(u, line)
         line = '   max|Im G| / on-site   '
-        call row(r%spec%decay(i:min(n, i + 5)), '(f10.4)')
+        call row(r%spec%decay(ord(i:min(n, i + 5))), '(f10.4)')
         call wline(u, line)
       end do
     end if
