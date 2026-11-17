@@ -406,6 +406,10 @@ contains
       if (inp%ci%spectral%emax <= inp%ci%spectral%emin) then; msg = '[spectral] emax must be above emin'; return; end if
       if (inp%ci%spectral%nsteps < 0) then; msg = '[spectral] steps must be >= 0'; return; end if
       inp%ci%spectral%on = .true.
+      ! the same bound as class_scf (spectral_final), checked here so that the run fails before the SCF, not after it
+      if (2.0_dp * inp%ci%spectral%rmax >= real(inp%ci%lsuper, dp)) then
+        msg = '[spectral] rmax must be below [asr] supercell / 2'; return
+      end if
     end if
 
     ! ---- validation
