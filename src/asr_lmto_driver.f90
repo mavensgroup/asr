@@ -5,11 +5,12 @@ module asr_lmto_driver
   use asr_asa
   use asr_atom, only: shell_t
   use asr_lmto_cell, only: cell_t, setup_cell
+  use asr_runstats, only: tb_dos
   use asr_report
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
-  public :: run_lmto, atom_shells
+  public :: run_lmto, atom_shells, rep_from_asa
 
   real(dp), parameter :: bohr_per_angstrom = 1.0_dp / 0.529177210903_dp
 
@@ -21,19 +22,18 @@ contains
     type(asa_input_t) :: ai
     type(asa_result_t) :: res
     type(cell_t) :: cell
+    type(rep_run_t) :: rep
     real(dp), allocatable :: egrid(:), dos(:, :, :, :)
     real(dp) :: vcell, sa, sb
-    integer :: ic, ia, l, s, ie, u, np, it
+    integer :: ic, ia, l, s, ie, u, np, nthr, ncl
     character(len=:), allocatable :: pfile, dfile
-    character(len=8), allocatable :: syms(:)
-    real(dp), allocatable :: zc(:), swsc(:)
-    integer, allocatable :: nvc(:), natc(:)
-    integer :: ru, nthr, ncl
+    character(len=10) :: start_d, start_t
     integer, allocatable :: csp(:)                   ! species of each ASA class
     character(len=8), allocatable :: csym(:)
     real(dp) :: t0, t_scf, t_dos
 
     ok = .false.
+    call date_and_time(start_d, start_t)
     t0 = rep_wall()
     ai%alat = inp%alat_angstrom * bohr_per_angstrom
     ai%xc = inp%xc; ai%sigma = inp%sigma; ai%nspin = inp%spin; ai%nk = inp%nk; ai%bz = inp%bz
@@ -120,10 +120,18 @@ contains
     do ie = 1, np; egrid(ie) = inp%emin + (inp%emax - inp%emin) * (ie - 1) / real(np - 1, dp); end do
     t_dos = rep_wall()
     call asa_dos(ai, cell, res, inp%dos_nk, egrid, inp%dos_smear, dos)
+    t_dos = rep_wall() - t_dos
+    res%timer%wall(tb_dos) = t_dos
+    res%timer%wall_total = res%timer%wall_total + t_dos
+    res%timer%ncall(tb_dos) = 1
+
+    nthr = 1
+    !$ nthr = omp_get_max_threads()
+    call rep_from_asa(inp, ai, cell, res, egrid, dos, csp, csym, rep, t0, nthr, start_d, start_t)
+
     dfile = inp%workdir//inp%dos_file
     open (newunit=u, file=dfile, status='replace', action='write')
-    write (u, '(a)') '# '//inp%name//'   states/Ry/atom per spin channel; columns: E(Ry) then per atom, per spin: s p d'
-    write (u, '(a,f12.8)') '# E_F = ', res%ef
+    call rep_write_dos_header(u, rep, np, inp%emin, inp%emax)
     do ie = 1, np
       write (u, '(f12.6)', advance='no') egrid(ie)
       do ia = 1, cell%nat
@@ -135,51 +143,177 @@ contains
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
-    t_dos = rep_wall() - t_dos
 
-    ! ---- report (.out)
-    nthr = 1
-    !$ nthr = omp_get_max_threads()
-    ncl_local: block
-      integer :: nc
-      nc = ncl
-      allocate (syms(nc), zc(nc), swsc(nc), nvc(nc), natc(nc))
-      do ic = 1, nc
-        syms(ic) = csym(ic); zc(ic) = inp%species(csp(ic))%z; nvc(ic) = inp%species(csp(ic))%nval; swsc(ic) = ai%cls(ic)%sws
-        natc(ic) = count(cell%isp == ic)
-      end do
-    end block ncl_local
-    call rep_open(ru, inp%workdir//inp%out_file, 'TB-LMTO-ASA self-consistent calculation: '//inp%name, inp%infile, nthr)
-    call rep_echo_input(ru, inp%infile)
-    call rep_section(ru, 'method')
-    call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, scalar-relativistic='//merge('yes', 'no ', inp%relativistic)//', s p d basis, no combined correction')
-    call rep_line(ru, 'XC functional '//trim(inp%xc)//' (libxc), LDA; spin polarised: '//merge('yes', 'no ', inp%spin == 2))
-    write (ru, '(a,f6.3)') '  screening sigma (hard-core)  ', inp%sigma
-    write (ru, '(a,a,a,i0,a,f8.4,a,f7.3)') '  BZ integration  ', trim(inp%bz), '  nk=', inp%nk, '  smear=', inp%smear, '  mixing=', inp%mixing
-    call rep_structure(ru, inp%lattice, ai%alat, cell%avec, cell%tau, cell%isp, syms, swsc)
-    call rep_scf_history(ru, syms, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%tolerance, res%converged)
-    if (res%nclamp > 0) then
-      write (ru, '(a,i0,a)') ' WARNING: E_nu was held at its band window in the last iteration (', res%nclamp, ' channels).  This is not a'
-      write (ru, '(a)') '          fixed point: the result depends on the window margin.  Reported as not converged.'
-    end if
-    write (ru, '(a,i0)') ' E_nu band-window clamp, events in the whole run (path only when 0 in the last iteration): ', res%nclamp_run
-    write (ru, '(a)') ' total energy per atom (Ry; Kohn-Sham form, output density in the input potential, Madelung of the'// &
-      ' class charges at the atom positions), by iteration:'
-    do it = 1, res%iter; write (ru, '(i6,f20.8)') it, res%hist_etot(it); end do
-    write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per atom'
-    call rep_classes(ru, syms, zc, nvc, swsc, natc, res%cls, inp%spin, res%ef, res%moment_cell, '')
-    call rep_dos_at_ef(ru, syms, egrid, dos, res%ef, inp%dos_smear, inp%spin, &
-                       'DOS columns per atom class (k-space tetrahedron/Gaussian, nk='//itoa(inp%dos_nk)//'); not a self-consistency quantity')
-    call rep_section(ru, 'timing')
-    write (ru, '(a,f10.2,a)') ' SCF  ', t_scf, ' s'
-    write (ru, '(a,f10.2,a)') ' DOS  ', t_dos, ' s'
-    write (ru, '(a)') ' files written:'
-    write (ru, '(a)') '   '//pfile
-    write (ru, '(a)') '   '//dfile
-    call rep_close(ru, res%converged, rep_wall() - t0)
+    call rep_write_report(rep, inp%workdir//inp%out_file)
     print '(a,a)', '  wrote ', inp%workdir//inp%out_file
+
+    call rep_write_json(rep, inp%workdir//rep%json_file)
+    print '(a,a)', '  wrote ', inp%workdir//rep%json_file
+
     ok = res%converged
   end subroutine run_lmto
+
+  !> Fill rep_run_t from k-space asa_result_t
+  subroutine rep_from_asa(inp, ai, cell, res, egrid, dos, csp, csym, rep, t0, nthr, start_d, start_t)
+    use iso_fortran_env, only: compiler_version, compiler_options
+    use asr_build_info, only: git_rev, git_dirty
+    use asr_kinds, only: dp, pi
+    type(lmto_input_t), intent(in) :: inp
+    type(asa_input_t), intent(in) :: ai
+    type(cell_t), intent(in) :: cell
+    type(asa_result_t), intent(in) :: res
+    real(dp), intent(in) :: egrid(:)
+    real(dp), intent(in) :: dos(:, 0:, :, :)
+    integer, intent(in) :: csp(:)
+    character(len=8), intent(in) :: csym(:)
+    type(rep_run_t), intent(out) :: rep
+    real(dp), intent(in) :: t0
+    integer, intent(in) :: nthr
+    character(len=10), intent(in) :: start_d, start_t
+    integer :: ncl, ic, ia, s, l, ie, np, natc, dot
+    real(dp) :: def, val, fsp_k
+
+    ncl = size(csym)
+    rep%prog_name = 'asr'
+    rep%prog_version = '0.1.0'
+    rep%git_rev = git_rev
+    rep%git_dirty = git_dirty
+    rep%compiler_ver = compiler_version()
+    rep%compiler_opts = compiler_options()
+    rep%host = get_host()
+    rep%pid = get_pid()
+    rep%start_date = start_d
+    rep%start_time = start_t
+    call date_and_time(rep%finish_date, rep%finish_time)
+    rep%wall_total = rep_wall() - t0
+    rep%mpi_ranks = 1
+    rep%omp_threads = nthr
+    rep%infile = inp%infile
+    rep%fingerprint = fnv1a64_file(inp%infile)
+    rep%workdir = inp%workdir
+    rep%out_file = inp%out_file
+    dot = index(inp%out_file, '.', back=.true.)
+    if (dot > 0) then
+      rep%json_file = inp%out_file(1:dot - 1)//'.json'
+    else
+      rep%json_file = trim(inp%out_file)//'.json'
+    end if
+    rep%dos_file = inp%dos_file
+    rep%params_file = inp%params_file
+    rep%title = inp%name
+
+    ! Method
+    rep%method = 'kspace'
+    rep%route = 'kspace'
+    rep%xc = trim(inp%xc)
+    rep%relativistic = inp%relativistic
+    rep%nspin = inp%spin
+    rep%ncomp = ncl
+    rep%k_nk = inp%nk
+    rep%k_bz = trim(inp%bz)
+    rep%k_smear = inp%smear
+    rep%k_dos_nk = inp%dos_nk
+    rep%k_sigma = inp%sigma
+    rep%mix_type = 'Anderson'
+    rep%mix_beta = inp%mixing
+    rep%tol = inp%tolerance
+
+    ! Structure
+    rep%lattice = trim(inp%lattice)
+    rep%alat = ai%alat
+    rep%avec = cell%avec
+    rep%cell_vol = (4.0_dp * pi / 3.0_dp) * sum(ai%cls(cell%isp(1:cell%nat))%sws**3)
+    rep%period = 1
+    rep%nsite = cell%nat
+    rep%nat = cell%nat
+    allocate (rep%sites(cell%nat))
+    do ia = 1, cell%nat
+      rep%sites(ia)%ia = ia
+      rep%sites(ia)%species = csym(cell%isp(ia))
+      rep%sites(ia)%iclass = cell%isp(ia)
+      rep%sites(ia)%pos = cell%tau(:, ia)
+      rep%sites(ia)%sws = ai%cls(cell%isp(ia))%sws
+    end do
+    rep%sws_avg = sum(ai%cls(cell%isp(1:cell%nat))%sws) / real(cell%nat, dp)
+
+    ! Components
+    allocate (rep%comp(ncl))
+    np = size(egrid)
+    if (res%ef <= egrid(1)) then
+      ie = 1; def = 0.0_dp
+    else if (res%ef >= egrid(np)) then
+      ie = np - 1; def = 1.0_dp
+    else
+      do ie = 1, np - 1
+        if (egrid(ie) <= res%ef .and. res%ef <= egrid(ie + 1)) exit
+      end do
+      def = (res%ef - egrid(ie)) / (egrid(ie + 1) - egrid(ie))
+    end if
+    fsp_k = merge(2.0_dp, 1.0_dp, inp%spin == 1)
+
+    do ic = 1, ncl
+      rep%comp(ic)%label = csym(ic)
+      rep%comp(ic)%species = inp%species(csp(ic))%symbol
+      rep%comp(ic)%subname = ''
+      rep%comp(ic)%z = ai%cls(ic)%z
+      rep%comp(ic)%valence = ai%cls(ic)%nval
+      natc = count(cell%isp == ic)
+      rep%comp(ic)%concentration = 1.0_dp
+      rep%comp(ic)%weight_per_site = real(natc, dp) / real(cell%nat, dp)
+      rep%comp(ic)%sws = ai%cls(ic)%sws
+      rep%comp(ic)%qnet = res%cls(ic)%qnet
+      rep%comp(ic)%moment = res%cls(ic)%moment
+      rep%comp(ic)%enu = res%cls(ic)%enu
+      rep%comp(ic)%q = res%cls(ic)%q
+      rep%comp(ic)%qch = res%cls(ic)%q(0, :, :)
+      do s = 1, inp%spin
+        do l = 0, 2
+          rep%comp(ic)%c(l, s) = res%cls(ic)%pp(l, s)%c
+          rep%comp(ic)%sqrdel(l, s) = res%cls(ic)%pp(l, s)%sqrdel
+          rep%comp(ic)%p(l, s) = res%cls(ic)%pp(l, s)%p
+          rep%comp(ic)%gamma(l, s) = res%cls(ic)%pp(l, s)%gamma
+        end do
+      end do
+      rep%comp(ic)%dosef = 0.0_dp
+      do ia = 1, cell%nat
+        if (cell%isp(ia) /= ic) cycle
+        do s = 1, inp%spin
+          do l = 0, 2
+            val = dos(ie, l, ia, s) + def * (dos(ie + 1, l, ia, s) - dos(ie, l, ia, s))
+            rep%comp(ic)%dosef(l, s) = rep%comp(ic)%dosef(l, s) + fsp_k * val / real(natc, dp)
+          end do
+        end do
+      end do
+      if (allocated(res%ecomp)) rep%comp(ic)%ecomp = res%ecomp(:, ic)
+    end do
+
+    ! SCF history and observables
+    rep%iter = res%iter
+    rep%converged = res%converged
+    rep%ef = res%ef
+    rep%etot = res%etot
+    rep%eterm = res%eterm
+    if (allocated(res%ecomp)) rep%ecomp = res%ecomp
+    if (allocated(res%hist_etot)) rep%hist_etot = res%hist_etot
+    if (allocated(res%hist_dv)) rep%hist_dv = res%hist_dv
+    if (allocated(res%hist_ef)) rep%hist_ef = res%hist_ef
+    if (allocated(res%hist_wall)) rep%hist_wall = res%hist_wall
+    if (allocated(res%hist_moment)) rep%hist_moment = res%hist_moment
+    if (allocated(res%hist_qnet)) rep%hist_qnet = res%hist_qnet
+    rep%qcell = sum([(count(cell%isp == ic) * res%cls(ic)%qnet, ic=1, ncl)]) / real(cell%nat, dp)
+    rep%moment_site = res%moment_cell / real(cell%nat, dp)
+    rep%dosef_site = sum([(rep%comp(ic)%weight_per_site * sum(rep%comp(ic)%dosef), ic=1, ncl)])
+    rep%eband = res%eband
+    rep%sumev = res%sumev
+
+    ! Diagnostics
+    rep%nclamp = res%nclamp
+    rep%nclamp_run = res%nclamp_run
+    rep%below_ok = .true.
+
+    ! Timing
+    rep%timer = res%timer
+  end subroutine rep_from_asa
 
   !> Neutral-atom shells for the starting potential: core + valence s, d (occupations given), p gets the rest.
   function itoa(i) result(r)
