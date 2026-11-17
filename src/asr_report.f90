@@ -300,6 +300,7 @@ contains
     s = '=== ' // trim(name) // ' ==='
     n = len_trim(s)
     if (n < 90) s(n+1:90) = repeat('=', 90 - n)
+    call wline(u, '')
     call wline(u, s)
   end subroutine rep_section
 
@@ -483,38 +484,31 @@ contains
     call rep_section(u, 'structure')
     if (trim(r%method) == 'kspace') then
       if (trim(r%lattice) == 'cell') then
-        call wline(u, ' lattice                 : explicit cell (primitive vectors below)')
+        call kv(u, 'lattice', 'explicit cell (primitive vectors below)')
       else
-        call wline(u, ' lattice                 : ' // trim(r%lattice))
+        call kv(u, 'lattice', trim(r%lattice))
       end if
     else
-      call wline(u, ' graph lattice           : ' // trim(r%lattice))
+      call kv(u, 'graph lattice', trim(r%lattice))
     end if
-    write (line, '(a,f11.6,a,f11.6,a)') ' lattice constant        : ', r%alat, ' Bohr  (', r%alat * bohr_to_ang, ' Angstrom)'
-    call wline(u, line)
+    call kv(u, 'lattice constant', trim(ftoa(r%alat, 6)) // ' Bohr  (' // trim(ftoa(r%alat * bohr_to_ang, 6)) // ' Angstrom)')
     if (trim(r%method) == 'kspace') then
-      call wline(u, ' primitive vectors (alat units):')
+      call kv(u, 'primitive vectors', '(alat units)')
       do k = 1, 3
-        write (line, '(a,i1,a,3f11.6)') '   a', k, '                    :', r%avec(:, k)
+        write (line, '(a,i1,a,3f11.6)') '   a', k, '                : ', r%avec(:, k)
         call wline(u, line)
       end do
       vsite = r%cell_vol / real(max(1, r%nat), dp)
-      write (line, '(a,i0)') ' atoms per cell          : ', r%nat
-      call wline(u, line)
-      write (line, '(a,f11.5,a,f11.5,a)') ' volume per atom         : ', vsite, ' Bohr^3  (', vsite * bohr_to_ang**3, ' Angstrom^3)'
-      call wline(u, line)
+      call kv(u, 'atoms per cell', trim(itoa(r%nat)))
+      call kv(u, 'volume per atom', trim(ftoa(vsite, 5)) // ' Bohr^3  (' // trim(ftoa(vsite * bohr_to_ang**3, 5)) // ' Angstrom^3)')
       vsph = 0.0_dp
       if (allocated(r%sites)) vsph = sum([(4.0_dp * pi / 3.0_dp * r%sites(i)%sws**3, i=1, r%nat)])
-      write (line, '(a,f9.5)') ' sphere / cell volume    : ', vsph / max(r%cell_vol, tiny(1.0_dp))
-      call wline(u, line)
+      call kv(u, 'sphere / cell vol.', trim(ftoa(vsph / max(r%cell_vol, tiny(1.0_dp)), 5)))
     else
-      write (line, '(a,i0,a,i0)') ' decoration cell         : ', r%period, '^3 conventional cubes;  sites ', r%nsite
-      call wline(u, line)
-      write (line, '(a,f11.6,a)') ' sphere radius S         : ', r%sws_avg, ' Bohr (equal spheres, space filling)'
-      call wline(u, line)
+      call kv(u, 'decoration cell', trim(itoa(r%period)) // '^3 conventional cubes;  sites ' // trim(itoa(r%nsite)))
+      call kv(u, 'sphere radius S', trim(ftoa(r%sws_avg, 6)) // ' Bohr  (equal spheres, space filling)')
       vsite = r%cell_vol / real(max(1, r%nsite), dp)
-      write (line, '(a,f11.5,a,f11.5,a)') ' volume per site         : ', vsite, ' Bohr^3  (', vsite * bohr_to_ang**3, ' Angstrom^3)'
-      call wline(u, line)
+      call kv(u, 'volume per site', trim(ftoa(vsite, 5)) // ' Bohr^3  (' // trim(ftoa(vsite * bohr_to_ang**3, 5)) // ' Angstrom^3)')
     end if
 
     if (allocated(r%sub)) then
@@ -641,40 +635,40 @@ contains
     real(dp) :: sitem
 
     call rep_section(u, 'SCF history')
-    call wline(u, ' iter' // rj('E_tot [Ry]', 16) // rj('dE [Ry]', 12) // rj('dV [Ry]', 11) // rj('dE_nu [Ry]', 11) // &
-                  rj('E_F [Ry]', 14) // rj('pass', 6) // rj('wall [s]', 9))
-    call wline(u, ' ' // repeat('-', 83))
+    call wline(u, ' iter' // rj('E_tot [Ry]', 17) // rj('dE [Ry]', 12) // rj('dV [Ry]', 12) // rj('dE_nu [Ry]', 12) // &
+                  rj('E_F [Ry]', 14) // rj('pass', 6) // rj('wall [s]', 10))
+    call wline(u, ' ' // repeat('-', 87))
     do it = 1, r%iter
-      write (line, '(i5,f16.8)') it, r%hist_etot(it)
+      write (line, '(i5,f17.8)') it, r%hist_etot(it)
       if (it == 1) then
-        line = line(1:21) // rj('---', 12)
+        line = line(1:22) // rj('---', 12)
       else
         write (buf, '(es12.3)') r%hist_etot(it) - r%hist_etot(it - 1)
-        line = line(1:21) // buf(1:12)
+        line = line(1:22) // buf(1:12)
       end if
-      write (buf, '(es11.3)') r%hist_dv(it); line = line(1:33) // buf(1:11)
+      write (buf, '(es12.3)') r%hist_dv(it); line = line(1:34) // buf(1:12)
       if (allocated(r%hist_denu)) then
-        write (buf, '(es11.3)') r%hist_denu(it)
+        write (buf, '(es12.3)') r%hist_denu(it)
       else
-        buf = rj('---', 11)
+        buf = rj('---', 12)
       end if
-      line = line(1:44) // buf(1:11)
-      write (buf, '(f14.8)') r%hist_ef(it); line = line(1:55) // buf(1:14)
+      line = line(1:46) // buf(1:12)
+      write (buf, '(f14.8)') r%hist_ef(it); line = line(1:58) // buf(1:14)
       if (allocated(r%hist_npass)) then
         write (buf, '(i6)') r%hist_npass(it)
       else
         buf = rj('---', 6)
       end if
-      line = line(1:69) // buf(1:6)
+      line = line(1:72) // buf(1:6)
       if (allocated(r%hist_wall)) then
-        write (buf, '(f9.2)') r%hist_wall(it)
+        write (buf, '(f10.2)') r%hist_wall(it)
       else
-        buf = rj('---', 9)
+        buf = rj('---', 10)
       end if
-      line = line(1:75) // buf(1:9)
+      line = line(1:78) // buf(1:10)
       call wline(u, line)
     end do
-    call wline(u, ' ' // repeat('-', 83))
+    call wline(u, ' ' // repeat('-', 87))
     if (r%converged) then
       call wline(u, ' converged after ' // trim(itoa(r%iter)) // ' iterations (dV < ' // trim(esf(r%tol, 1)) // &
                  ' Ry, no E_nu held at its window)')
@@ -801,12 +795,10 @@ contains
     real(dp) :: qtot, ntot
 
     call rep_section(u, 'converged results')
-    write (line, '(a,f14.8,a)') ' E_F                       : ', r%ef, ' Ry'
-    call wline(u, line)
-    call wline(u, ' cell charge residual      : ' // trim(esf(r%qcell, 2)) // ' e per site   (sum_p w_p qnet_p; 0 = neutral)')
+    call kv(u, 'E_F', trim(ftoa(r%ef, 8)) // ' Ry')
+    call kv(u, 'charge residual', trim(esf(r%qcell, 2)) // ' e per site  (sum_p w_p qnet_p; 0 = neutral)')
     if (r%nspin == 2) then
-      write (line, '(a,f12.5,a)') ' spin moment per site      : ', nz(r%moment_site, 5), ' mu_B'
-      call wline(u, line)
+      call kv(u, 'spin moment / site', trim(ftoa(nz(r%moment_site, 5), 5)) // ' mu_B')
     end if
 
     do p = 1, r%ncomp
@@ -821,11 +813,11 @@ contains
       call wline(u, '')
 
       call wline(u, '   potential parameters, gamma representation [Ry]')
-      call wline(u, '   spin  l' // rj('E_nu', 12) // rj('C', 12) // rj('sqrt(Delta)', 12) // rj('p', 12) // rj('gamma', 12))
-      call wline(u, '   ' // repeat('-', 67))
+      call wline(u, '   spin  l' // rj('E_nu', 13) // rj('C', 13) // rj('sqrt(Delta)', 13) // rj('p', 13) // rj('gamma', 13))
+      call wline(u, '   ' // repeat('-', 72))
       do s = 1, r%nspin
         do l = 0, 2
-          write (line, '(3x,i4,2x,a1,5f12.6)') s, lname(l), r%comp(p)%enu(l, s), r%comp(p)%c(l, s), &
+          write (line, '(3x,i4,2x,a1,5f13.6)') s, lname(l), r%comp(p)%enu(l, s), r%comp(p)%c(l, s), &
             r%comp(p)%sqrdel(l, s), r%comp(p)%p(l, s), r%comp(p)%gamma(l, s)
           call wline(u, line)
         end do
@@ -837,19 +829,19 @@ contains
       else
         call wline(u, '   moments and DOS at E_F, both spins')
       end if
-      call wline(u, '   spin  l' // rj('q0 [e]', 11) // rj('q1 [e Ry]', 11) // rj('q2 [e Ry^2]', 12) // rj('Q_l [e]', 11) // &
-                    rj('N_l(E_F) [1/Ry]', 17))
-      call wline(u, '   ' // repeat('-', 69))
+      call wline(u, '   spin  l' // rj('q0 [e]', 12) // rj('q1 [e Ry]', 12) // rj('q2 [e Ry^2]', 13) // rj('Q_l [e]', 12) // &
+                    rj('N_l(E_F) [1/Ry]', 18))
+      call wline(u, '   ' // repeat('-', 74))
       do s = 1, r%nspin
         do l = 0, 2
-          write (line, '(3x,i4,2x,a1,2f11.5,f12.5,f11.5,f17.4)') s, lname(l), nz(r%comp(p)%q(0, l, s), 5), &
+          write (line, '(3x,i4,2x,a1,2f12.5,f13.5,f12.5,f18.4)') s, lname(l), nz(r%comp(p)%q(0, l, s), 5), &
             nz(r%comp(p)%q(1, l, s), 5), nz(r%comp(p)%q(2, l, s), 5), nz(r%comp(p)%qch(l, s), 5), nz(r%comp(p)%dosef(l, s), 4)
           call wline(u, line)
         end do
       end do
       if (r%nspin == 2) then
         do l = 0, 2
-          write (line, '(3x,a4,2x,a1,2f11.5,f12.5,f11.5,f17.4)') ' 1-2', lname(l), &
+          write (line, '(3x,a4,2x,a1,2f12.5,f13.5,f12.5,f18.4)') ' 1-2', lname(l), &
             nz(r%comp(p)%q(0, l, 1) - r%comp(p)%q(0, l, 2), 5), nz(r%comp(p)%q(1, l, 1) - r%comp(p)%q(1, l, 2), 5), &
             nz(r%comp(p)%q(2, l, 1) - r%comp(p)%q(2, l, 2), 5), nz(r%comp(p)%qch(l, 1) - r%comp(p)%qch(l, 2), 5), &
             nz(r%comp(p)%dosef(l, 1) - r%comp(p)%dosef(l, 2), 4)
@@ -858,8 +850,8 @@ contains
       end if
       qtot = sum(r%comp(p)%qch(:, 1:r%nspin))
       ntot = sum(r%comp(p)%dosef(:, 1:r%nspin))
-      call wline(u, '   ' // repeat('-', 69))
-      write (line, '(3x,a,f11.5,f17.4)') lj('sum (valence electrons in the sphere)', 41), qtot, ntot
+      call wline(u, '   ' // repeat('-', 74))
+      write (line, '(3x,a,f12.5,f18.4)') lj('sum (valence electrons in the sphere)', 44), qtot, ntot
       call wline(u, line)
     end do
   end subroutine rep_components
@@ -879,20 +871,16 @@ contains
     chi = chi_p_const * nef
 
     call rep_section(u, 'Fermi level')
-    write (line, '(a,f14.8,a)') ' E_F                                       : ', r%ef, ' Ry'
-    call wline(u, line)
-    write (line, '(a,f10.4,a,f9.5,a)') ' N(E_F) per site, both spins               : ', nef, ' states/Ry   (', nef_ev, ' states/eV)'
-    call wline(u, line)
+    call kv(u, 'E_F', trim(ftoa(r%ef, 8)) // ' Ry')
+    call kv(u, 'N(E_F) per site', trim(ftoa(nef, 4)) // ' states/Ry  (' // trim(ftoa(nef_ev, 5)) // ' states/eV), both spins')
     if (trim(r%method) == 'kspace') then
-      write (line, '(a,f10.4,a)') ' smearing of N(E_F)                        : ', r%k_smear, ' Ry  (k-space BZ integration)'
+      call kv(u, 'N(E_F) smearing', trim(ftoa(r%k_smear, 4)) // ' Ry  (k-space BZ integration)')
     else
-      write (line, '(a,f10.4,a)') ' broadening of N(E_F)                      : ', r%ed_eta, ' Ry  (G at E_F + i eta)'
+      call kv(u, 'N(E_F) broadening', trim(ftoa(r%ed_eta, 4)) // ' Ry  (G at E_F + i eta)')
     end if
-    call wline(u, line)
-    write (line, '(a,f10.4,a)') ' Sommerfeld coefficient, bare band         : ', ge, ' mJ/(mol K^2)'
-    call wline(u, line)
-    call wline(u, ' Pauli susceptibility, bare (no Stoner)    :  ' // trim(esf(chi, 3)) // ' emu/mol')
-    call wline(u, ' gamma_e = (pi^2/3) k_B^2 N(E_F) = 0.173247 mJ/(mol K^2) per state/Ry;')
+    call kv(u, 'Sommerfeld gamma_e', trim(ftoa(ge, 4)) // ' mJ/(mol K^2)  (bare band)')
+    call kv(u, 'Pauli chi_P', trim(esf(chi, 3)) // ' emu/mol  (bare, no Stoner enhancement)')
+    call wline(u, ' gamma_e = (pi^2/3) k_B^2 N(E_F) = 0.173247 mJ/(mol K^2) per state/Ry')
     call wline(u, ' chi_P = mu_B^2 N(E_F) = 2.37605E-06 emu/mol per state/Ry;  mol = mole of sites')
     call wline(u, '')
 
@@ -1272,7 +1260,9 @@ contains
     integer, intent(in) :: npoints
     real(dp), intent(in) :: emin, emax
     character(len=1), parameter :: lname(0:2) = ['s', 'p', 'd']
-    integer :: col, p, l, s, ia
+    integer :: col, p, l, s, ia, nl
+    character(len=13) :: lab(2048)
+    character(len=32768) :: hnum, hlab
 
     write (u, '(a)') '# ASR density of states'
     write (u, '(a,a,a,a,a,a,a)') '# run        : ', trim(r%title), '   (', trim(r%infile), ', git ', trim(r%git_rev), ')'
@@ -1291,42 +1281,70 @@ contains
       write (u, '(a,i0,a)') '# spin       : nspin ', r%nspin, '; spin polarised'
     end if
 
-    col = 1
-    write (u, '(a,i2,a)') '# column ', col, '  : E [Ry]'; col = col + 1
-
+    ! column labels as two aligned header rows (column number, label) over the data: E is f12.6, every DOS column es14.6
+    nl = 0
+    call addl('E [Ry]')
     if (trim(r%method) == 'kspace') then
-      ! Columns of k-space DOS
       do ia = 1, r%nat
         do s = 1, r%nspin
           do l = 0, 2
-            write (u, '(a,i2,a,i0,a,a,a,i0,a,a1)') '# column ', col, '  : atom ', ia, ' (', &
-              trim(r%sites(ia)%species), ') spin ', s, ' ', lname(l)
-            col = col + 1
+            if (r%nspin == 2) then
+              call addl(trim(r%sites(ia)%species) // trim(itoa(ia)) // ' ' // lname(l) // ' ' // trim(spn(s)))
+            else
+              call addl(trim(r%sites(ia)%species) // trim(itoa(ia)) // ' ' // lname(l))
+            end if
           end do
         end do
       end do
     else
-      ! Columns of recursion DOS
-      write (u, '(a,i2,a)') '# column ', col, '  : total per site, sum_p w_p N_p'; col = col + 1
+      call addl('total')
       do p = 1, r%ncomp
         do l = 0, 2
-          write (u, '(a,i2,a,a,a,a1)') '# column ', col, '  : ', trim(r%comp(p)%label), ' ', lname(l)
-          col = col + 1
+          call addl(trim(r%comp(p)%label) // ' ' // lname(l))
         end do
       end do
-      write (u, '(a,i2,a)') '# column ', col, '  : total per site, spin 1'; col = col + 1
       if (r%nspin == 2) then
-        write (u, '(a,i2,a)') '# column ', col, '  : total per site, spin 2'; col = col + 1
+        do s = 1, 2
+          call addl('total ' // trim(spn(s)))
+        end do
         do p = 1, r%ncomp
           do s = 1, 2
             do l = 0, 2
-              write (u, '(a,i2,a,a,a,i0,a,a1)') '# column ', col, '  : ', trim(r%comp(p)%label), ' spin ', s, ' ', lname(l)
-              col = col + 1
+              call addl(trim(r%comp(p)%label) // ' ' // lname(l) // ' ' // trim(spn(s)))
             end do
           end do
         end do
       end if
     end if
+    if (trim(r%method) == 'kspace') then
+      write (u, '(a)') '# columns    : per atom (species and atom index), s p d, per spin channel'
+    else if (r%nspin == 2) then
+      write (u, '(a)') '# columns    : total = sum_p w_p N_p per site; component s p d per atom, both spins; then per spin'
+    else
+      write (u, '(a)') '# columns    : total = sum_p w_p N_p per site; component s p d per atom, both spins'
+    end if
+    hnum = '#'; hlab = '#'
+    do col = 1, nl
+      if (col == 1) then
+        hnum = hnum(1:1) // rj(trim(itoa(col)), 11); hlab = hlab(1:1) // rj(lab(col), 11)
+      else
+        hnum = hnum(1:12 + (col - 2) * 14) // rj(trim(itoa(col)), 14)
+        hlab = hlab(1:12 + (col - 2) * 14) // rj(lab(col), 14)
+      end if
+    end do
+    write (u, '(a)') trim(hnum)
+    write (u, '(a)') trim(hlab)
+  contains
+    subroutine addl(t)
+      character(len=*), intent(in) :: t
+      nl = nl + 1
+      lab(nl) = t
+    end subroutine addl
+    function spn(k) result(t)
+      integer, intent(in) :: k
+      character(len=4) :: t
+      t = merge('up  ', 'down', k == 1)
+    end function spn
   end subroutine rep_write_dos_header
 
 
@@ -1498,6 +1516,13 @@ contains
     write (s, '(i0)') i
     s = adjustl(s)
   end function i8toa
+
+  !> one key-value line: key left-justified in 19 columns, then ': ' and the value (the banner's layout)
+  subroutine kv(u, key, val)
+    integer, intent(in) :: u
+    character(len=*), intent(in) :: key, val
+    call wline(u, ' ' // lj(key, 19) // ': ' // trim(val))
+  end subroutine kv
 
   ! Helper: integer to string
   function itoa(i) result(s)

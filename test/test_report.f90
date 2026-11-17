@@ -330,6 +330,10 @@ contains
       if (ios /= 0) exit
       nlines = nlines + 1
       call check(line(1:1) == '#', 'DOS header line starts with #')
+      if (index(line, 'E [Ry]') > 0) then          ! label row: aligned over E (12 columns) and the DOS columns (14 each)
+        call check(index(line, 'E [Ry]') == 7 .and. mod(len_trim(line) - 12, 14) == 0 .and. index(line, 'total') > 0, &
+                   'DOS label row aligned over the data columns')
+      end if
     end do
     close (u, status='delete')
     call check(nlines > 5, 'DOS header written multiple commented lines')
