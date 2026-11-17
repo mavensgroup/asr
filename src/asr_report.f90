@@ -22,7 +22,7 @@ module asr_report
 
   public :: rep_run_t, rep_component_t, rep_sublattice_t, rep_sro_t, rep_site_t
   public :: rep_write_report, rep_write_json, rep_write_dos_header, rep_wall, fnv1a64_file
-  public :: rep_banner, rep_echo_input, rep_method, rep_structure, rep_sro, rep_scf_history
+  public :: rep_banner, rep_echo_input, rep_input, rep_method, rep_structure, rep_sro, rep_scf_history
   public :: rep_energy, rep_components, rep_fermi, rep_checks, rep_timing, rep_warnings, rep_files, rep_close
   public :: ry_to_ev, bohr_to_ang, gamma_e_const, chi_p_const, get_host, get_pid, collect_warnings, clean_flags, fmt_dt
 
@@ -119,6 +119,7 @@ module asr_report
     character(len=256) :: pot_file = ''
     character(len=256) :: params_file = ''
     character(len=128) :: title = ''
+    character(len=:), allocatable :: resolved    !! every input key with the value used (asr_inputdump), lines split by new_line
 
     ! Method and model
     character(len=16) :: method = 'asr'       !! 'asr' or 'kspace'
@@ -366,7 +367,33 @@ contains
     call wline(u, repeat('=', 90))
   end subroutine rep_banner
 
-  !> Section 4.2: Echo of verbatim input lines with prefix '   | '
+  !> Section 4.2: the resolved input: every key the run used, with its value; '# default' marks keys not in the input file.
+  !> Without the resolved text (a driver that does not set it): the input file verbatim.
+  subroutine rep_input(u, r)
+    integer, intent(in) :: u
+    type(rep_run_t), intent(in) :: r
+    integer :: p, q, n
+    if (.not. allocated(r%resolved)) then
+      call rep_echo_input(u, r%infile); return
+    end if
+    if (len(r%resolved) == 0) then
+      call rep_echo_input(u, r%infile); return
+    end if
+    call rep_section(u, 'input (every key used; # default = not in the input file)')
+    n = len(r%resolved); p = 1
+    do while (p <= n)
+      q = index(r%resolved(p:), new_line('a'))
+      if (q == 0) then
+        q = n + 1
+      else
+        q = p + q - 1
+      end if
+      call wline(u, '   ' // r%resolved(p:q - 1))
+      p = q + 1
+    end do
+  end subroutine rep_input
+
+  !> Section 4.2 (fallback): Echo of verbatim input lines with prefix '   | '
   subroutine rep_echo_input(u, infile)
     integer, intent(in) :: u
     character(len=*), intent(in) :: infile
@@ -1075,7 +1102,7 @@ contains
 
     open (newunit=u, file=filename, status='replace', action='write')
     call rep_banner(u, r)
-    call rep_echo_input(u, r%infile)
+    call rep_input(u, r)
     call rep_method(u, r)
     call rep_structure(u, r)
     if (r%sro%has_sro) call rep_sro(u, r)
