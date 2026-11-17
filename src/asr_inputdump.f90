@@ -151,7 +151,7 @@ contains
           if (len(cur) + (i - start + 1) > width .and. len(trim(cur)) > ind) then
             line = line // trim(cur) // new_line('a'); cur = repeat(' ', ind)
           end if
-          cur = cur // adjustl(val(start:i)) // ' '
+          cur = cur // trim(adjustl(val(start:i))) // ' '
           start = i + 1
         end if
       end do
