@@ -344,7 +344,7 @@ contains
     type(rep_run_t), intent(in) :: r
     character(len=256) :: line
     character(len=32) :: git_status
-    character(len=24), parameter :: ind = '                      '
+    character(len=22), parameter :: ind = '                      '
 
     if (r%git_dirty) then; git_status = '(working tree dirty)'; else; git_status = '(working tree clean)'; end if
     call wline(u, repeat('=', 90))
@@ -1388,12 +1388,21 @@ contains
       case ('-o', '-module', '-J', '-I')
         skipnext = .true.; cycle
       end select
-      if (tok(1:1) /= '-') cycle
+      ! file names and directories (sources, objects, module paths); a plain word is an option value ('-warn all')
+      if (index(tok, '/') > 0 .or. ends(tok, '.f90') .or. ends(tok, '.F90') .or. ends(tok, '.o') .or. ends(tok, '.mod')) cycle
       if (tok(1:2) == '-I' .or. tok(1:2) == '-J' .or. index(tok, '-module=') == 1) cycle
-      if (index(' ' // trim(out) // ' ', ' ' // trim(tok) // ' ') > 0) cycle
+      if (tok(1:1) == '-' .and. index(' ' // trim(out) // ' ', ' ' // trim(tok) // ' ') > 0) cycle
       out = trim(out) // ' ' // trim(tok)
     end do
     out = adjustl(out)
+  contains
+    logical function ends(t, suf)
+      character(len=*), intent(in) :: t, suf
+      integer :: n
+      n = len_trim(t)
+      ends = n >= len(suf)
+      if (ends) ends = t(n - len(suf) + 1:n) == suf
+    end function ends
   end function clean_flags
 
   !> date_and_time strings (ccyymmdd, hhmmss.sss) as 'ccyy-mm-dd hh:mm:ss'
