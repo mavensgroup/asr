@@ -49,7 +49,8 @@ module asr_asa
     integer :: mix_history = 8              !! Anderson mixing history
     real(dp) :: dvmax = 0.15_dp             !! safety clamp: max change of the potential per iteration, per point (Ry)
     real(dp) :: denumax = 0.08_dp           !! safety clamp: max change of E_nu per iteration (Ry)
-    logical :: second_order = .false.       !! diagnostic: orthogonal H = E_nu + h - h o h (the recursion Hamiltonian) instead of the generalised problem
+    logical :: second_order = .false.       !! diagnostic: orthogonal H = E_nu + h - h o h instead of the generalised problem; it depends on
+                                            !! alpha, so it is the recursion Hamiltonian only with std_alpha
     logical :: trace = .false.              !! print per iteration, class and spin: E_nu, C, sqrt(Delta)_d, q0, V(S), Madelung shift
   end type asa_input_t
 

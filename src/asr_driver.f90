@@ -38,7 +38,8 @@
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
 !>                  second_order (diagnostic, default false: the orthogonal second-order
 !>                  H^(2) = E_nu + h - h o h of the recursion route, no h p h overlap, density M0 phi^2 + 2 M1 phi phidot +
-!>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion)
+!>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion.  H^(2) depends on the
+!>                  screening constants at third order: it is the recursion's H^(2) only with std_alpha = true)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
 !>   [output]       dos_file, out_file, params_file (method = "kspace")
 !> Examples: pure bcc Fe = lattice "bcc", centering "I", one sublattice [[0,0,0]] with species ["Fe"]; B2 FeCo = "bcc", period 1,

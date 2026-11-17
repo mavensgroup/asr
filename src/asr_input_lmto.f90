@@ -23,7 +23,8 @@ module asr_input_lmto
     real(dp) :: smear = 0.01_dp, mixing = 0.3_dp, tolerance = 1.0e-6_dp, zeta0 = 0.4_dp, sigma = 0.7_dp
     logical :: relativistic = .true.
     logical :: trace = .false.
-    logical :: second_order = .false.   !! diagnostic: orthogonal H^(2) = E_nu + h - h o h with the recursion's density form
+    logical :: second_order = .false.   !! diagnostic: orthogonal H^(2) = E_nu + h - h o h with the recursion's density form;
+                                        !! H^(2) depends on alpha: the recursion's H^(2) needs std_alpha as well
     real(dp) :: alpha_scale = 1.0_dp    !! diagnostic: screening constants times this factor
     logical :: std_alpha = .false.      !! diagnostic: the recursion's standard_alpha() instead of the alpha of sigma
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, dos_smear = 0.01_dp
