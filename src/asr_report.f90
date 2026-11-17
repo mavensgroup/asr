@@ -24,7 +24,7 @@ module asr_report
   public :: rep_write_report, rep_write_json, rep_write_dos_header, rep_wall, fnv1a64_file
   public :: rep_banner, rep_echo_input, rep_method, rep_structure, rep_sro, rep_scf_history
   public :: rep_energy, rep_components, rep_fermi, rep_checks, rep_timing, rep_warnings, rep_files, rep_close
-  public :: ry_to_ev, bohr_to_ang, gamma_e_const, chi_p_const, get_host, get_pid
+  public :: ry_to_ev, bohr_to_ang, gamma_e_const, chi_p_const, get_host, get_pid, collect_warnings, clean_flags, fmt_dt
 
   character(len=*), parameter :: program_version = 'asr 0.1.0'
   real(dp), parameter :: ry_to_ev = 13.605693123_dp
@@ -102,7 +102,7 @@ module asr_report
     character(len=64) :: git_rev = 'unknown'
     logical :: git_dirty = .false.
     character(len=128) :: compiler_ver = ''
-    character(len=512) :: compiler_opts = ''
+    character(len=4096) :: compiler_opts = ''
     character(len=64) :: host = ''
     integer :: pid = 0
     character(len=10) :: start_date = '', start_time = ''
@@ -141,11 +141,14 @@ module asr_report
     real(dp) :: alpha_scale = 1.0_dp
     character(len=16) :: terminator = 'hull'
     real(dp) :: depth_tol = 1.0e-5_dp
-    integer :: contour_nodes = 0
+    integer :: contour_nodes = 0            !! all nodes of the occupation contour
+    integer :: contour_main = 0             !! nodes on the main line
+    integer :: contour_poles = 0            !! Matsubara poles (0: closed contour without Fermi smearing)
     real(dp) :: fermi_kt = 0.0_dp
     integer :: fermi_poles = 0
     real(dp) :: ebot_offset = 1.2_dp
-    real(dp) :: eta = 0.02_dp
+    real(dp) :: eta = 0.02_dp               !! [dos] eta: broadening of the DOS curve
+    real(dp) :: ed_eta = 0.01_dp            !! Im z of the E_F probe: broadening of N(E_F)
     real(dp) :: sim_beta = 0.7_dp
     logical :: has_screen = .false.
     logical :: unscreened = .false.
@@ -337,30 +340,29 @@ contains
     if (len_trim(line) > 0) call wline(u, line)
   end subroutine write_wrapped
 
+
   !> Section 4.1: Banner and provenance
   subroutine rep_banner(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
     character(len=90) :: line
     character(len=32) :: git_status
-    character(len=512) :: wdir
+    character(len=24), parameter :: ind = '                      '
 
     if (r%git_dirty) then; git_status = '(working tree dirty)'; else; git_status = '(working tree clean)'; end if
-
-    wdir = trim(r%workdir)
-    if (len_trim(wdir) == 0) wdir = '.'
-
     call wline(u, repeat('=', 90))
     call wline(u, ' ASR  augmented-space recursion for disordered alloys  *  TB-LMTO-ASA')
     call wline(u, repeat('=', 90))
-    call write_wrapped(u, ' program            : ', trim(program_version) // '   git ' // trim(r%git_rev) // '   ' // trim(git_status), '                      ')
-    call write_wrapped(u, ' compiler           : ', trim(r%compiler_ver), '                      ')
-    call write_wrapped(u, ' flags              : ', trim(r%compiler_opts), '                      ')
-    call write_wrapped(u, ' started            : ', trim(r%start_date) // ' ' // trim(r%start_time) // '   host ' // trim(r%host) // '   pid ' // trim(itoa(r%pid)), '                      ')
+    call write_wrapped(u, ' program            : ', trim(program_version) // '   git ' // trim(r%git_rev) // '   ' // &
+                       trim(git_status), ind)
+    call write_wrapped(u, ' compiler           : ', trim(r%compiler_ver), ind)
+    call write_wrapped(u, ' flags              : ', trim(clean_flags(r%compiler_opts)), ind)
+    call write_wrapped(u, ' started            : ', trim(fmt_dt(r%start_date, r%start_time)) // '   host ' // trim(r%host) // &
+                       '   pid ' // trim(itoa(r%pid)), ind)
     write (line, '(a,i0,a,i0,a)') ' parallel           : MPI ranks ', r%mpi_ranks, ', OpenMP threads ', r%omp_threads, ' per rank'
     call wline(u, line)
-    call write_wrapped(u, ' input              : ', trim(r%infile) // '   fingerprint ' // trim(r%fingerprint), '                      ')
-    call write_wrapped(u, ' working directory  : ', trim(wdir), '                      ')
+    call write_wrapped(u, ' input              : ', trim(r%infile) // '   fingerprint ' // trim(r%fingerprint), ind)
+    call write_wrapped(u, ' working directory  : ', trim(abs_dir(r%workdir)), ind)
     call wline(u, ' units              : energy Ry, length Bohr, charge e, moment mu_B, DOS states/Ry')
     call wline(u, ' conversions        : 1 Ry = 13.605693123 eV = 0.5 Ha;  1 Bohr = 0.529177211 Angstrom')
     call wline(u, repeat('=', 90))
@@ -386,6 +388,7 @@ contains
     close (v)
   end subroutine rep_echo_input
 
+
   !> Section 4.3: Method specifications
   subroutine rep_method(u, r)
     integer, intent(in) :: u
@@ -401,7 +404,8 @@ contains
       call wline(u, line)
       write (line, '(a,f6.3)') ' screening sigma    : ', r%k_sigma
       call wline(u, line)
-      write (line, '(a,a,a,i0,a,f8.4,a,i0)') ' BZ integration     : ', trim(r%k_bz), ', nk = ', r%k_nk, ', smear = ', r%k_smear, ' Ry, dos_nk = ', r%k_dos_nk
+      write (line, '(a,a,a,i0,a,f7.4,a,i0)') ' BZ integration     : ', trim(r%k_bz), ', nk ', r%k_nk, ', smearing ', r%k_smear, &
+        ' Ry, DOS nk ', r%k_dos_nk
       call wline(u, line)
     else
       if (trim(r%route) == 'ed3') then
@@ -420,40 +424,55 @@ contains
       if (allocated(r%nodes) .and. allocated(r%subname)) then
         line = ' nodes / sublattice :'
         do i = 1, size(r%nodes)
-          line = trim(line) // ' ' // trim(r%subname(i)) // ' ' // trim(itoa(r%nodes(i))) // ' '
+          line = trim(line) // ' ' // trim(r%subname(i)) // ' ' // trim(itoa(r%nodes(i)))
+          if (i < size(r%nodes)) line = trim(line) // ','
         end do
         call wline(u, line)
       end if
-      write (line, '(a,f6.3,a,f6.3,a)') ' S^alpha            : kept range ', r%s_range, ' alat, inversion radius ', r%inv_radius, ' alat'
+      write (line, '(a,a,a,a,a)') ' S^alpha            : kept range ', trim(ftoa(r%s_range, 3)), ' alat, inversion radius ', &
+        trim(ftoa(r%inv_radius, 3)), ' alat'
       call wline(u, line)
-      write (line, '(a,f8.5,a,f8.5,a,f8.5)') ' screening alpha    : s ', r%alpha(0), '   p ', r%alpha(1), '   d ', r%alpha(2)
+      write (line, '(a,f8.5,a,f8.5,a,f8.5)') ' screening alpha    : s', r%alpha(0), '   p', r%alpha(1), '   d', r%alpha(2)
       call wline(u, line)
-      write (line, '(a,a,a,es8.1,a)') ' terminator         : ', trim(r%terminator), ';  depth tolerance ', r%depth_tol, ' (relative)'
+      write (line, '(a,a,a,a,a)') ' terminator         : ', trim(r%terminator), ';  depth tolerance ', trim(esf(r%depth_tol, 1)), &
+        ' (relative)'
       call wline(u, line)
-      write (line, '(a,i0,a,f6.3,a,i0,a)') ' occupation contour : ', r%contour_nodes, ' nodes (Fermi function, kT ', &
-        r%fermi_kt * 1000.0_dp, ' mRy, ', r%fermi_poles, ' Matsubara poles)'
+      if (r%contour_poles > 0) then
+        write (line, '(a,i0,a,i0,a,i0,a,a,a)') ' occupation contour : ', r%contour_nodes, ' nodes: main line ', r%contour_main, &
+          ', Matsubara poles ', r%contour_poles, ' (kT ', trim(ftoa(r%fermi_kt * 1000.0_dp, 3)), ' mRy)'
+      else
+        write (line, '(a,i0,a,i0,a)') ' occupation contour : ', r%contour_nodes, ' nodes: closed contour, main line ', &
+          r%contour_main, ' (no Fermi smearing)'
+      end if
       call wline(u, line)
-      write (line, '(a,f6.3,a,f6.3,a)') '                      bottom ', r%ebot_offset, ' Ry below the lowest E_nu;  E_F probe eta ', r%eta, ' Ry'
+      write (line, '(a,a,a,a,a)') '                      bottom ', trim(ftoa(r%ebot_offset, 3)), &
+        ' Ry below the lowest E_nu;  E_F probe eta ', trim(ftoa(r%ed_eta, 3)), ' Ry'
       call wline(u, line)
       call wline(u, ' electrostatics     : Madelung of the sublattice averages (Ewald, decoration cell)')
       if (r%unscreened) then
         call wline(u, '                      screening: none (sim_beta = 0; bare point charges)')
       else
-        write (line, '(a,f6.3,a)') '                      + screened charge deviations (SIM, sim_beta ', r%sim_beta, ')'
+        write (line, '(a,a,a)') '                      + screened charge deviations (SIM, sim_beta ', trim(ftoa(r%sim_beta, 3)), ')'
         call wline(u, line)
-        write (line, '(a,f7.4,a,f6.4,a,f7.4,a,f6.3)') ' screening model    : hardness a ', r%screen_a, &
-          ' Ry/e  G00 ', r%screen_g00, '  G1 ', r%screen_g1, '  W00/G00 ', r%screen_w00_g00
+        write (line, '(a,a,a,a,a,a,a,a)') ' screening model    : hardness a ', trim(ftoa(r%screen_a, 4)), ' Ry/e   G00 ', &
+          trim(ftoa(r%screen_g00, 4)), '   G1 ', trim(ftoa(r%screen_g1, 4)), '   W00/G00 ', trim(ftoa(r%screen_w00_g00, 4))
         call wline(u, line)
       end if
     end if
-    write (line, '(a,f6.3,a,i0)') ' mixing             : Anderson, beta ', r%mix_beta, ', history ', r%mix_history
+    write (line, '(a,a,a,i0)') ' mixing             : Anderson, beta ', trim(ftoa(r%mix_beta, 3)), ', history ', r%mix_history
     call wline(u, line)
-    write (line, '(a,f6.2,a,f6.2,a)') '                      step limits ', r%dvmax, ' Ry (V), ', r%denumax, ' Ry (E_nu)'
+    write (line, '(a,a,a,a,a)') '                      step limits ', trim(ftoa(r%dvmax, 2)), ' Ry (V), ', trim(ftoa(r%denumax, 2)), &
+      ' Ry (E_nu)'
     call wline(u, line)
-    write (line, '(a,es8.1,a)') ' convergence        : max over r of r/(1+r) |V_out - V_in| < ', r%tol, ' Ry'
+    write (line, '(a,a,a)') ' convergence        : max over r of r/(1+r) |V_out - V_in| < ', trim(esf(r%tol, 1)), ' Ry'
     call wline(u, line)
-    call wline(u, '                      (with SRO also a |u_out - u_in|);  E_nu inside its band window')
+    if (r%sro%uform) then
+      call wline(u, '                      and a |u_out - u_in| of the SRO drive;  E_nu inside its band window')
+    else
+      call wline(u, '                      and E_nu inside its band window')
+    end if
   end subroutine rep_method
+
 
   !> Section 4.4: Structure
   subroutine rep_structure(u, r)
@@ -462,33 +481,59 @@ contains
     character(len=90) :: line
     character(len=64) :: item
     integer :: k, i
+    real(dp) :: vsite, vsph
 
     call rep_section(u, 'structure')
-    write (line, '(a,a,a,f11.6,a,f11.6,a)') ' graph lattice           : ', trim(r%lattice), '   a = ', r%alat, ' Bohr (', &
-      r%alat * bohr_to_ang, ' Angstrom)'
+    if (trim(r%method) == 'kspace') then
+      if (trim(r%lattice) == 'cell') then
+        call wline(u, ' lattice                 : explicit cell (primitive vectors below)')
+      else
+        call wline(u, ' lattice                 : ' // trim(r%lattice))
+      end if
+    else
+      call wline(u, ' graph lattice           : ' // trim(r%lattice))
+    end if
+    write (line, '(a,f11.6,a,f11.6,a)') ' lattice constant        : ', r%alat, ' Bohr  (', r%alat * bohr_to_ang, ' Angstrom)'
     call wline(u, line)
-    write (line, '(a,i0,a,i0,a)') ' decoration cell         : ', r%period, '^3 conventional cubes, ', r%nsite, ' sites'
-    call wline(u, line)
-    write (line, '(a,f11.6,a)') ' sphere radius S         : ', r%sws_avg, ' Bohr (equal spheres, space filling)'
-    call wline(u, line)
-    write (line, '(a,f11.5,a,f11.5,a)') ' volume per site         : ', r%cell_vol / real(max(1, r%nsite), dp), &
-      ' Bohr^3 (', (r%cell_vol / real(max(1, r%nsite), dp)) * bohr_to_ang**3, ' Angstrom^3)'
-    call wline(u, line)
-    call wline(u, '')
+    if (trim(r%method) == 'kspace') then
+      call wline(u, ' primitive vectors (alat units):')
+      do k = 1, 3
+        write (line, '(a,i1,a,3f11.6)') '   a', k, '                    :', r%avec(:, k)
+        call wline(u, line)
+      end do
+      vsite = r%cell_vol / real(max(1, r%nat), dp)
+      write (line, '(a,i0)') ' atoms per cell          : ', r%nat
+      call wline(u, line)
+      write (line, '(a,f11.5,a,f11.5,a)') ' volume per atom         : ', vsite, ' Bohr^3  (', vsite * bohr_to_ang**3, ' Angstrom^3)'
+      call wline(u, line)
+      vsph = 0.0_dp
+      if (allocated(r%sites)) vsph = sum([(4.0_dp * pi / 3.0_dp * r%sites(i)%sws**3, i=1, r%nat)])
+      write (line, '(a,f9.5)') ' sphere / cell volume    : ', vsph / max(r%cell_vol, tiny(1.0_dp))
+      call wline(u, line)
+    else
+      write (line, '(a,i0,a,i0,a)') ' decoration cell         : ', r%period, '^3 conventional cubes, ', r%nsite, ' sites'
+      call wline(u, line)
+      write (line, '(a,f11.6,a)') ' sphere radius S         : ', r%sws_avg, ' Bohr (equal spheres, space filling)'
+      call wline(u, line)
+      vsite = r%cell_vol / real(max(1, r%nsite), dp)
+      write (line, '(a,f11.5,a,f11.5,a)') ' volume per site         : ', vsite, ' Bohr^3  (', vsite * bohr_to_ang**3, ' Angstrom^3)'
+      call wline(u, line)
+    end if
 
     if (allocated(r%sub)) then
+      call wline(u, '')
       call wline(u, ' sublattice  site fraction  species and concentrations')
-      call wline(u, ' ---------------------------------------------------------------------')
+      call wline(u, ' ' // repeat('-', 69))
       do k = 1, size(r%sub)
-        write (line, '(1x,a10,f14.4)') r%sub(k)%name, r%sub(k)%frac
+        line = ' ' // lj(r%sub(k)%name, 10) // rj(ftoa(r%sub(k)%frac, 4), 15) // ' '
         if (allocated(r%sub(k)%species) .and. allocated(r%sub(k)%conc)) then
           do i = 1, r%sub(k)%nspec
-            item = ' ' // trim(r%sub(k)%species(i)) // ' ' // trim(ftoa(r%sub(k)%conc(i), 4))
-            if (len_trim(line) + len_trim(item) > 88) then
+            item = trim(r%sub(k)%species(i)) // ' ' // trim(ftoa(r%sub(k)%conc(i), 4))
+            if (len_trim(line) + len_trim(item) + 3 > 88) then
               call wline(u, line)
-              line = '                           ' // trim(item)
+              line = repeat(' ', 27) // trim(item)
             else
-              line = trim(line) // ' ' // trim(item)
+              line = line(1:max(27, len_trim(line))) // '  ' // trim(item)
             end if
           end do
         end if
@@ -498,10 +543,10 @@ contains
 
     if (allocated(r%sites) .and. r%nat > 0) then
       call wline(u, '')
-      call wline(u, ' site  species  class        position (alat units)           S [Bohr]')
-      call wline(u, ' ---------------------------------------------------------------------')
+      call wline(u, ' site  species  class      x (alat)    y (alat)    z (alat)      S [Bohr]')
+      call wline(u, ' ' // repeat('-', 75))
       do i = 1, r%nat
-        write (line, '(i5,2x,a8,i6,3x,3f10.5,f14.5)') r%sites(i)%ia, r%sites(i)%species, r%sites(i)%iclass, &
+        write (line, '(i5,2x,a8,i6,1x,3f12.6,f14.5)') r%sites(i)%ia, r%sites(i)%species, r%sites(i)%iclass, &
           r%sites(i)%pos, r%sites(i)%sws
         call wline(u, line)
       end do
@@ -579,111 +624,97 @@ contains
     end if
   end subroutine rep_sro
 
-  !> Section 4.6: SCF history table and per-component blocks
+
+  !> Section 4.6: SCF history (main table and per-component blocks)
   subroutine rep_scf_history(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
     character(len=90) :: line
     character(len=32) :: buf
     integer :: it, p, pstart, pend, bsize
-    real(dp) :: de, sitem
+    real(dp) :: sitem
 
     call rep_section(u, 'SCF history')
-    call wline(u, ' iter      E_tot [Ry]     dE [Ry]    dV [Ry] dE_nu [Ry]      E_F [Ry]  pass  wall [s]')
-    call wline(u, ' ------------------------------------------------------------------------------------')
+    call wline(u, ' iter' // rj('E_tot [Ry]', 16) // rj('dE [Ry]', 12) // rj('dV [Ry]', 11) // rj('dE_nu [Ry]', 11) // &
+                  rj('E_F [Ry]', 14) // rj('pass', 6) // rj('wall [s]', 9))
+    call wline(u, ' ' // repeat('-', 83))
     do it = 1, r%iter
+      write (line, '(i5,f16.8)') it, r%hist_etot(it)
       if (it == 1) then
-        if (allocated(r%hist_npass) .and. allocated(r%hist_wall) .and. allocated(r%hist_denu)) then
-          write (line, '(i5,f16.8,a12,2es11.3,f14.6,i6,f9.2)') it, r%hist_etot(it), '         ---', &
-            r%hist_dv(it), r%hist_denu(it), r%hist_ef(it), r%hist_npass(it), r%hist_wall(it)
-        else if (allocated(r%hist_wall)) then
-          write (line, '(i5,f16.8,a12,es11.3,11x,f14.6,6x,f9.2)') it, r%hist_etot(it), '         ---', &
-            r%hist_dv(it), r%hist_ef(it), r%hist_wall(it)
-        else
-          write (line, '(i5,f16.8,a12,es11.3,11x,f14.6)') it, r%hist_etot(it), '         ---', &
-            r%hist_dv(it), r%hist_ef(it)
-        end if
+        line = line(1:21) // rj('---', 12)
       else
-        de = r%hist_etot(it) - r%hist_etot(it - 1)
-        if (allocated(r%hist_npass) .and. allocated(r%hist_wall) .and. allocated(r%hist_denu)) then
-          write (line, '(i5,f16.8,es12.3,2es11.3,f14.6,i6,f9.2)') it, r%hist_etot(it), de, &
-            r%hist_dv(it), r%hist_denu(it), r%hist_ef(it), r%hist_npass(it), r%hist_wall(it)
-        else if (allocated(r%hist_wall)) then
-          write (line, '(i5,f16.8,es12.3,es11.3,11x,f14.6,6x,f9.2)') it, r%hist_etot(it), de, &
-            r%hist_dv(it), r%hist_ef(it), r%hist_wall(it)
-        else
-          write (line, '(i5,f16.8,es12.3,es11.3,11x,f14.6)') it, r%hist_etot(it), de, &
-            r%hist_dv(it), r%hist_ef(it)
-        end if
+        write (buf, '(es12.3)') r%hist_etot(it) - r%hist_etot(it - 1)
+        line = line(1:21) // buf(1:12)
       end if
+      write (buf, '(es11.3)') r%hist_dv(it); line = line(1:33) // buf(1:11)
+      if (allocated(r%hist_denu)) then
+        write (buf, '(es11.3)') r%hist_denu(it)
+      else
+        buf = rj('---', 11)
+      end if
+      line = line(1:44) // buf(1:11)
+      write (buf, '(f14.8)') r%hist_ef(it); line = line(1:55) // buf(1:14)
+      if (allocated(r%hist_npass)) then
+        write (buf, '(i6)') r%hist_npass(it)
+      else
+        buf = rj('---', 6)
+      end if
+      line = line(1:69) // buf(1:6)
+      if (allocated(r%hist_wall)) then
+        write (buf, '(f9.2)') r%hist_wall(it)
+      else
+        buf = rj('---', 9)
+      end if
+      line = line(1:75) // buf(1:9)
       call wline(u, line)
     end do
-    call wline(u, ' ------------------------------------------------------------------------------------')
+    call wline(u, ' ' // repeat('-', 83))
     if (r%converged) then
-      write (line, '(a,i0,a,es8.1,a)') ' converged after ', r%iter, ' iterations (dV < ', r%tol, ' Ry, no E_nu held at its window)'
+      call wline(u, ' converged after ' // trim(itoa(r%iter)) // ' iterations (dV < ' // trim(esf(r%tol, 1)) // &
+                 ' Ry, no E_nu held at its window)')
     else
-      write (line, '(a,i0,a,es8.1,a)') ' WARNING: not converged after ', r%iter, ' iterations (dV < ', r%tol, ' Ry)'
+      call wline(u, ' WARNING: not converged after ' // trim(itoa(r%iter)) // ' iterations (dV < ' // trim(esf(r%tol, 1)) // ' Ry)')
     end if
-    call wline(u, line)
     call wline(u, '')
 
-    ! Per-component history blocks
-    if (allocated(r%hist_moment) .and. allocated(r%hist_qnet) .and. r%ncomp > 0) then
-      if (r%nspin == 2) then
-        call wline(u, ' per component:  m [mu_B per atom]  qnet [e per atom]')
-        bsize = 3  !! block size
-        pstart = 1
-        do while (pstart <= r%ncomp)
-          pend = min(r%ncomp, pstart + bsize - 1)
-          line = ' iter'
-          do p = pstart, pend
-            line = trim(line) // '    ' // trim(r%comp(p)%label) // ' m  ' // trim(r%comp(p)%label) // ' qnet'
-          end do
-          if (pstart == 1) line = trim(line) // '   site m'
-          call wline(u, line)
-          call wline(u, ' ---------------------------------------------------------------------------------')
-          do it = 1, r%iter
-            write (line, '(i5)') it
-            do p = pstart, pend
-              write (buf, '(f10.4,f11.5)') r%hist_moment(it, p), r%hist_qnet(it, p)
-              line = trim(line) // buf
-            end do
-            if (pstart == 1) then
-              sitem = sum(r%hist_moment(it, 1:r%ncomp) * r%comp(1:r%ncomp)%weight_per_site)
-              write (buf, '(f9.4)') sitem
-              line = trim(line) // buf
-            end if
-            call wline(u, line)
-          end do
-          call wline(u, '')
-          pstart = pend + 1
-        end do
-      else
-        call wline(u, ' per component:  qnet [e per atom]')
-        bsize = 7  !! block size
-        pstart = 1
-        do while (pstart <= r%ncomp)
-          pend = min(r%ncomp, pstart + bsize - 1)
-          line = ' iter'
-          do p = pstart, pend
-            line = trim(line) // '  ' // trim(r%comp(p)%label) // ' qnet'
-          end do
-          call wline(u, line)
-          call wline(u, ' ---------------------------------------------------------------------------------')
-          do it = 1, r%iter
-            write (line, '(i5)') it
-            do p = pstart, pend
-              write (buf, '(f11.5)') r%hist_qnet(it, p)
-              line = trim(line) // buf
-            end do
-            call wline(u, line)
-          end do
-          call wline(u, '')
-          pstart = pend + 1
-        end do
-      end if
+    if (.not. (allocated(r%hist_moment) .and. allocated(r%hist_qnet) .and. r%ncomp > 0)) return
+    if (r%nspin == 2) then
+      call wline(u, ' per component:  m [mu_B per atom]  qnet [e per atom];  site m = sum_p w_p m_p')
+      bsize = 3
+    else
+      call wline(u, ' per component:  qnet [e per atom]')
+      bsize = 7
     end if
+    pstart = 1
+    do while (pstart <= r%ncomp)
+      pend = min(r%ncomp, pstart + bsize - 1)
+      line = ' iter'
+      do p = pstart, pend
+        if (r%nspin == 2) line = line(1:len_trim(line)) // rj(trim(r%comp(p)%label) // ' m', 11)
+        line = line(1:len_trim(line)) // rj(trim(r%comp(p)%label) // ' qnet', 13)
+      end do
+      if (r%nspin == 2 .and. pstart == 1) line = line(1:len_trim(line)) // rj('site m', 10)
+      call wline(u, line)
+      call wline(u, ' ' // repeat('-', len_trim(line) - 1))
+      do it = 1, r%iter
+        write (line, '(i5)') it
+        do p = pstart, pend
+          if (r%nspin == 2) then
+            write (buf, '(f11.5)') nz(r%hist_moment(it, p), 5); line = line(1:len_trim(line)) // buf(1:11)
+          end if
+          write (buf, '(f13.5)') nz(r%hist_qnet(it, p), 5); line = line(1:len_trim(line)) // buf(1:13)
+        end do
+        if (r%nspin == 2 .and. pstart == 1) then
+          sitem = sum(r%hist_moment(it, 1:r%ncomp) * r%comp(1:r%ncomp)%weight_per_site)
+          write (buf, '(f10.5)') nz(sitem, 5); line = line(1:len_trim(line)) // buf(1:10)
+        end if
+        call wline(u, line)
+      end do
+      call wline(u, '')
+      pstart = pend + 1
+    end do
   end subroutine rep_scf_history
+
 
   !> Section 4.7: Total energy decomposition
   subroutine rep_energy(u, r)
@@ -691,78 +722,68 @@ contains
     type(rep_run_t), intent(in) :: r
     character(len=90) :: line
     character(len=32) :: buf
-    character(len=26) :: tdesc(n_et)
+    character(len=22), parameter :: tname(n_et) = [character(len=22) :: 'valence band energy', 'core eigenvalue sum', &
+      'double counting', 'sphere Hartree', 'exchange-correlation', 'Madelung', 'screened deviations']
+    character(len=24), parameter :: tform(n_et) = [character(len=24) :: 'sum_l (q1 + E_nu Q_l)', '', '-int n (v_in + 2Z/r)', &
+      '1/2 int n V_H', 'int n eps_xc', '1/2 q V_M', '1/2 q V_F']
+    character(len=16) :: unit
     integer :: k, p, pstart, pend, bsize
 
-    tdesc = [ &
-      'sum_l (q1 + E_nu Q_l)     ', &
-      '                          ', &
-      '-int n (v_in + 2Z/r)      ', &
-      '1/2 int n V_H             ', &
-      'int n eps_xc              ', &
-      '1/2 q V_M                 ', &
-      '1/2 q V_F                 ' ]
-
+    unit = 'per site [Ry]'; if (trim(r%method) == 'kspace') unit = 'per atom [Ry]'
     call rep_section(u, 'total energy')
     call wline(u, ' Kohn-Sham form: output density in the input potential; no Fermi smearing entropy')
-    call wline(u, ' term                                                            per atom [Ry]')
-    call wline(u, ' ------------------------------------------------------------------------------')
+    call wline(u, ' ' // lj('term', 46) // rj(unit, 22))
+    call wline(u, ' ' // repeat('-', 67))
     do k = 1, n_et
-      write (line, '(1x,a26,1x,a26,f18.8)') et_name(k), tdesc(k), r%eterm(k)
-      call wline(u, line)
+      write (buf, '(f22.8)') nz(r%eterm(k), 8)
+      call wline(u, ' ' // tname(k) // tform(k) // buf(1:22))
     end do
-    call wline(u, ' ------------------------------------------------------------------------------')
-    write (line, '(1x,a53,f18.8)') 'total energy E_tot', r%etot
-    call wline(u, line)
+    call wline(u, ' ' // repeat('-', 67))
+    write (buf, '(f22.8)') r%etot
+    call wline(u, ' ' // lj('total energy E_tot', 46) // buf(1:22))
 
-    ! Second table per component if alloy
-    if (allocated(r%ecomp) .and. r%ncomp > 1) then
-      call wline(u, '')
-      bsize = 3
-      pstart = 1
-      do while (pstart <= r%ncomp)
-        pend = min(r%ncomp, pstart + bsize - 1)
-        line = ' term                      '
-        line(1:27) = ' term'
-        do p = pstart, pend
-          write (buf, '(1x,a14)') trim(r%comp(p)%label)
-          line = line(1:27 + (p - pstart) * 15) // buf
-        end do
-        if (pend == r%ncomp) then
-          line = line(1:27 + (pend - pstart + 1) * 15) // '        per site'
-        end if
-        call wline(u, line)
-        call wline(u, ' ------------------------------------------------------------------------------')
-        do k = 1, n_et
-          line = ''
-          line(1:27) = ' ' // trim(et_name(k))
-          do p = pstart, pend
-            write (buf, '(1x,f14.8)') r%ecomp(k, p)
-            line = line(1:27 + (p - pstart) * 15) // buf
-          end do
-          if (pend == r%ncomp) then
-            write (buf, '(1x,f14.8)') r%eterm(k)
-            line = line(1:27 + (pend - pstart + 1) * 15) // buf
-          end if
-          call wline(u, line)
-        end do
-        call wline(u, ' ------------------------------------------------------------------------------')
-        line = ''
-        line(1:27) = ' total energy'
-        do p = pstart, pend
-          write (buf, '(1x,f14.8)') sum(r%ecomp(:, p))
-          line = line(1:27 + (p - pstart) * 15) // buf
-        end do
-        if (pend == r%ncomp) then
-          write (buf, '(1x,f14.8)') r%etot
-          line = line(1:27 + (pend - pstart + 1) * 15) // buf
-        end if
-        call wline(u, line)
-        call wline(u, '')
-        pstart = pend + 1
-      end do
+    if (.not. (allocated(r%ecomp) .and. r%ncomp > 1)) return
+    call wline(u, '')
+    if (trim(r%method) == 'kspace') then
+      call wline(u, ' per class [Ry per atom of the class]; last column per atom of the cell')
+    else
+      call wline(u, ' per component [Ry per atom of the component]; last column per site = sum_p w_p E_p')
     end if
+    bsize = 3
+    pstart = 1
+    do while (pstart <= r%ncomp)
+      pend = min(r%ncomp, pstart + bsize - 1)
+      line = ' ' // lj('term', 22)
+      do p = pstart, pend
+        line = line(1:len_trim(line)) // rj(r%comp(p)%label, 16)
+      end do
+      if (pend == r%ncomp) line = line(1:len_trim(line)) // rj('per site', 16)
+      call wline(u, line)
+      call wline(u, ' ' // repeat('-', len_trim(line) - 1))
+      do k = 1, n_et
+        line = ' ' // tname(k)
+        do p = pstart, pend
+          write (buf, '(f16.8)') nz(r%ecomp(k, p), 8); line = line(1:23 + (p - pstart) * 16) // buf(1:16)
+        end do
+        if (pend == r%ncomp) then
+          write (buf, '(f16.8)') nz(r%eterm(k), 8); line = line(1:23 + (pend - pstart + 1) * 16) // buf(1:16)
+        end if
+        call wline(u, line)
+      end do
+      line = ' ' // lj('total energy', 22)
+      do p = pstart, pend
+        write (buf, '(f16.8)') sum(r%ecomp(:, p)); line = line(1:23 + (p - pstart) * 16) // buf(1:16)
+      end do
+      if (pend == r%ncomp) then
+        write (buf, '(f16.8)') r%etot; line = line(1:23 + (pend - pstart + 1) * 16) // buf(1:16)
+      end if
+      call wline(u, ' ' // repeat('-', len_trim(line) - 1))
+      call wline(u, line)
+      call wline(u, '')
+      pstart = pend + 1
+    end do
   end subroutine rep_energy
+
 
   !> Section 4.8: Converged results per component
   subroutine rep_components(u, r)
@@ -774,31 +795,28 @@ contains
     real(dp) :: qtot, ntot
 
     call rep_section(u, 'converged results')
-    write (line, '(a,f16.8,a)') ' E_F                       : ', r%ef, ' Ry'
+    write (line, '(a,f14.8,a)') ' E_F                       : ', r%ef, ' Ry'
     call wline(u, line)
-    write (line, '(a,es12.3,a)') ' cell charge residual      : ', r%qcell, ' e per site   (sum_p w_p qnet_p; 0 = neutral)'
-    call wline(u, line)
+    call wline(u, ' cell charge residual      : ' // trim(esf(r%qcell, 2)) // ' e per site   (sum_p w_p qnet_p; 0 = neutral)')
     if (r%nspin == 2) then
-      write (line, '(a,f12.5,a)') ' spin moment per site      : ', r%moment_site, ' mu_B'
+      write (line, '(a,f12.5,a)') ' spin moment per site      : ', nz(r%moment_site, 5), ' mu_B'
       call wline(u, line)
     end if
 
     do p = 1, r%ncomp
       call wline(u, '')
       write (line, '(a,a,a,f5.1,a,i0,a,f7.4,a,f7.4)') ' component ', trim(r%comp(p)%label), &
-        '   Z ', r%comp(p)%z, '  valence ', r%comp(p)%valence, '   c ', r%comp(p)%concentration, &
-        '   weight ', r%comp(p)%weight_per_site
+        '   Z ', r%comp(p)%z, '   valence ', r%comp(p)%valence, '   c ', r%comp(p)%concentration, &
+        '   weight per site ', r%comp(p)%weight_per_site
       call wline(u, line)
-      write (line, '(a,f8.4,a,f9.5,a,f9.5,a,f9.5,a)') '   S ', r%comp(p)%sws, &
-        ' Bohr   electrons ', r%comp(p)%z + r%comp(p)%qnet, ' e   qnet ', r%comp(p)%qnet, &
-        ' e   moment ', r%comp(p)%moment, ' mu_B'
+      write (line, '(a,f8.5,a,f10.5,a,f9.5,a,f9.5,a)') '   S ', r%comp(p)%sws, ' Bohr   electrons in sphere ', &
+        r%comp(p)%z + r%comp(p)%qnet, ' e   qnet ', nz(r%comp(p)%qnet, 5), ' e   moment ', nz(r%comp(p)%moment, 5), ' mu_B'
       call wline(u, line)
       call wline(u, '')
 
-      ! Potential parameters
       call wline(u, '   potential parameters, gamma representation [Ry]')
-      call wline(u, '   spin  l        E_nu           C   sqrt(Delta)          p       gamma')
-      call wline(u, '   -----------------------------------------------------------------')
+      call wline(u, '   spin  l' // rj('E_nu', 12) // rj('C', 12) // rj('sqrt(Delta)', 12) // rj('p', 12) // rj('gamma', 12))
+      call wline(u, '   ' // repeat('-', 67))
       do s = 1, r%nspin
         do l = 0, 2
           write (line, '(3x,i4,2x,a1,5f12.6)') s, lname(l), r%comp(p)%enu(l, s), r%comp(p)%c(l, s), &
@@ -808,32 +826,38 @@ contains
       end do
       call wline(u, '')
 
-      ! Moments and DOS at E_F
-      call wline(u, '   moments and DOS at E_F, both spins')
-      call wline(u, '   spin  l    q0 [e]   q1 [e Ry]   q2 [e Ry^2]    Q_l [e]   N_l(E_F) [1/Ry]')
-      call wline(u, '   ---------------------------------------------------------------------')
+      if (r%nspin == 2) then
+        call wline(u, '   moments and DOS at E_F, per spin channel (row 1-2: spin 1 minus spin 2)')
+      else
+        call wline(u, '   moments and DOS at E_F, both spins')
+      end if
+      call wline(u, '   spin  l' // rj('q0 [e]', 11) // rj('q1 [e Ry]', 11) // rj('q2 [e Ry^2]', 12) // rj('Q_l [e]', 11) // &
+                    rj('N_l(E_F) [1/Ry]', 17))
+      call wline(u, '   ' // repeat('-', 69))
       do s = 1, r%nspin
         do l = 0, 2
-          write (line, '(3x,i4,2x,a1,3f11.5,f11.5,f17.4)') s, lname(l), r%comp(p)%q(0, l, s), &
-            r%comp(p)%q(1, l, s), r%comp(p)%q(2, l, s), r%comp(p)%qch(l, s), r%comp(p)%dosef(l, s)
+          write (line, '(3x,i4,2x,a1,2f11.5,f12.5,f11.5,f17.4)') s, lname(l), nz(r%comp(p)%q(0, l, s), 5), &
+            nz(r%comp(p)%q(1, l, s), 5), nz(r%comp(p)%q(2, l, s), 5), nz(r%comp(p)%qch(l, s), 5), nz(r%comp(p)%dosef(l, s), 4)
           call wline(u, line)
         end do
       end do
       if (r%nspin == 2) then
         do l = 0, 2
-          write (line, '(3x,a4,2x,a1,3f11.5,f11.5,f17.4)') 'diff', lname(l), &
-            r%comp(p)%q(0, l, 1) - r%comp(p)%q(0, l, 2), r%comp(p)%q(1, l, 1) - r%comp(p)%q(1, l, 2), &
-            r%comp(p)%q(2, l, 1) - r%comp(p)%q(2, l, 2), r%comp(p)%qch(l, 1) - r%comp(p)%qch(l, 2), &
-            r%comp(p)%dosef(l, 1) - r%comp(p)%dosef(l, 2)
+          write (line, '(3x,a4,2x,a1,2f11.5,f12.5,f11.5,f17.4)') ' 1-2', lname(l), &
+            nz(r%comp(p)%q(0, l, 1) - r%comp(p)%q(0, l, 2), 5), nz(r%comp(p)%q(1, l, 1) - r%comp(p)%q(1, l, 2), 5), &
+            nz(r%comp(p)%q(2, l, 1) - r%comp(p)%q(2, l, 2), 5), nz(r%comp(p)%qch(l, 1) - r%comp(p)%qch(l, 2), 5), &
+            nz(r%comp(p)%dosef(l, 1) - r%comp(p)%dosef(l, 2), 4)
           call wline(u, line)
         end do
       end if
-      qtot = sum(r%comp(p)%qch)
-      ntot = sum(r%comp(p)%dosef)
-      write (line, '(3x,a4,33x,f11.5,f17.4)') 'sum', qtot, ntot
+      qtot = sum(r%comp(p)%qch(:, 1:r%nspin))
+      ntot = sum(r%comp(p)%dosef(:, 1:r%nspin))
+      call wline(u, '   ' // repeat('-', 69))
+      write (line, '(3x,a,f11.5,f17.4)') lj('sum (valence electrons in the sphere)', 41), qtot, ntot
       call wline(u, line)
     end do
   end subroutine rep_components
+
 
   !> Section 4.9: Fermi level card
   subroutine rep_fermi(u, r)
@@ -849,214 +873,146 @@ contains
     chi = chi_p_const * nef
 
     call rep_section(u, 'Fermi level')
-    write (line, '(a,f16.8,a)') ' E_F                                       : ', r%ef, ' Ry'
+    write (line, '(a,f14.8,a)') ' E_F                                       : ', r%ef, ' Ry'
     call wline(u, line)
-    write (line, '(a,f9.4,a,f9.5,a)') ' N(E_F) per site, both spins               :  ', nef, ' states/Ry   (', nef_ev, ' states/eV)'
+    write (line, '(a,f10.4,a,f9.5,a)') ' N(E_F) per site, both spins               : ', nef, ' states/Ry   (', nef_ev, ' states/eV)'
     call wline(u, line)
     if (trim(r%method) == 'kspace') then
-      write (line, '(a,f8.4,a)') ' smearing of N(E_F)                        :  ', r%k_smear, ' Ry  (k-space BZ integration)'
+      write (line, '(a,f10.4,a)') ' smearing of N(E_F)                        : ', r%k_smear, ' Ry  (k-space BZ integration)'
     else
-      write (line, '(a,f8.4,a)') ' broadening of N(E_F)                      :  ', r%eta, ' Ry  (G at E_F + i eta)'
+      write (line, '(a,f10.4,a)') ' broadening of N(E_F)                      : ', r%ed_eta, ' Ry  (G at E_F + i eta)'
     end if
     call wline(u, line)
-    write (line, '(a,f9.4,a)') ' Sommerfeld coefficient, bare band          :  ', ge, ' mJ/(mol K^2)'
+    write (line, '(a,f10.4,a)') ' Sommerfeld coefficient, bare band         : ', ge, ' mJ/(mol K^2)'
     call wline(u, line)
-    write (line, '(a,es11.3,a)') ' Pauli susceptibility, bare (no Stoner)     :  ', chi, ' emu/mol'
-    call wline(u, line)
+    call wline(u, ' Pauli susceptibility, bare (no Stoner)    :  ' // trim(esf(chi, 3)) // ' emu/mol')
     call wline(u, ' gamma_e = (pi^2/3) k_B^2 N(E_F) = 0.173247 mJ/(mol K^2) per state/Ry;')
     call wline(u, ' chi_P = mu_B^2 N(E_F) = 2.37605E-06 emu/mol per state/Ry;  mol = mole of sites')
     call wline(u, '')
 
-    call wline(u, ' component      s [1/Ry]   p [1/Ry]   d [1/Ry]   total [1/Ry]   weight')
-    call wline(u, ' ---------------------------------------------------------------------')
+    call wline(u, ' ' // lj('component', 12) // rj('s [1/Ry]', 11) // rj('p [1/Ry]', 11) // rj('d [1/Ry]', 11) // &
+                  rj('total [1/Ry]', 15) // rj('weight', 9))
+    call wline(u, ' ' // repeat('-', 68))
     do p = 1, r%ncomp
-      write (line, '(1x,a12,3f11.4,f15.4,f9.4)') r%comp(p)%label, sum(r%comp(p)%dosef(0, :)), &
-        sum(r%comp(p)%dosef(1, :)), sum(r%comp(p)%dosef(2, :)), sum(r%comp(p)%dosef(:, :)), r%comp(p)%weight_per_site
+      write (line, '(1x,a12,3f11.4,f15.4,f9.4)') r%comp(p)%label, sum(r%comp(p)%dosef(0, 1:r%nspin)), &
+        sum(r%comp(p)%dosef(1, 1:r%nspin)), sum(r%comp(p)%dosef(2, 1:r%nspin)), sum(r%comp(p)%dosef(:, 1:r%nspin)), &
+        r%comp(p)%weight_per_site
       call wline(u, line)
     end do
-    call wline(u, ' ---------------------------------------------------------------------')
-    write (line, '(a,f12.4)') ' per site (sum_p w_p N_p)                              ', nef
+    call wline(u, ' ' // repeat('-', 68))
+    write (line, '(1x,a45,f15.4)') lj('per site (sum_p w_p N_p)', 45), nef
     call wline(u, line)
   end subroutine rep_fermi
+
 
   !> Section 4.10: Health checks
   subroutine rep_checks(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
     character(len=8) :: st
-    character(len=32) :: vstr, lstr
 
     call rep_section(u, 'health checks')
-    call wline(u, ' check                                          value               limit         status')
-    call wline(u, ' ----------------------------------------------------------------------------------------')
+    call wline(u, ' ' // lj('check', 44) // '  ' // lj('value', 20) // '  ' // lj('limit', 12) // '  status')
+    call wline(u, ' ' // repeat('-', 87))
 
-    ! 1. SCF converged
-    write (vstr, '(es8.1,a3)') r%hist_dv(max(1, r%iter)), ' Ry'
-    write (lstr, '(es8.1,a3)') r%tol, ' Ry'
-    if (r%converged .and. r%nclamp == 0) then; st = 'OK'; else; st = 'FAIL'; end if
-    call wcheck(u, 'SCF converged (dV)', trim(vstr), trim(lstr), trim(st))
+    if (r%converged) then; st = 'OK'; else; st = 'FAIL'; end if
+    call wcheck(u, 'SCF converged (dV)', trim(esf(r%hist_dv(max(1, r%iter)), 1)) // ' Ry', trim(esf(r%tol, 1)) // ' Ry', st)
 
-    ! 2. E_nu held at window
-    write (vstr, '(i0,a,i0)') r%nclamp, ' / ', r%nclamp_run
-    lstr = '0'
     if (r%nclamp == 0) then; st = 'OK'; else; st = 'FAIL'; end if
-    call wcheck(u, 'E_nu held at its window, last / whole run', trim(vstr), trim(lstr), trim(st))
+    call wcheck(u, 'E_nu held at its window, last / whole run', trim(itoa(r%nclamp)) // ' / ' // trim(itoa(r%nclamp_run)), '0', st)
 
     if (trim(r%method) == 'kspace') then
-      ! k-space band energy check
-      write (vstr, '(es8.1,a3)') abs(r%eband - r%sumev), ' Ry'
-      lstr = '1.0E-05 Ry'
       if (abs(r%eband - r%sumev) <= 1.0e-5_dp) then; st = 'OK'; else; st = 'WARN'; end if
-      call wcheck(u, 'band energy check |eband - sumev|', trim(vstr), trim(lstr), trim(st))
+      call wcheck(u, 'band energy check |eband - sumev|', trim(esf(abs(r%eband - r%sumev), 1)) // ' Ry', '1.0E-05 Ry', st)
     else
-      ! Recursion checks
-      write (vstr, '(i0,a,i0)') r%nnoncausal, ' of ', r%nnode
-      lstr = '0'
       if (r%nnoncausal == 0) then; st = 'OK'; else; st = 'WARN'; end if
-      call wcheck(u, 'non-causal contour values (-Im G <= 0)', trim(vstr), trim(lstr), trim(st))
-
-      write (vstr, '(es8.1,a,es8.1)') r%wbelow1, ' / ', r%wbelow
-      write (lstr, '(es8.1,a2)') r%wbelow_lim, ' e'
+      call wcheck(u, 'non-causal contour values (-Im G <= 0)', trim(itoa(r%nnoncausal)) // ' of ' // trim(itoa(r%nnode)), '0', st)
       if (r%below_ok) then; st = 'OK'; else; st = 'WARN'; end if
-      call wcheck(u, 'valence weight below contour, first / final', trim(vstr), trim(lstr), trim(st))
-
-      write (vstr, '(es9.1,a2)') r%qcell, ' e'
-      lstr = '1.0E-03 e'
+      call wcheck(u, 'valence weight below contour, first / final', trim(esf(r%wbelow1, 1)) // ' / ' // trim(esf(r%wbelow, 1)), &
+                  trim(esf(r%wbelow_lim, 1)) // ' e', st)
       if (abs(r%qcell) <= 1.0e-3_dp) then; st = 'OK'; else; st = 'WARN'; end if
-      call wcheck(u, 'cell charge residual', trim(vstr), trim(lstr), trim(st))
-
-      write (vstr, '(f5.2,a,i0)') r%depth_mean, ' of ', r%nlevels
-      lstr = '-'
-      st = 'info'
-      call wcheck(u, 'recursion depth used, mean', trim(vstr), trim(lstr), trim(st))
-
-      write (vstr, '(i0)') r%nfall
-      lstr = '-'
-      st = 'info'
-      call wcheck(u, 'bp tail fallbacks, last iteration', trim(vstr), trim(lstr), trim(st))
-
-      write (vstr, '(i0)') r%mix_nrestart
-      lstr = '-'
-      st = 'info'
-      call wcheck(u, 'Anderson restarts in the run', trim(vstr), trim(lstr), trim(st))
-
-      if (allocated(r%hist_npass)) then
-        write (vstr, '(i0)') r%hist_npass(max(1, r%iter))
-      else
-        vstr = '1'
-      end if
-      lstr = '-'
-      st = 'info'
-      call wcheck(u, 'E_F passes, last iteration', trim(vstr), trim(lstr), trim(st))
+      call wcheck(u, 'cell charge residual', trim(esf(r%qcell, 1)) // ' e', '1.0E-03 e', st)
+      call wcheck(u, 'recursion depth used, mean', trim(ftoa(r%depth_mean, 2)) // ' of ' // trim(itoa(r%nrec)), '-', 'info')
+      call wcheck(u, 'bp tail fallbacks, last iteration', trim(itoa(r%nfall)), '-', 'info')
+      call wcheck(u, 'Anderson restarts in the run', trim(itoa(r%mix_nrestart)), '-', 'info')
+      if (allocated(r%hist_npass)) call wcheck(u, 'E_F passes, last iteration', trim(itoa(r%hist_npass(max(1, r%iter)))), '-', 'info')
     end if
   end subroutine rep_checks
+
 
   subroutine wcheck(u, name, val, lim, st)
     integer, intent(in) :: u
     character(len=*), intent(in) :: name, val, lim, st
-    character(len=46) :: cname
-    character(len=18) :: cval
-    character(len=12) :: clim
-    character(len=6) :: cst
-    character(len=90) :: line
-    cname = name
-    cval = val
-    clim = lim
-    cst = st
-    write (line, '(1x,a46,2x,a18,2x,a12,2x,a6)') cname, cval, clim, cst
-    call wline(u, line)
+    call wline(u, ' ' // lj(name, 44) // '  ' // lj(val, 20) // '  ' // lj(lim, 12) // '  ' // trim(st))
   end subroutine wcheck
 
-  !> Section 4.11: Timing table
+
+  !> Section 4.11: Timing table.  The total is the whole run (r%timer%wall_total, cpu_total as set by the adapter); "other" is
+  !> the time outside the timed parts (input, setup outside the SCF, writing the files).
   subroutine rep_timing(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
-    character(len=90) :: line
-    real(dp) :: wtot, ctot, wsum, csum, woth, coth, cpw, sh
+    real(dp) :: wtot, ctot, wsum, csum
     integer :: ib, rate
 
-    wtot = r%timer%wall_total
-    ctot = r%timer%cpu_total
-    if (wtot <= 0.0_dp) wtot = max(sum(r%timer%wall), 1.0e-6_dp)
-    if (ctot <= 0.0_dp) ctot = max(sum(r%timer%cpu), 1.0e-6_dp)
+    wtot = max(r%timer%wall_total, sum(r%timer%wall), 1.0e-6_dp)
+    ctot = max(r%timer%cpu_total, sum(r%timer%cpu))
 
     call rep_section(u, 'timing')
-    call wline(u, ' part                                   calls    wall [s]     cpu [s]  cpu/wall   share')
-    call wline(u, ' ------------------------------------------------------------------------------------')
+    call wline(u, ' ' // lj('part', 36) // rj('calls', 8) // rj('wall [s]', 12) // rj('cpu [s]', 12) // rj('cpu/wall', 10) // &
+               rj('share', 8))
+    call wline(u, ' ' // repeat('-', 85))
     wsum = 0.0_dp; csum = 0.0_dp
     do ib = 1, n_tb
       if (r%timer%ncall(ib) > 0 .or. r%timer%wall(ib) > 0.0_dp) then
         wsum = wsum + r%timer%wall(ib)
         csum = csum + r%timer%cpu(ib)
-        cpw = r%timer%cpu(ib) / max(1.0e-6_dp, r%timer%wall(ib))
-        sh = r%timer%wall(ib) / wtot * 100.0_dp
-        write (line, '(1x,a36,i8,2f12.2,f10.1,f7.1,a1)') tb_name(ib), r%timer%ncall(ib), &
-          r%timer%wall(ib), r%timer%cpu(ib), cpw, sh, '%'
-        call wline(u, line)
+        call trow(tb_name(ib), trim(itoa(r%timer%ncall(ib))), r%timer%wall(ib), r%timer%cpu(ib))
       end if
     end do
-
-    woth = max(0.0_dp, wtot - wsum)
-    coth = max(0.0_dp, ctot - csum)
-    if (woth > 0.01_dp .or. coth > 0.01_dp) then
-      cpw = coth / max(1.0e-6_dp, woth)
-      sh = woth / wtot * 100.0_dp
-      write (line, '(1x,a36,8x,2f12.2,10x,f7.1,a1)') 'other (outside the parts above)', woth, coth, sh, '%'
-      call wline(u, line)
-    end if
-
-    call wline(u, ' ------------------------------------------------------------------------------------')
-    cpw = ctot / max(1.0e-6_dp, wtot)
-    write (line, '(1x,a36,8x,2f12.2,f10.1,a7)') 'total', wtot, ctot, cpw, ' 100.0%'
-    call wline(u, line)
+    call trow('other (outside the parts above)', '', max(0.0_dp, wtot - wsum), max(0.0_dp, ctot - csum))
+    call wline(u, ' ' // repeat('-', 85))
+    call trow('total', '', wtot, ctot)
 
     if (r%timer%work(tb_chains) > 0_i8) then
       rate = int(real(r%timer%work(tb_chains), dp) / max(1.0e-4_dp, r%timer%wall(tb_chains)))
-      write (line, '(a,i0,a,i0,a)') ' chain evaluations, SCF contour: ', r%timer%work(tb_chains), '   (', rate, ' per wall second)'
-      call wline(u, line)
+      call wline(u, ' chain evaluations, SCF contour: ' // trim(i8toa(r%timer%work(tb_chains))) // '   (' // trim(itoa(rate)) // &
+                 ' per wall second)')
     end if
-    write (line, '(a,i0,a,i0,a)') ' rank 0 of ', r%mpi_ranks, '; CPU time is the process time of this rank (all threads)'
-    call wline(u, line)
+    call wline(u, ' rank 0 of ' // trim(itoa(r%mpi_ranks)) // '; CPU time is the process time of this rank (all threads)')
+  contains
+    subroutine trow(name, calls, w, c)
+      character(len=*), intent(in) :: name, calls
+      real(dp), intent(in) :: w, c
+      character(len=16) :: bw, bc, bq, bs
+      write (bw, '(f12.2)') w
+      write (bc, '(f12.2)') c
+      if (w >= 0.01_dp) then
+        write (bq, '(f10.1)') c / w
+      else
+        bq = rj('-', 10)
+      end if
+      write (bs, '(f7.1,a1)') 100.0_dp * w / wtot, '%'
+      call wline(u, ' ' // lj(name, 36) // rj(calls, 8) // bw(1:12) // bc(1:12) // bq(1:10) // bs(1:8))
+    end subroutine trow
   end subroutine rep_timing
 
-  !> Section 4.12: Warnings
+
+  !> Section 4.12: Warnings (the list of collect_warnings)
   subroutine rep_warnings(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
+    character(len=128), allocatable :: w(:)
     integer :: i
-    logical :: any_warn
-
     call rep_section(u, 'warnings')
-    any_warn = .false.
-    if (allocated(r%warnings)) then
-      do i = 1, size(r%warnings)
-        if (len_trim(r%warnings(i)) > 0) then
-          call wline(u, ' ' // trim(r%warnings(i)))
-          any_warn = .true.
-        end if
+    call collect_warnings(r, w)
+    if (size(w) == 0) then
+      call wline(u, ' none')
+    else
+      do i = 1, size(w)
+        call write_wrapped(u, ' ', trim(w(i)), '   ')
       end do
     end if
-    if (.not. r%converged) then
-      call wline(u, ' [SCF] run did not achieve convergence tolerance')
-      any_warn = .true.
-    end if
-    if (r%nclamp > 0) then
-      call wline(u, ' [health checks] E_nu held at its window in the last iteration')
-      any_warn = .true.
-    end if
-    if (r%nnoncausal > 0) then
-      call wline(u, ' [health checks] Green function non-causal at contour nodes')
-      any_warn = .true.
-    end if
-    if (.not. r%below_ok) then
-      call wline(u, ' [health checks] valence weight detected below contour bottom')
-      any_warn = .true.
-    end if
-    if (abs(r%qcell) > 1.0e-3_dp) then
-      call wline(u, ' [health checks] cell charge residual exceeds 1.0e-3 e')
-      any_warn = .true.
-    end if
-    if (.not. any_warn) call wline(u, ' none')
   end subroutine rep_warnings
 
   !> Section 4.12 (files): Files written
@@ -1093,23 +1049,22 @@ contains
     end if
   end subroutine rep_files
 
+
   !> Section 4.13: End of run
   subroutine rep_close(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r
     character(len=90) :: line
-    logical :: has_warn
+    character(len=128), allocatable :: w(:)
 
-    has_warn = (allocated(r%warnings) .and. size(r%warnings) > 0) .or. &
-               (r%nclamp > 0) .or. (r%nnoncausal > 0) .or. (.not. r%below_ok) .or. (abs(r%qcell) > 1.0e-3_dp)
-
+    call collect_warnings(r, w)
     call rep_section(u, 'end of run')
-    write (line, '(a,a,1x,a,a,f10.2,a)') ' finished           : ', trim(r%finish_date), trim(r%finish_time), &
+    write (line, '(a,a,a,f10.2,a)') ' finished           : ', trim(fmt_dt(r%finish_date, r%finish_time)), &
       '   total wall time ', r%wall_total, ' s'
     call wline(u, line)
     if (.not. r%converged) then
       call wline(u, ' status             : NORMAL TERMINATION   SCF NOT CONVERGED')
-    else if (has_warn) then
+    else if (size(w) > 0) then
       call wline(u, ' status             : NORMAL TERMINATION   SCF CONVERGED WITH WARNINGS')
     else
       call wline(u, ' status             : NORMAL TERMINATION   SCF CONVERGED')
@@ -1147,6 +1102,7 @@ contains
     character(len=*), intent(in) :: filename
     integer :: u, p, it, k
     character(len=32) :: et_keys(n_et)
+    character(len=128), allocatable :: wl(:)
 
     et_keys = ['band           ', 'core           ', 'double_counting', 'hartree        ', &
                'xc             ', 'madelung       ', 'screened       ']
@@ -1186,7 +1142,13 @@ contains
       write (u, '(a)') '    "converged": false,'
     end if
     write (u, '(a,i0,a)') '    "iterations": ', r%iter, ','
-    write (u, '(a)') '    "warnings": []'
+    call collect_warnings(r, wl)
+    write (u, '(a)', advance='no') '    "warnings": ['
+    do k = 1, size(wl)
+      write (u, '(a,a,a)', advance='no') '"', trim(json_escape(wl(k))), '"'
+      if (k < size(wl)) write (u, '(a)', advance='no') ', '
+    end do
+    write (u, '(a)') ']'
     write (u, '(a)') '  },'
 
     write (u, '(a,es24.16,a)') '  "fermi_energy_ry": ', r%ef, ','
@@ -1360,6 +1322,167 @@ contains
       end if
     end if
   end subroutine rep_write_dos_header
+
+
+  !> All warnings of the run: the ones the driver collected, then the failed or doubtful health checks.  The report's warning
+  !> section, its status line and the JSON summary use this one list.
+  subroutine collect_warnings(r, w)
+    type(rep_run_t), intent(in) :: r
+    character(len=128), allocatable, intent(out) :: w(:)
+    character(len=128) :: buf(64)
+    integer :: n, i
+    n = 0
+    if (allocated(r%warnings)) then
+      do i = 1, size(r%warnings)
+        if (len_trim(r%warnings(i)) > 0) call add(trim(r%warnings(i)))
+      end do
+    end if
+    if (.not. r%converged) call add('[SCF] not converged after ' // trim(itoa(r%iter)) // ' iterations')
+    if (r%nclamp > 0) call add('[health checks] E_nu held at its band window in the last iteration (' // &
+                               trim(itoa(r%nclamp)) // ' channels): not a fixed point')
+    if (r%nnoncausal > 0) call add('[health checks] Green function not causal at ' // trim(itoa(r%nnoncausal)) // ' of ' // &
+                                   trim(itoa(r%nnode)) // ' contour node values')
+    if (.not. r%below_ok) call add('[health checks] valence weight below the contour bottom (the charges miss it)')
+    if (abs(r%qcell) > 1.0e-3_dp) call add('[health checks] cell charge residual above 1.0E-03 e per site')
+    if (trim(r%method) == 'kspace' .and. abs(r%eband - r%sumev) > 1.0e-5_dp) &
+      call add('[health checks] band energy from the moments differs from the eigenvalue sum')
+    allocate (w(n))
+    w = buf(1:n)
+  contains
+    subroutine add(t)
+      character(len=*), intent(in) :: t
+      if (n < size(buf)) then
+        n = n + 1; buf(n) = t
+      end if
+    end subroutine add
+  end subroutine collect_warnings
+
+  !> Compiler flags without the per-file parts of compiler_options() (-c, -o file, -I dir, module directories, file names)
+  !> and without repeated flags.
+  function clean_flags(opts) result(out)
+    character(len=*), intent(in) :: opts
+    character(len=len(opts)) :: out
+    character(len=512) :: tok
+    integer :: p, q, n
+    logical :: skipnext
+    out = ''; skipnext = .false.
+    n = len_trim(opts); p = 1
+    do while (p <= n)
+      do while (p <= n .and. opts(p:p) == ' '); p = p + 1; end do
+      if (p > n) exit
+      q = p
+      do while (q <= n .and. opts(q:q) /= ' '); q = q + 1; end do
+      tok = opts(p:q - 1); p = q
+      if (skipnext) then
+        skipnext = .false.; cycle
+      end if
+      select case (trim(tok))
+      case ('-c')
+        cycle
+      case ('-o', '-module', '-J', '-I')
+        skipnext = .true.; cycle
+      end select
+      if (tok(1:1) /= '-') cycle
+      if (tok(1:2) == '-I' .or. tok(1:2) == '-J' .or. index(tok, '-module=') == 1) cycle
+      if (index(' ' // trim(out) // ' ', ' ' // trim(tok) // ' ') > 0) cycle
+      out = trim(out) // ' ' // trim(tok)
+    end do
+    out = adjustl(out)
+  end function clean_flags
+
+  !> date_and_time strings (ccyymmdd, hhmmss.sss) as 'ccyy-mm-dd hh:mm:ss'
+  function fmt_dt(d, t) result(s)
+    character(len=*), intent(in) :: d, t
+    character(len=19) :: s
+    s = ''
+    if (len_trim(d) < 8 .or. len_trim(t) < 6) return
+    s = d(1:4) // '-' // d(5:6) // '-' // d(7:8) // ' ' // t(1:2) // ':' // t(3:4) // ':' // t(5:6)
+  end function fmt_dt
+
+  !> absolute path of the working directory: workdir if absolute, else $PWD joined with it
+  function abs_dir(workdir) result(s)
+    character(len=*), intent(in) :: workdir
+    character(len=1024) :: s
+    character(len=1024) :: pwd
+    integer :: st
+    if (len_trim(workdir) > 0) then
+      if (workdir(1:1) == '/') then
+        s = workdir; return
+      end if
+    end if
+    call get_environment_variable('PWD', pwd, status=st)
+    if (st /= 0 .or. len_trim(pwd) == 0) pwd = '.'
+    if (len_trim(workdir) == 0 .or. trim(workdir) == '.' .or. trim(workdir) == './') then
+      s = pwd
+    else if (workdir(1:2) == './') then
+      s = trim(pwd) // '/' // workdir(3:)
+    else
+      s = trim(pwd) // '/' // workdir
+    end if
+  end function abs_dir
+
+  !> s left-justified in a field of width w (cut when longer)
+  function lj(s, w) result(r)
+    character(len=*), intent(in) :: s
+    integer, intent(in) :: w
+    character(len=w) :: r
+    r = s
+  end function lj
+
+  !> s (trimmed) right-justified in a field of width w; a longer string keeps its first w characters
+  function rj(s, w) result(r)
+    character(len=*), intent(in) :: s
+    integer, intent(in) :: w
+    character(len=w) :: r
+    integer :: n
+    n = len_trim(s)
+    if (n >= w) then
+      r = s(1:w)
+    else
+      r = repeat(' ', w - n) // s(1:n)
+    end if
+  end function rj
+
+  !> x with values that print as zero at dec decimals set to +0 (no '-0.00000' in tables)
+  elemental function nz(x, dec) result(y)
+    real(dp), intent(in) :: x
+    integer, intent(in) :: dec
+    real(dp) :: y
+    y = x
+    if (abs(x) < 0.5_dp * 10.0_dp**(-dec)) y = 0.0_dp
+  end function nz
+
+  !> x in es format with d decimals, left-justified (es8.1 for d = 1)
+  function esf(x, d) result(s)
+    real(dp), intent(in) :: x
+    integer, intent(in) :: d
+    character(len=24) :: s
+    character(len=16) :: f
+    write (f, '(a,i0,a,i0,a)') '(es', d + 8, '.', d, ')'
+    write (s, f) x
+    s = adjustl(s)
+  end function esf
+
+  !> JSON string body: backslash and double quote escaped
+  function json_escape(t) result(s)
+    character(len=*), intent(in) :: t
+    character(len=2 * len(t)) :: s
+    integer :: i, k
+    s = ''; k = 0
+    do i = 1, len_trim(t)
+      if (t(i:i) == '"' .or. t(i:i) == '\') then
+        k = k + 1; s(k:k) = '\'
+      end if
+      k = k + 1; s(k:k) = t(i:i)
+    end do
+  end function json_escape
+
+  function i8toa(i) result(s)
+    integer(i8), intent(in) :: i
+    character(len=24) :: s
+    write (s, '(i0)') i
+    s = adjustl(s)
+  end function i8toa
 
   ! Helper: integer to string
   function itoa(i) result(s)

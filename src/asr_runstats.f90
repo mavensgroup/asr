@@ -22,7 +22,7 @@ module asr_runstats
                         tb_params = 2, &  !! radial solutions and potential parameters at E_nu
                         tb_chains = 3, &  !! recursion chains on the occupation contour (E_F search included)
                         tb_below = 4, &   !! recursion chains of the check below the contour bottom
-                        tb_dos = 5, &     !! recursion chains of the DOS on the real axis
+                        tb_dos = 5, &     !! DOS on the real axis (recursion chains, or k-space bands)
                         tb_bands = 6, &   !! k-space: bands, Brillouin-zone integration and the Fermi level
                         tb_density = 7, & !! densities, core states, Hartree, xc, electrostatics, total energy
                         tb_mix = 8, &     !! Anderson mixing, step limits and E_nu windows
@@ -30,7 +30,7 @@ module asr_runstats
                         n_tb = 9
   character(len=*), parameter :: tb_name(n_tb) = [character(len=36) :: &
     'setup (graph, operators, screening)', 'potential parameters', 'recursion chains: SCF contour', &
-    'recursion chains: bottom check', 'recursion chains: DOS', 'k-space bands and BZ integration', &
+    'recursion chains: bottom check', 'DOS on the real axis', 'k-space bands and BZ integration', &
     'density, core, Hartree, xc, energy', 'mixing and E_nu windows', 'restart file']
 
   !> total-energy terms (Ry).  Kohn-Sham form: output density in the input potential.  Their sum is etot (to rounding).

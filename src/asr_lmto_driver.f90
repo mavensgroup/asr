@@ -5,7 +5,7 @@ module asr_lmto_driver
   use asr_asa
   use asr_atom, only: shell_t
   use asr_lmto_cell, only: cell_t, setup_cell
-  use asr_runstats, only: tb_dos
+  use asr_runstats, only: tb_dos, cpu_seconds
   use asr_report
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
@@ -30,7 +30,7 @@ contains
     character(len=10) :: start_d, start_t
     integer, allocatable :: csp(:)                   ! species of each ASA class
     character(len=8), allocatable :: csym(:)
-    real(dp) :: t0, t_scf, t_dos
+    real(dp) :: t0, t_scf, t_dos, c_dos
 
     ok = .false.
     call date_and_time(start_d, start_t)
@@ -118,11 +118,10 @@ contains
     np = inp%npoints
     allocate (egrid(np), dos(np, 0:2, cell%nat, inp%spin))
     do ie = 1, np; egrid(ie) = inp%emin + (inp%emax - inp%emin) * (ie - 1) / real(np - 1, dp); end do
-    t_dos = rep_wall()
+    t_dos = rep_wall(); c_dos = cpu_seconds()
     call asa_dos(ai, cell, res, inp%dos_nk, egrid, inp%dos_smear, dos)
-    t_dos = rep_wall() - t_dos
-    res%timer%wall(tb_dos) = t_dos
-    res%timer%wall_total = res%timer%wall_total + t_dos
+    res%timer%wall(tb_dos) = rep_wall() - t_dos
+    res%timer%cpu(tb_dos) = cpu_seconds() - c_dos
     res%timer%ncall(tb_dos) = 1
 
     nthr = 1
@@ -222,7 +221,9 @@ contains
     rep%lattice = trim(inp%lattice)
     rep%alat = ai%alat
     rep%avec = cell%avec
-    rep%cell_vol = (4.0_dp * pi / 3.0_dp) * sum(ai%cls(cell%isp(1:cell%nat))%sws**3)
+    rep%cell_vol = abs(cell%avec(1, 1) * (cell%avec(2, 2) * cell%avec(3, 3) - cell%avec(3, 2) * cell%avec(2, 3)) &
+                     - cell%avec(1, 2) * (cell%avec(2, 1) * cell%avec(3, 3) - cell%avec(3, 1) * cell%avec(2, 3)) &
+                     + cell%avec(1, 3) * (cell%avec(2, 1) * cell%avec(3, 2) - cell%avec(3, 1) * cell%avec(2, 2))) * ai%alat**3
     rep%period = 1
     rep%nsite = cell%nat
     rep%nat = cell%nat
@@ -265,7 +266,13 @@ contains
       rep%comp(ic)%moment = res%cls(ic)%moment
       rep%comp(ic)%enu = res%cls(ic)%enu
       rep%comp(ic)%q = res%cls(ic)%q
+      ! sphere charge of the channel: q0 + p q2 in the generalised problem; q0 with second_order (asa_scf, band energy)
       rep%comp(ic)%qch = res%cls(ic)%q(0, :, :)
+      if (.not. ai%second_order) then
+        do s = 1, inp%spin
+          rep%comp(ic)%qch(:, s) = res%cls(ic)%q(0, :, s) + res%cls(ic)%pp(:, s)%p * res%cls(ic)%q(2, :, s)
+        end do
+      end if
       do s = 1, inp%spin
         do l = 0, 2
           rep%comp(ic)%c(l, s) = res%cls(ic)%pp(l, s)%c
@@ -311,8 +318,10 @@ contains
     rep%nclamp_run = res%nclamp_run
     rep%below_ok = .true.
 
-    ! Timing
+    ! Timing: the parts from the SCF and the DOS; the total is the whole run so far, as the end-of-run line
     rep%timer = res%timer
+    rep%timer%wall_total = rep%wall_total
+    rep%timer%cpu_total = cpu_seconds()
   end subroutine rep_from_asa
 
   !> Neutral-atom shells for the starting potential: core + valence s, d (occupations given), p gets the rest.

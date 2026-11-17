@@ -670,6 +670,8 @@ contains
     use asr_kinds, only: dp, pi
     use asr_mpi, only: par_size
     use asr_strconst, only: avg_ws_radius, standard_alpha
+    use asr_contour, only: fermi_npole, fermi_nodes_count
+    use asr_runstats, only: cpu_seconds
     type(run_input_t), intent(in) :: inp
     type(class_scf_result_t), intent(in) :: res
     type(rep_run_t), intent(out) :: rep
@@ -722,16 +724,26 @@ contains
     allocate (rep%subname(inp%ci%dec%ncls))
     rep%subname = inp%subname
     rep%s_range = inp%ci%rcl
-    rep%inv_radius = inp%ci%rinv
+    rep%inv_radius = max(inp%ci%rcl, inp%ci%rinv)            ! rinv = 0: the inversion cluster is the kept range
     rep%alpha = standard_alpha() * inp%ci%alpha_scale
     rep%alpha_scale = inp%ci%alpha_scale
     rep%terminator = inp%ci%ed_tail
     rep%depth_tol = inp%ci%depth_tol
-    rep%contour_nodes = inp%ci%ncont
+    ! occupation contour as asr_class_scf builds it (contour): Fermi function with poles, or a closed contour without smearing
+    rep%contour_main = inp%ci%ncont
+    if (inp%ci%fermi_kt > 0.0_dp) then
+      rep%contour_poles = fermi_npole(inp%ci%fermi_kt)
+      if (inp%ci%fermi_poles > 0) rep%contour_poles = inp%ci%fermi_poles
+      rep%contour_nodes = fermi_nodes_count(rep%contour_poles, inp%ci%ncont, 16)
+    else
+      rep%contour_poles = 0
+      rep%contour_nodes = inp%ci%ncont + 8
+    end if
     rep%fermi_kt = inp%ci%fermi_kt
     rep%fermi_poles = inp%ci%fermi_poles
     rep%ebot_offset = inp%ci%ebot_offset
     rep%eta = inp%eta
+    rep%ed_eta = inp%ci%ed_eta
     rep%sim_beta = inp%ci%sim_beta
     rep%has_screen = .true.
     rep%unscreened = res%screen%unscreened
@@ -908,7 +920,9 @@ contains
     rep%mix_nrestart = res%mix_nrestart
     rep%mix_nh = res%mix_nh
 
-    ! Timing
+    ! Timing: the parts from the SCF; the total is the whole run so far (input, SCF, DOS), as the end-of-run line
     rep%timer = res%timer
+    rep%timer%wall_total = rep%wall_total
+    rep%timer%cpu_total = cpu_seconds()
   end subroutine rep_from_class_scf
 end module asr_driver
