@@ -65,6 +65,7 @@ module asr_driver
 
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
+    character(len=:), allocatable :: spec_file          !! [spectral] file (method = "asr")
     type(class_scf_input_t) :: ci                      !! method = "asr"
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
@@ -99,7 +100,7 @@ contains
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
     call check_keys(table, ['calculation', 'structure  ', 'species    ', 'sublattice ', 'site       ', 'scf        ', 'asr        ', &
-                            'kspace     ', 'dos        ', 'output     ', 'sro        '], 'top level', msg)
+                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'spectral   '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -367,6 +368,45 @@ contains
     call get_value(child, 'dos_file', inp%dos_file, 'dos.dat')
     call get_value(child, 'out_file', inp%out_file, 'asr.out')
     call get_value(child, 'params_file', inp%li%params_file, 'params.dat')
+
+    if (table%has_key('spectral')) then                ! Bloch spectral function after the SCF (asr_spectral)
+      if (kspace) then; msg = '[spectral] is read with method = "asr" only'; return; end if
+      call section(table, 'spectral', child)
+      call check_keys(child, ['kpath  ', 'labels ', 'nk     ', 'emin   ', 'emax   ', 'npoints', 'eta    ', 'rmax   ', 'steps  ', &
+                              'file   '], '[spectral]', msg)
+      if (len(msg) > 0) return
+      if (trim(inp%ci%route) /= 'edc') then; msg = '[spectral] needs route = "edc"'; return; end if
+      nullify (arr); call get_value(child, 'kpath', arr, requested=.false.)
+      if (.not. associated(arr)) then; msg = '[spectral] needs kpath = [[kx, ky, kz], ...] (Cartesian, units 2 pi / a)'; return; end if
+      if (len(arr) < 2) then; msg = '[spectral] kpath needs at least two points'; return; end if
+      allocate (inp%ci%spectral%kpts(3, len(arr)), inp%ci%spectral%labels(len(arr))); inp%ci%spectral%labels = ''
+      do i = 1, len(arr)
+        nullify (ka); call get_value(arr, i, ka)
+        if (.not. associated(ka)) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        if (len(ka) /= 3) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        do j = 1, 3; call get_value(ka, j, x); inp%ci%spectral%kpts(j, i) = x; end do
+      end do
+      nullify (arr); call get_value(child, 'labels', arr, requested=.false.)
+      if (associated(arr)) then
+        if (len(arr) /= size(inp%ci%spectral%kpts, 2)) then; msg = '[spectral] labels needs one label per kpath point'; return; end if
+        do i = 1, len(arr); call get_value(arr, i, str); inp%ci%spectral%labels(i) = str; end do
+      end if
+      call get_value(child, 'nk', inp%ci%spectral%nk, 30)
+      call get_value(child, 'emin', inp%ci%spectral%emin, inp%emin)
+      call get_value(child, 'emax', inp%ci%spectral%emax, inp%emax)
+      call get_value(child, 'npoints', inp%ci%spectral%ne, 201)
+      call get_value(child, 'eta', inp%ci%spectral%eta, 0.01_dp)
+      call get_value(child, 'rmax', inp%ci%spectral%rmax, 2.0_dp)
+      call get_value(child, 'steps', inp%ci%spectral%nsteps, 0)
+      call get_value(child, 'file', inp%spec_file, 'spectral.dat')
+      if (inp%ci%spectral%nk < 1) then; msg = '[spectral] nk must be >= 1'; return; end if
+      if (inp%ci%spectral%ne < 2) then; msg = '[spectral] npoints must be >= 2'; return; end if
+      if (inp%ci%spectral%eta <= 0.0_dp) then; msg = '[spectral] eta must be > 0'; return; end if
+      if (inp%ci%spectral%rmax <= 0.0_dp) then; msg = '[spectral] rmax must be > 0'; return; end if
+      if (inp%ci%spectral%emax <= inp%ci%spectral%emin) then; msg = '[spectral] emax must be above emin'; return; end if
+      if (inp%ci%spectral%nsteps < 0) then; msg = '[spectral] steps must be >= 0'; return; end if
+      inp%ci%spectral%on = .true.
+    end if
 
     ! ---- validation
     if (inp%ci%nspin /= 1 .and. inp%ci%nspin /= 2) msg = '[scf] spin must be 1 or 2'
@@ -647,6 +687,7 @@ contains
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
+    if (allocated(res%spec_a)) call write_spectral()
 
     call rep_write_report(rep, inp%workdir//inp%out_file)
     print '(a,a)', '  wrote ', inp%workdir//inp%out_file
@@ -661,6 +702,99 @@ contains
       character(len=*), intent(in) :: kind
       avg_ws = avg_ws_radius(kind)
     end function avg_ws
+
+    !> [spectral] file: one block per k point (blank line between blocks), columns path distance, k (2 pi / a), E (Ry), A summed
+    !> over spin, A_s A_p A_d, per spin channel (spin 2), per origin sublattice (states/Ry per graph site)
+    subroutine write_spectral()
+      character(len=:), allocatable :: sfile
+      integer :: us, ik, je, kp, nkp, gs, ns, nl, i0, ie
+      real(dp) :: fs_
+      character(len=13), allocatable :: lab(:)
+      integer, allocatable :: wid(:)
+      sfile = inp%workdir//inp%spec_file
+      fs_ = 2.0_dp / real(res%nspin, dp)
+      nkp = size(res%spec_dist)
+      open (newunit=us, file=sfile, status='replace', action='write')
+      call spectral_header(us, 'Bloch spectral function A(k, E)')
+      write (us, '(a)') '# blocks     : one block of energies per k point, blocks separated by one blank line (gnuplot index)'
+      write (us, '(a)') '# columns    : A summed over spins and over s p d unless the label says;  A <sublattice>: part of each'
+      write (us, '(a)') '#              origin sublattice (the parts add up to A)'
+      ns = size(res%spec_ac, 3)
+      nl = 9 + ns + merge(2, 0, res%nspin == 2)
+      allocate (lab(nl), wid(nl))
+      lab(1:9) = [character(len=13) :: 'dist', 'kx', 'ky', 'kz', 'E [Ry]', 'A', 'A s', 'A p', 'A d']
+      wid(1:9) = [10, 9, 9, 9, 11, 13, 13, 13, 13]
+      i0 = 9
+      if (res%nspin == 2) then
+        lab(10:11) = [character(len=13) :: 'A up', 'A down']; wid(10:11) = 13; i0 = 11
+      end if
+      do kp = 1, ns
+        lab(i0 + kp) = 'A ' // trim(inp%subname(kp)); wid(i0 + kp) = 13
+      end do
+      call rep_label_rows(us, lab, wid)
+      do ik = 1, nkp
+        do je = 1, size(res%spec_e)
+          if (res%nspin == 2) then
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (sum(res%spec_a(je, ik, :, gs)), gs=1, 2), (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          else
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          end if
+        end do
+        write (us, '(a)') ''
+      end do
+      close (us)
+      print '(a,a)', '  wrote ', sfile
+      if (allocated(res%spec_bands)) then              ! ordered, one species: the exact bands of the same H^(2)
+        open (newunit=us, file=sfile//'.bands', status='replace', action='write')
+        call spectral_header(us, 'eigenvalues of H^(2)(k), from the structure constant blocks and parameters of the recursion')
+        write (us, '(a)') '# columns    : 9 eigenvalues per spin channel, ascending (Ry)'
+        nl = 4 + 9 * size(res%spec_bands, 3)
+        deallocate (lab, wid); allocate (lab(nl), wid(nl))
+        lab(1:4) = [character(len=13) :: 'dist', 'kx', 'ky', 'kz']; wid(1:4) = [10, 9, 9, 9]
+        do gs = 1, size(res%spec_bands, 3)
+          do ie = 1, 9
+            lab(4 + (gs - 1) * 9 + ie) = 'e' // trim(adjustl(itoa_(ie)))
+            if (size(res%spec_bands, 3) == 2) lab(4 + (gs - 1) * 9 + ie) = trim(lab(4 + (gs - 1) * 9 + ie)) // merge(' up  ', ' down', gs == 1)
+            wid(4 + (gs - 1) * 9 + ie) = 11
+          end do
+        end do
+        call rep_label_rows(us, lab, wid)
+        do ik = 1, nkp
+          write (us, '(f10.5,3f9.5,*(f11.6))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_bands(:, ik, :)
+        end do
+        close (us)
+        print '(a,a)', '  wrote ', sfile//'.bands'
+      end if
+    end subroutine write_spectral
+
+    !> common header of the spectral files: run, route, E_F, path corners, units
+    subroutine spectral_header(us, what)
+      integer, intent(in) :: us
+      character(len=*), intent(in) :: what
+      integer :: ic
+      write (us, '(a)') '# ASR ' // what
+      write (us, '(a)') '# run        : ' // trim(rep%title) // '   (' // trim(rep%infile) // ', git ' // trim(rep%git_rev) // ')'
+      write (us, '(a,i0,a,f8.5,a,i0,a,f6.3,a)') '# route      : recursion edc, levels ', inp%ci%nlevels, ';  eta ', inp%ci%spectral%eta, &
+        ' Ry;  chain steps ', res%spec_nsteps, ';  rmax ', inp%ci%spectral%rmax, ' alat'
+      write (us, '(a,f12.8,a)') '# E_F        : ', res%ef, ' Ry'
+      write (us, '(a,i0,a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points x ', size(res%spec_e), ' energies'
+      write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; E in Ry; A in states/Ry per graph site'
+      write (us, '(a)') '# corners    :  label   block   dist        kx       ky       kz'
+      do ic = 1, size(res%spec_icorner)
+        write (us, '(a,a8,i6,f10.5,3f9.5)') '#              ', inp%ci%spectral%labels(ic), res%spec_icorner(ic), &
+          res%spec_dist(res%spec_icorner(ic)), inp%ci%spectral%kpts(:, ic)
+      end do
+    end subroutine spectral_header
+
+    function itoa_(i) result(t)
+      integer, intent(in) :: i
+      character(len=12) :: t
+      write (t, '(i0)') i
+    end function itoa_
   end subroutine run_asr
 
   !> Fill rep_run_t from recursion class_scf_result_t
@@ -919,6 +1053,27 @@ contains
     rep%nfall = res%nfall
     rep%mix_nrestart = res%mix_nrestart
     rep%mix_nh = res%mix_nh
+
+    ! Bloch spectral function
+    if (allocated(res%spec_a)) then
+      rep%spec%on = .true.
+      rep%spec%file = inp%spec_file
+      rep%spec%has_bands = allocated(res%spec_bands)
+      rep%spec%nk = size(res%spec_dist); rep%spec%ne = size(res%spec_e)
+      rep%spec%emin = res%spec_e(1); rep%spec%emax = res%spec_e(size(res%spec_e))
+      rep%spec%eta = inp%ci%spectral%eta; rep%spec%rmax = inp%ci%spectral%rmax
+      rep%spec%nsteps = res%spec_nsteps; rep%spec%nt = res%spec_nt
+      rep%spec%maxhop = res%spec_maxhop; rep%spec%hoplim = res%spec_hoplim; rep%spec%nneg = res%spec_nneg
+      rep%spec%rdef = res%spec_rdef; rep%spec%spread = res%spec_spread; rep%spec%spread0 = res%spec_spread0
+      rep%spec%amin = res%spec_amin
+      if (allocated(res%spec_nodes)) rep%spec%nodes = res%spec_nodes
+      if (allocated(res%spec_rsh)) rep%spec%rsh = res%spec_rsh
+      if (allocated(res%spec_decay)) rep%spec%decay = res%spec_decay
+      if (allocated(res%spec_sum)) rep%spec%sumrule = transpose(res%spec_sum)
+      rep%spec%clabel = inp%ci%spectral%labels
+      rep%spec%cdist = res%spec_dist(res%spec_icorner)
+      rep%spec%ck = inp%ci%spectral%kpts
+    end if
 
     ! Timing: the parts from the SCF; the total is the whole run so far (input, SCF, DOS), as the end-of-run line
     rep%timer = res%timer

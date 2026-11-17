@@ -20,7 +20,7 @@ module asr_report
   implicit none
   private
 
-  public :: rep_run_t, rep_component_t, rep_sublattice_t, rep_sro_t, rep_site_t
+  public :: rep_run_t, rep_component_t, rep_sublattice_t, rep_sro_t, rep_site_t, rep_spectral_t, rep_label_rows, rep_spectral
   public :: rep_write_report, rep_write_json, rep_write_dos_header, rep_wall, fnv1a64_file
   public :: rep_banner, rep_echo_input, rep_method, rep_structure, rep_sro, rep_scf_history
   public :: rep_energy, rep_components, rep_fermi, rep_checks, rep_timing, rep_warnings, rep_files, rep_close
@@ -94,6 +94,22 @@ module asr_report
     logical :: uform = .false.
     real(dp), allocatable :: udrive(:)     !! drive u per component (e)
   end type rep_sro_t
+
+  !> Bloch spectral function A(k, E) (asr_spectral, [spectral]): what the run used and its built-in checks
+  type :: rep_spectral_t
+    logical :: on = .false.
+    character(len=256) :: file = ''
+    logical :: has_bands = .false.         !! exact H^(2)(k) bands written beside (ordered, one species)
+    integer :: nk = 0, ne = 0              !! k points on the path, energies per k
+    real(dp) :: emin = 0.0_dp, emax = 0.0_dp, eta = 0.0_dp, rmax = 0.0_dp
+    integer :: nsteps = 0, nt = 0, maxhop = 0, hoplim = 0, nneg = 0
+    real(dp) :: rdef = 0.0_dp, spread = 0.0_dp, spread0 = 0.0_dp, amin = 0.0_dp
+    integer, allocatable :: nodes(:)       !! D2h-reduced nodes per origin class
+    real(dp), allocatable :: rsh(:), decay(:)   !! shell radius (alat), max |Im G| / on-site value
+    real(dp), allocatable :: sumrule(:, :)      !! energy integral of A per spin at the first and the last k
+    character(len=8), allocatable :: clabel(:)  !! path corners: label, path distance, k (2 pi / a)
+    real(dp), allocatable :: cdist(:), ck(:, :)
+  end type rep_spectral_t
 
   type :: rep_run_t
     ! Provenance and execution metadata
@@ -218,6 +234,9 @@ module asr_report
     integer :: nfall = 0
     integer :: mix_nrestart = 0, mix_nh = 0
     real(dp) :: eband = 0.0_dp, sumev = 0.0_dp   !! k-space band energy check
+
+    ! Bloch spectral function
+    type(rep_spectral_t) :: spec
 
     ! Timing
     type(run_timer_t) :: timer
@@ -1021,6 +1040,16 @@ contains
       write (line, '(1x,a28,2x,a)') fn, 'DOS curve'
       call wline(u, line)
     end if
+    if (r%spec%on) then
+      fn = trim(r%spec%file)
+      write (line, '(1x,a28,2x,a)') fn, 'Bloch spectral function A(k, E)'
+      call wline(u, line)
+      if (r%spec%has_bands) then
+        fn = trim(r%spec%file) // '.bands'
+        write (line, '(1x,a28,2x,a)') fn, 'exact bands of the same H^(2)(k)'
+        call wline(u, line)
+      end if
+    end if
     if (len_trim(r%pot_file) > 0) then
       fn = trim(r%pot_file)
       write (line, '(1x,a28,2x,a)') fn, 'restart potentials (last iteration)'
@@ -1082,6 +1111,7 @@ contains
     call rep_energy(u, r)
     call rep_components(u, r)
     call rep_fermi(u, r)
+    if (r%spec%on) call rep_spectral(u, r)
     call rep_checks(u, r)
     call rep_timing(u, r)
     call rep_warnings(u, r)
@@ -1239,6 +1269,17 @@ contains
     write (u, '(a,es24.16)') '    "qcell_e": ', r%qcell
     write (u, '(a)') '  },'
 
+    if (r%spec%on) then
+      write (u, '(a)') '  "spectral": {'
+      write (u, '(a,a,a)') '    "file": "', trim(json_escape(r%spec%file)), '",'
+      write (u, '(a,i0,a,i0,a)') '    "nk": ', r%spec%nk, ', "ne": ', r%spec%ne, ','
+      write (u, '(a,es24.16,a,es24.16,a)') '    "eta_ry": ', r%spec%eta, ', "rmax_alat": ', r%spec%rmax, ','
+      write (u, '(a,i0,a,i0,a)') '    "chain_steps": ', r%spec%nsteps, ', "target_sites": ', r%spec%nt, ','
+      write (u, '(a,es24.16,a)') '    "reciprocity_defect": ', r%spec%rdef, ','
+      write (u, '(a,es24.16,a,es24.16,a)') '    "step_spread_offsite": ', r%spec%spread, ', "step_spread_onsite": ', r%spec%spread0, ','
+      write (u, '(a,i0,a,es24.16)') '    "n_negative_a": ', r%spec%nneg, ', "min_over_max_a": ', r%spec%amin
+      write (u, '(a)') '  },'
+    end if
     write (u, '(a)') '  "timing_s": {'
     write (u, '(a,f12.2,a)') '    "total_wall": ', r%timer%wall_total, ','
     write (u, '(a,f12.2,a)') '    "total_cpu": ', r%timer%cpu_total, ','
@@ -1262,7 +1303,6 @@ contains
     character(len=1), parameter :: lname(0:2) = ['s', 'p', 'd']
     integer :: col, p, l, s, ia, nl
     character(len=13) :: lab(2048)
-    character(len=32768) :: hnum, hlab
 
     write (u, '(a)') '# ASR density of states'
     write (u, '(a,a,a,a,a,a,a)') '# run        : ', trim(r%title), '   (', trim(r%infile), ', git ', trim(r%git_rev), ')'
@@ -1323,17 +1363,7 @@ contains
     else
       write (u, '(a)') '# columns    : total = sum_p w_p N_p per site; component s p d per atom, both spins'
     end if
-    hnum = '#'; hlab = '#'
-    do col = 1, nl
-      if (col == 1) then
-        hnum = hnum(1:1) // rj(trim(itoa(col)), 11); hlab = hlab(1:1) // rj(lab(col), 11)
-      else
-        hnum = hnum(1:12 + (col - 2) * 14) // rj(trim(itoa(col)), 14)
-        hlab = hlab(1:12 + (col - 2) * 14) // rj(lab(col), 14)
-      end if
-    end do
-    write (u, '(a)') trim(hnum)
-    write (u, '(a)') trim(hlab)
+    call rep_label_rows(u, lab(1:nl), [12, (14, col=2, nl)])
   contains
     subroutine addl(t)
       character(len=*), intent(in) :: t
@@ -1516,6 +1546,98 @@ contains
     write (s, '(i0)') i
     s = adjustl(s)
   end function i8toa
+
+  !> Two aligned comment rows over the columns of a data file: column numbers, then labels.  w(i) is the field width of
+  !> column i in the data rows; the first field loses one column to the '#'.  numpy.loadtxt and gnuplot skip both rows.
+  subroutine rep_label_rows(u, labels, w)
+    integer, intent(in) :: u
+    character(len=*), intent(in) :: labels(:)
+    integer, intent(in) :: w(:)
+    character(len=:), allocatable :: hnum, hlab
+    integer :: i
+    hnum = '#' // rj(trim(itoa(1)), w(1) - 1)
+    hlab = '#' // rj(labels(1), w(1) - 1)
+    do i = 2, size(labels)
+      hnum = hnum // rj(trim(itoa(i)), w(i))
+      hlab = hlab // ' ' // rj(labels(i), w(i) - 1)          ! at least one blank between labels
+    end do
+    write (u, '(a)') hnum
+    write (u, '(a)') hlab
+  end subroutine rep_label_rows
+
+  !> Bloch spectral function: path, mesh, chains and the built-in checks of asr_spectral
+  subroutine rep_spectral(u, r)
+    integer, intent(in) :: u
+    type(rep_run_t), intent(in) :: r
+    character(len=1024) :: path
+    character(len=256) :: line
+    character(len=16) :: b1, b2
+    integer :: i, n
+
+    call rep_section(u, 'Bloch spectral function')
+    call kv(u, 'method', 'A(k, E) unfolded on the graph lattice, route edc')
+    path = ''
+    if (allocated(r%spec%clabel)) then
+      do i = 1, size(r%spec%clabel)
+        if (i > 1) path = trim(path) // ' -'
+        path = trim(path) // ' ' // trim(r%spec%clabel(i)) // ' (' // trim(ftoa(r%spec%cdist(i), 4)) // ')'
+      end do
+    end if
+    call write_wrapped(u, ' k path (distance) :', trim(path), repeat(' ', 22))
+    call kv(u, 'k units', 'Cartesian, 2 pi / a;  ' // trim(itoa(r%spec%nk)) // ' k points')
+    call kv(u, 'energies', trim(itoa(r%spec%ne)) // ' from ' // trim(ftoa(r%spec%emin, 4)) // ' to ' // &
+            trim(ftoa(r%spec%emax, 4)) // ' Ry;  eta ' // trim(ftoa(r%spec%eta, 4)) // ' Ry')
+    call kv(u, 'chains', trim(itoa(r%spec%nsteps)) // ' steps;  ' // trim(itoa(r%spec%nt)) // ' target sites within rmax ' // &
+            trim(ftoa(r%spec%rmax, 3)) // ' alat')
+    if (allocated(r%spec%nodes)) then
+      line = ''
+      do i = 1, size(r%spec%nodes)
+        line = trim(line) // ' ' // trim(itoa(r%spec%nodes(i)))
+      end do
+      call kv(u, 'nodes / origin', trim(adjustl(line)) // '  (D2h-reduced)')
+    end if
+    call kv(u, 'graph distance', 'largest target ' // trim(itoa(r%spec%maxhop)) // ';  interior of the node set ' // &
+            trim(itoa(r%spec%hoplim)))
+    call wline(u, '')
+    call wline(u, ' ' // lj('check', 44) // '  ' // lj('value', 20) // '  ' // lj('limit', 12) // '  status')
+    call wline(u, ' ' // repeat('-', 87))
+    call wcheck(u, 'reciprocity defect (two origins, averaged)', trim(esf(r%spec%rdef, 1)), '-', 'info')
+    call wcheck(u, 'chains cut 4 steps earlier: off- / on-site', trim(esf(r%spec%spread, 1)) // ' / ' // &
+                trim(esf(r%spec%spread0, 1)), '-', 'info')
+    call wcheck(u, 'points with A < 0;  min A / max A', trim(itoa(r%spec%nneg)) // ';  ' // trim(esf(r%spec%amin, 1)), '-', 'info')
+    if (allocated(r%spec%sumrule)) then
+      n = size(r%spec%sumrule, 1)
+      do i = 1, n
+        write (b1, '(f8.3)') r%spec%sumrule(i, 1)
+        write (b2, '(f8.3)') r%spec%sumrule(i, size(r%spec%sumrule, 2))
+        call wcheck(u, 'integral of A, first / last k, spin ' // trim(itoa(i)), trim(adjustl(b1)) // ' / ' // trim(adjustl(b2)), &
+                    '9 (all bands)', 'info')
+      end do
+    end if
+    if (allocated(r%spec%rsh) .and. allocated(r%spec%decay)) then
+      call wline(u, '')
+      call wline(u, ' decay of the off-site Green function with distance')
+      n = min(size(r%spec%rsh), size(r%spec%decay))
+      do i = 1, n, 6
+        line = '   shell radius [alat]   '
+        call row(r%spec%rsh(i:min(n, i + 5)), '(f10.3)')
+        call wline(u, line)
+        line = '   max|Im G| / on-site   '
+        call row(r%spec%decay(i:min(n, i + 5)), '(f10.4)')
+        call wline(u, line)
+      end do
+    end if
+  contains
+    subroutine row(x, f)
+      real(dp), intent(in) :: x(:)
+      character(len=*), intent(in) :: f
+      integer :: j
+      character(len=16) :: b
+      do j = 1, size(x)
+        write (b, f) x(j); line = line(1:25 + (j - 1) * 10) // b(1:10)
+      end do
+    end subroutine row
+  end subroutine rep_spectral
 
   !> one key-value line: key left-justified in 19 columns, then ': ' and the value (the banner's layout)
   subroutine kv(u, key, val)

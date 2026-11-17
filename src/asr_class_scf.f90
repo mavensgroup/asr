@@ -35,6 +35,7 @@
 !> -Im / pi is the DOS of the sphere charge, so dos_final and ef_scan need no other change.
 module asr_class_scf
   use asr_kinds, only: dp, pi
+  use asr_lapack, only: zheev
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree
@@ -58,6 +59,7 @@ module asr_class_scf
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
+  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing
   implicit none
   private
   public :: class_scf_input_t, class_scf_result_t, class_scf
@@ -92,6 +94,7 @@ module asr_class_scf
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
     character(len=256) :: pot_in = '', pot_out = ''
     real(dp) :: ebot_offset = 1.2_dp                   !! the contour starts ebot_offset (Ry) below the lowest E_nu; res%wbelow checks it
+    type(spectral_input_t) :: spectral                 !! Bloch spectral function after the SCF (asr_spectral; route edc)
   end type class_scf_input_t
 
   type :: class_scf_result_t
@@ -138,9 +141,25 @@ module asr_class_scf
     !> causal: -Im G <= 0 (edc) or the block -Im G not positive semidefinite (ed3).  A Herglotz function has none.  The
     !> truncated energy-dependent chain can have some (docs/DERIVATION_f4.md); the charges then carry the chain error there.
     integer :: nnode = 0, nnoncausal = 0
+    !> Bloch spectral function (asr_spectral), per graph site and per spin channel: spec_a(energy, k, l, spin) summed over the
+    !> origin classes with their site fractions, spec_ac(energy, k, class, spin) the part of each origin class (sum = total).
+    real(dp), allocatable :: spec_k(:, :), spec_dist(:), spec_e(:), spec_a(:, :, :, :), spec_ac(:, :, :, :)
+    integer, allocatable :: spec_icorner(:)
+    !> diagnostics: shell radii (alat) and the largest |Im G| of each shell relative to the on-site one; the largest difference
+    !> of G_{0L,RL} and G_{0L,-R L} from the two origins (relative); the change of G when the chains are cut 4 steps earlier
+    !> (relative; off-site and on-site); the number of (E, k, spin) points with A < 0 and the most negative A relative to the largest;
+    !> the energy integral of A at the first and the last k point (per spin; 9 for a window that holds every band)
+    real(dp), allocatable :: spec_rsh(:), spec_decay(:), spec_sum(:, :)
+    !> one sublattice with one species: the eigenvalues of H^(2)(k) at the path points (9, k, spin), from the same structure
+    !> constant blocks and parameters as the recursion (exact bands of the operator; internal check of A)
+    real(dp), allocatable :: spec_bands(:, :, :)
+    real(dp) :: spec_rdef = 0.0_dp, spec_spread = 0.0_dp, spec_spread0 = 0.0_dp, spec_amin = 0.0_dp
+    integer :: spec_nneg = 0, spec_nt = 0, spec_maxhop = 0, spec_hoplim = 0, spec_nsteps = 0
+    integer, allocatable :: spec_nodes(:)
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
+  integer, parameter :: lorb9(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
   real(dp), parameter, public :: wbelow_tol = 1.0e-3_dp     !! electrons per site
   real(dp), parameter :: worb(4) = [1.0_dp, 3.0_dp, 3.0_dp, 2.0_dp]
 
@@ -186,7 +205,7 @@ contains
     integer :: offu
     character(len=:), allocatable :: smsg
     integer :: p2
-    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
+    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc
     logical :: vb, cubic, hlo, hhi, core_ok, ed3
     real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
     real(dp) :: phi2, asym_max, psd_max
@@ -275,12 +294,8 @@ contains
     allocate (cop(ncls), res%nodes(ncls), zsh(ncls, ncls)); zsh = 0
     do kap = 1, ncls
       call decoration_classes(inp%dec, coord, mg, kap, cls)
-      if (inp%sro) then                                ! first shell of the origin (site 1 at coord 0; minimum image)
-        r2min = huge(1)
-        do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2)); end do
-        do i = 2, g%n
-          if (sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2) == r2min) cls(i) = ncls + cls(i)
-        end do
+      if (inp%sro) then
+        call shell_classes(cls)
         do k = 1, ncls; zsh(kap, k) = count(cls == ncls + k); end do
         do k = 1, ncls                                 ! SRO with a sublattice that is not in the first shell: input error
           if (.not. any(cls == ncls + k)) then
@@ -663,6 +678,9 @@ contains
       end do
     end do
     if (inp%ndos > 0) call dos_final()
+    if (inp%spectral%on) then
+      call timer_start(res%timer, tb_spectral); call spectral_final(); call timer_stop(res%timer, tb_spectral)
+    end if
     res%ncomp = ncomp; res%nspin = nsp
     res%comp_cls = pcl; res%comp_spec = psp; res%comp_w = w; res%comp_x = xp
     res%comp = cr
@@ -1039,6 +1057,285 @@ contains
         wb = wb - fs * w(pp_) * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
       end do; end do; end do; end do
     end subroutine weight_below
+
+    !> SRO: the first shell of the origin (site 1 at coord 0; minimum image) goes to the classes ncls + kappa'
+    subroutine shell_classes(cl)
+      integer, intent(inout) :: cl(:)
+      integer :: i_, r2m
+      r2m = huge(1)
+      do i_ = 2, g%n; r2m = min(r2m, sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2)); end do
+      do i_ = 2, g%n
+        if (sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2) == r2m) cl(i_) = ncls + cl(i_)
+      end do
+    end subroutine shell_classes
+
+    !> Bloch spectral function A(k, E) at the final potential (asr_spectral, route edc).  Per origin class: the operator reduced
+    !> with D2h, the target sites within rmax and their nodes; per spin, component, start orbital and energy one projected chain
+    !> (edc_green_proj).  The diagonal elements <G_{0L, RL}> are averaged over the centre species, symmetrised between the two
+    !> origins of each pair, and summed over R with the Bloch phases of the graph lattice.
+    subroutine spectral_final()
+      type(class_op_t), allocatable :: sop(:)
+      type(class_alloy_t), allocatable :: ms(:, :)
+      type(edn_t), allocatable :: es(:, :)
+      integer, allocatable :: clsb(:), clsr(:), perm_(:, :), mats_(:, :, :), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
+      integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:), kop(:)
+      real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:)
+      complex(dp), allocatable :: zs(:), gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
+      real(dp) :: rmax2, gmax, gmax0, a_, de, amax
+      integer :: ne, nst, nt, nsm, ks, cl_, t_, kp, pp_, gg, i, j, l_, ik, nkp, nsh, t0, nopd, it_
+      integer :: hd(3)
+      if (ed3) error stop 'class_scf: the spectral function needs route = edc'
+      if (.not. spectral_translations_ok(inp%dec)) error stop &
+        'class_scf: spectral function: a sublattice holds sites that no translation relates (for example L1_2); not supported'
+      nst = inp%spectral%nsteps; if (nst <= 0) nst = nlev
+      ne = inp%spectral%ne; nsm = maxval(inp%nsc)
+      if (2.0_dp * inp%spectral%rmax >= real(inp%lsuper, dp)) error stop 'class_scf: spectral rmax must be below supercell / 2'
+      call all_params()
+      ! ---- targets: graph sites within rmax of the origin (the same set for every origin class), their mirror images
+      rmax2 = 4.0_dp * inp%spectral%rmax**2                ! half-lattice units
+      allocate (keep(g%n)); nt = 0
+      do i = 1, g%n
+        hd = modulo(coord(:, i) + mg / 2, mg) - mg / 2
+        if (real(sum(hd**2), dp) <= rmax2 + 1.0e-9_dp) then; nt = nt + 1; keep(nt) = i; end if
+      end do
+      tsite = keep(1:nt)
+      allocate (tdisp(3, nt), tmir(nt))
+      do t_ = 1, nt; tdisp(:, t_) = 0.5_dp * real(modulo(coord(:, tsite(t_)) + mg / 2, mg) - mg / 2, dp); end do
+      t0 = 0
+      do t_ = 1, nt
+        if (tsite(t_) == 1) t0 = t_
+        tmir(t_) = 0
+        do j = 1, nt
+          if (all(abs(tdisp(:, j) + tdisp(:, t_)) < 1.0e-9_dp)) then; tmir(t_) = j; exit; end if
+        end do
+        if (tmir(t_) == 0) error stop 'class_scf: spectral targets are not symmetric under inversion'
+      end do
+      if (t0 == 0) error stop 'class_scf: the origin is not a spectral target'
+      res%spec_nt = nt; res%spec_maxhop = maxval(dist(tsite)); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
+      ! ---- per origin class: D2h-reduced operator with the target nodes
+      allocate (sop(ncls), tnode(nsm, nt, ncls), tgop(nsm, nt, ncls), tbase(nt, ncls), tcls(nt, ncls), res%spec_nodes(ncls))
+      do kp = 1, ncls
+        call decoration_classes(inp%dec, coord, mg, kp, clsb)
+        clsr = clsb; if (inp%sro) call shell_classes(clsr)
+        call class_ops(coord, mg, clsr, perm_, mats_)
+        if (allocated(kop)) deallocate (kop)
+        allocate (kop(size(perm_, 2))); nopd = 0              ! D2h: the operations with a diagonal matrix (identity first)
+        do j = 1, size(perm_, 2)
+          if (count(mats_(:, :, j) /= 0) == 3 .and. all([(mats_(i, i, j) /= 0, i=1, 3)])) then; nopd = nopd + 1; kop(nopd) = j; end if
+        end do
+        call orbital_rep(mats_(:, :, kop(1:nopd)), sop(kp)%d)
+        call build_augcls_operator(g, mdl, clsr, perm_(:, kop(1:nopd)), sop(kp)%d, 1, ngen, sop(kp)%op, inp%maxrank, flippable, &
+                                   tsite=tsite, tnode=tn_, tgop=tg_)
+        if (any(tn_(1, :) == 0)) error stop 'class_scf: a spectral target lies outside the node set (lower rmax or raise levels)'
+        tnode(:, :, kp) = tn_; tgop(:, :, kp) = tg_; tbase(:, kp) = clsb(tsite); tcls(:, kp) = clsr(tsite)
+        res%spec_nodes(kp) = sop(kp)%op%nn
+        if (vb) print '(a,i0,a,i0,a,i0,a,i0)', '  spectral: origin class ', kp, ', D2h operations ', nopd, ', nodes ', &
+          sop(kp)%op%nn, ', target sites ', nt
+      end do
+      if (vb .and. res%spec_maxhop > res%spec_hoplim) print '(a,i0,a,i0,a)', '  WARNING: spectral targets reach ', &
+        res%spec_maxhop, ' graph hops; the interior of the node set ends at ', res%spec_hoplim, ' (lower rmax or raise levels)'
+      ! ---- species parameters per (component, spin) and the dressing weights of every target
+      allocate (ms(ncomp, nsp), es(ncomp, nsp), tw(9, nsm, nt, ncomp, nsp)); tw = 0.0_dp
+      do gg = 1, nsp
+        do pp_ = 1, ncomp
+          call edc_setup(mdl, pps(:, gg), alpha, pp_, es(pp_, gg)); ms(pp_, gg) = mdl
+          kp = pcl(pp_)
+          do t_ = 1, nt
+            cl_ = tcls(t_, kp)
+            if (cl_ <= ncls) then
+              call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(cl_), cl_), &
+                                     inp%conc(1:inp%nsc(cl_), cl_), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+            else
+              ks = cl_ - ncls
+              call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(ks), cl_), &
+                                     inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+            end if
+          end do
+        end do
+      end do
+      ! ---- energies, chains
+      allocate (ee(ne), zs(ne))
+      do j = 1, ne
+        ee(j) = inp%spectral%emin + (inp%spectral%emax - inp%spectral%emin) * real(j - 1, dp) / real(max(ne - 1, 1), dp)
+      end do
+      zs = cmplx(ee, inp%spectral%eta, dp)
+      allocate (gdg(9, nt, ne, nsp, ncls), gdg4(9, nt, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
+      !$omp parallel
+      call spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
+      !$omp end parallel
+      if (par_size() > 1) then
+        call par_sum_z(gdg, size(gdg)); call par_sum_z(gdg4, size(gdg4))
+      end if
+      ! ---- diagnostics on the averaged elements
+      gmax = maxval(abs(gdg)); gmax0 = maxval(abs(gdg(:, t0, :, :, :)))
+      res%spec_rdef = 0.0_dp
+      do kp = 1, ncls
+        do t_ = 1, nt
+          res%spec_rdef = max(res%spec_rdef, maxval(abs(gdg(:, t_, :, :, kp) - gdg(:, tmir(t_), :, :, tbase(t_, kp)))))
+        end do
+      end do
+      res%spec_rdef = res%spec_rdef / max(gmax, tiny(1.0_dp))
+      res%spec_spread0 = maxval(abs(gdg(:, t0, :, :, :) - gdg4(:, t0, :, :, :))) / max(gmax0, tiny(1.0_dp))
+      res%spec_spread = 0.0_dp
+      do t_ = 1, nt
+        if (t_ /= t0) res%spec_spread = max(res%spec_spread, maxval(abs(gdg(:, t_, :, :, :) - gdg4(:, t_, :, :, :))))
+      end do
+      res%spec_spread = res%spec_spread / max(gmax, tiny(1.0_dp))
+      ! ---- symmetrise: G(kappa; L, R) <- (G(kappa; L, R) + G(kappa'; L, -R)) / 2, kappa' the class of the target
+      gdg4 = gdg
+      do kp = 1, ncls
+        do t_ = 1, nt
+          gdg(:, t_, :, :, kp) = 0.5_dp * (gdg4(:, t_, :, :, kp) + gdg4(:, tmir(t_), :, :, tbase(t_, kp)))
+        end do
+      end do
+      ! shell decay of Im G relative to the on-site element
+      allocate (r2sh(nt), shell(nt)); nsh = 0
+      do t_ = 1, nt
+        a_ = sum(tdisp(:, t_)**2); shell(t_) = 0
+        do j = 1, nsh
+          if (abs(r2sh(j) - a_) < 1.0e-9_dp) then; shell(t_) = j; exit; end if
+        end do
+        if (shell(t_) == 0) then; nsh = nsh + 1; r2sh(nsh) = a_; shell(t_) = nsh; end if
+      end do
+      allocate (res%spec_rsh(nsh), res%spec_decay(nsh)); res%spec_rsh = sqrt(r2sh(1:nsh)); res%spec_decay = 0.0_dp
+      gmax0 = maxval(abs(aimag(gdg(:, t0, :, :, :))))
+      do t_ = 1, nt
+        res%spec_decay(shell(t_)) = max(res%spec_decay(shell(t_)), maxval(abs(aimag(gdg(:, t_, :, :, :)))) / max(gmax0, tiny(1.0_dp)))
+      end do
+      ! ---- Bloch sums along the path
+      call spectral_kpath(inp%spectral%kpts, inp%spectral%nk, res%spec_k, res%spec_dist, res%spec_icorner)
+      nkp = size(res%spec_dist)
+      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(nt))
+      res%spec_e = ee; res%spec_a = 0.0_dp; res%spec_ac = 0.0_dp
+      do gg = 1, nsp
+        do kp = 1, ncls
+          do j = 1, ne
+            do l_ = 0, 2
+              v = 0.0_dp
+              do it_ = 1, 9
+                if (lorb9(it_) == l_) v = v - aimag(gdg(it_, :, j, gg, kp)) / pi
+              end do
+              do ik = 1, nkp
+                a_ = inp%dec%frac(kp) * spectral_unfold(tdisp, v, res%spec_k(:, ik))
+                res%spec_a(j, ik, l_, gg) = res%spec_a(j, ik, l_, gg) + a_
+                res%spec_ac(j, ik, kp, gg) = res%spec_ac(j, ik, kp, gg) + a_
+              end do
+            end do
+          end do
+        end do
+      end do
+      if (ncls == 1 .and. inp%nsc(1) == 1) call ordered_bands(ms, es)
+      amax = maxval(sum(res%spec_a, dim=3))
+      res%spec_nneg = count(sum(res%spec_a, dim=3) < -1.0e-9_dp * amax)
+      res%spec_amin = minval(sum(res%spec_a, dim=3)) / max(amax, tiny(1.0_dp))
+      allocate (res%spec_sum(2, nsp)); res%spec_sum = 0.0_dp
+      de = (inp%spectral%emax - inp%spectral%emin) / real(max(ne - 1, 1), dp)
+      do gg = 1, nsp
+        do j = 1, ne
+          a_ = merge(0.5_dp, 1.0_dp, j == 1 .or. j == ne) * de
+          res%spec_sum(1, gg) = res%spec_sum(1, gg) + a_ * sum(res%spec_a(j, 1, :, gg))
+          res%spec_sum(2, gg) = res%spec_sum(2, gg) + a_ * sum(res%spec_a(j, nkp, :, gg))
+        end do
+      end do
+      if (vb) then
+        print '(a,i0,a,f7.4,a,i0,a,i0,a,i0,a)', '  spectral: ', ne, ' energies, eta ', inp%spectral%eta, ' Ry, ', nst, &
+          ' steps, ', nkp, ' k points, ', nt, ' target sites'
+        print '(a,es9.2,a,es9.2,a,es9.2)', '  spectral: reciprocity defect ', res%spec_rdef, ', step spread (4 steps) off-site ', &
+          res%spec_spread, ' on-site ', res%spec_spread0
+        print '(a,i0,a,es9.2)', '  spectral: points with A < 0: ', res%spec_nneg, ', min A / max A ', res%spec_amin
+        print '(a,*(f7.3))', '  spectral: shell radius (alat)        ', res%spec_rsh
+        print '(a,*(f7.3))', '  spectral: max |Im G| / on-site value ', res%spec_decay
+        print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; 9 = every band inside) ', res%spec_sum
+      end if
+    end subroutine spectral_final
+
+    !> eigenvalues of H^(2)(k) = E_nu + h - h o h, h = c + d S(k) d, S(k) = block0 + sum_slot block(slot) exp(2 pi i k . d_slot),
+    !> d_slot the displacement of the slot-th graph neighbour of the origin (the slots of asr_augcls::apply_h)
+    subroutine ordered_bands(ms, es)
+      type(class_alloy_t), intent(in) :: ms(:, :)
+      type(edn_t), intent(in) :: es(:, :)
+      complex(dp) :: sk(9, 9), hk(9, 9), cw(36)
+      real(dp) :: rw(27), ev(9), dsl(3)
+      integer :: ks_, ns_, info_, m_, n_, gg, ik, nkp
+      nkp = size(res%spec_dist)
+      ns_ = g%nbr_ptr(2) - g%nbr_ptr(1)
+      allocate (res%spec_bands(9, nkp, nsp))
+      do gg = 1, nsp
+        do ik = 1, nkp
+          sk = ms(1, gg)%block0
+          do ks_ = 1, ns_
+            dsl = 0.5_dp * real(modulo(coord(:, g%nbr(g%nbr_ptr(1) + ks_ - 1)) + mg / 2, mg) - mg / 2, dp)
+            sk = sk + ms(1, gg)%block(:, :, ks_) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
+          end do
+          sk = 0.5_dp * (sk + conjg(transpose(sk)))
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = ms(1, gg)%d(m_, 1) * sk(m_, n_) * ms(1, gg)%d(n_, 1); end do
+            hk(n_, n_) = hk(n_, n_) + ms(1, gg)%c(n_, 1)
+          end do
+          sk = hk
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = sk(m_, n_) - sum(sk(m_, :) * ms(1, gg)%o(:, 1) * sk(:, n_)); end do
+            hk(n_, n_) = hk(n_, n_) + es(1, gg)%enu(n_, 1)
+          end do
+          hk = 0.5_dp * (hk + conjg(transpose(hk)))
+          call zheev('N', 'U', 9, hk, 9, ev, cw, 36, rw, info_)
+          if (info_ /= 0) error stop 'class_scf: zheev failed (spectral bands)'
+          res%spec_bands(:, ik, gg) = ev
+        end do
+      end do
+    end subroutine ordered_bands
+
+    !> one thread's share of the spectral chains (inside the parallel region of spectral_final): tasks (energy, start orbital,
+    !> component, spin), a private copy of the origin-class operator per thread
+    subroutine spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
+      type(class_op_t), intent(in) :: sop(:)
+      type(class_alloy_t), intent(in) :: ms(:, :)
+      type(edn_t), intent(in) :: es(:, :)
+      complex(dp), intent(in) :: zs(:)
+      integer, intent(in) :: nst, tnode(:, :, :), tgop(:, :, :)
+      real(dp), intent(in) :: tw(:, :, :, :, :)
+      complex(dp), intent(inout) :: gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
+      type(augcls_op), allocatable :: lop(:)
+      type(edn_work_t), allocatable :: lwk(:)
+      complex(dp), allocatable :: gp(:, :), gp4(:, :)
+      complex(dp) :: gc
+      integer :: cur(3, ncls), tk, j_, o_, p_, s_, k_, q_, rk, nr, ne
+      rk = par_rank(); nr = par_size(); ne = size(zs)
+      allocate (lop(ncls), lwk(ncls), gp(9, size(tnode, 2)), gp4(9, size(tnode, 2))); cur = -1
+      !$omp do schedule(dynamic)
+      do tk = 1, ne * 9 * ncomp * nsp
+        if (mod(tk - 1 + (tk - 1) / ne, nr) /= rk) cycle
+        j_ = mod(tk - 1, ne) + 1; o_ = mod((tk - 1) / ne, 9) + 1
+        p_ = mod((tk - 1) / (9 * ne), ncomp) + 1; s_ = (tk - 1) / (9 * ne * ncomp) + 1
+        k_ = pcl(p_)
+        if (cur(1, k_) < 0) then
+          lop(k_) = sop(k_)%op
+          nullify (lop(k_)%wk); allocate (lop(k_)%wk(size(sop(k_)%op%wk, 1), size(sop(k_)%op%wk, 2)))
+          call edn_work_init(lwk(k_), lop(k_)%dim())
+          cur(:, k_) = 0
+        end if
+        if (cur(1, k_) /= p_ .or. cur(2, k_) /= s_) then
+          call augcls_set_params(lop(k_), ms(p_, s_)); call augcls_freeze_site(lop(k_), 1, p_)
+          if (inp%sro) then
+            do q_ = 1, ncls
+              call augcls_set_class_conc(lop(k_), ncls + q_, inp%sro_cond(pk(p_), 1:inp%nsc(q_), k_, q_))
+            end do
+          end if
+          cur(1, k_) = p_; cur(2, k_) = s_; cur(3, k_) = -1
+        end if
+        if (cur(3, k_) /= o_) then; call augcls_set_start(lop(k_), o_, sop(k_)%d); cur(3, k_) = o_; end if
+        call edc_green_proj(lop(k_), lwk(k_), es(p_, s_), zs(j_), o_, nst, tnode(:, :, k_), tgop(:, :, k_), &
+                            tw(:, :, :, p_, s_), gc, gp, gp4)
+        !$omp critical (spectral_acc)
+        gdg(o_, :, j_, s_, k_) = gdg(o_, :, j_, s_, k_) + xp(p_) * gp(o_, :)
+        gdg4(o_, :, j_, s_, k_) = gdg4(o_, :, j_, s_, k_) + xp(p_) * gp4(o_, :)
+        !$omp end critical (spectral_acc)
+      end do
+      !$omp end do
+      do k_ = 1, ncls
+        if (cur(1, k_) >= 0) deallocate (lop(k_)%wk)
+      end do
+    end subroutine spectral_worker
 
     subroutine dos_final()
       complex(dp), allocatable :: zs(:), gz(:, :, :, :)

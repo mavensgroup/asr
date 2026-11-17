@@ -84,6 +84,13 @@ each other in atom-then-spin order.
 
 `E  total  <label>_s <label>_p <label>_d (for each component p)  total_spin1 total_spin2`. States/Ry per atom of each component, summed over spin; `total` is per site, weighted by the component weights. Labels combine sublattice and species.
 
+## `[spectral]` file
+
+One block per k point, separated by a blank line (gnuplot `pm3d` or `splot` reads it).  The header lists the corners of the
+path with their labels, block indices and path distances.  Columns: path distance, \(k_x, k_y, k_z\) (units \(2\pi/a\)),
+\(E\) (Ry), \(A\) summed over spin, its \(s, p, d\) parts, the two spin channels (`spin = 2`), and the part of each origin
+sublattice.  Units: states per Ry per graph site.
+
 ## Other files
 
 | File | When | Content |
