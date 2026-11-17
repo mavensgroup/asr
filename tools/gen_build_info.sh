@@ -2,7 +2,8 @@
 # Generate src/asr_build_info.f90 from git state
 set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REV=$(git -C "$ROOT" describe --always --dirty 2>/dev/null || echo "unknown")
+# cd instead of git -C: git 1.8 (CentOS 7 clusters) has no -C
+REV=$(cd "$ROOT" && git describe --always --dirty 2>/dev/null || echo "unknown")
 DIRTY="false"
 if [[ "$REV" =~ -dirty$ ]]; then
   DIRTY="true"
@@ -25,6 +26,6 @@ else
   rm -f "$TMP"
 fi
 
-if git -C "$ROOT" ls-files --error-unmatch "$TARGET" >/dev/null 2>&1; then
-  git -C "$ROOT" update-index --skip-worktree "$TARGET" 2>/dev/null || true
+if (cd "$ROOT" && git ls-files --error-unmatch "$TARGET") >/dev/null 2>&1; then
+  (cd "$ROOT" && git update-index --skip-worktree "$TARGET") 2>/dev/null || true
 fi
