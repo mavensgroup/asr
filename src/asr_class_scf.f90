@@ -49,7 +49,8 @@ module asr_class_scf
   use asr_edc
   use asr_ed3
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
-  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams
+  !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads, omp_get_max_active_levels, omp_set_max_active_levels
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
   use asr_sublattice
@@ -187,6 +188,7 @@ contains
     integer :: p2
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
     logical :: vb, cubic, hlo, hhi, core_ok, ed3
+    integer :: teams_said(2)                    !! the last thread split of chain_greens that was printed (nout, nin)
     real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
     real(dp) :: phi2, asym_max, psd_max
     integer :: npsd, nnode
@@ -195,6 +197,7 @@ contains
     if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
+    teams_said = 0
     npsd = 0; nnode = 0
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
@@ -863,7 +866,7 @@ contains
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
-      integer :: gg, pp_, nbe, kp, ib
+      integer :: gg, pp_, nbe, kp, ib, nth, nout, nin, nmy, ntg_, t_, lvl
       integer(8) :: cnt0(3), cnt(3)
       ib = tb_chains; if (present(tbk)) ib = tbk
       call timer_start(res%timer, ib)
@@ -892,9 +895,33 @@ contains
         if (present(gb)) gb = (0.0_dp, 0.0_dp)
         cnt0 = [ed_nchain, ed_nlev, ed_nfall]
       end if
-      !$omp parallel
+      ! threads: when this rank holds fewer chains than threads, teams of nin threads share the matrix-vector products of one
+      ! chain (asr_chain::chain_teams; nested OpenMP, the inner loops of asr_augcls).  Otherwise one thread per chain, as before.
+      ! The inner loops write disjoint parts of the vectors, so the results do not depend on the split.
+      ntg_ = size(zs); if (nbe > 0) ntg_ = (size(zs) + nbe - 1) / nbe
+      nmy = 0
+      do t_ = 1, ntg_ * 4 * ncomp * nsp
+        if (mod(t_ - 1 + (t_ - 1) / ntg_, par_size()) == par_rank()) nmy = nmy + 1
+      end do
+      nth = 1
+      !$ nth = omp_get_max_threads()
+      call chain_teams(nmy, nth, nout, nin)
+      lvl = 1
+      !$ lvl = omp_get_max_active_levels()
+      !$ if (nin > 1) call omp_set_max_active_levels(max(lvl, 2))
+      if (vb .and. (teams_said(1) /= nout .or. teams_said(2) /= nin)) then
+        if (nin > 1) then
+          print '(a,i0,a,i0,a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: ', nout, ' teams of ', nin, ' threads'
+        else if (teams_said(1) /= 0) then
+          print '(a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: one thread per chain'
+        end if
+        teams_said = [nout, nin]
+      end if
+      !$omp parallel num_threads(nout)
+      !$ if (nin > 1) call omp_set_num_threads(nin)
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
+      !$ if (nin > 1) call omp_set_max_active_levels(lvl)
       if (par_size() > 1) then
         call par_sum_z(gz, size(gz))
         if (present(gb)) call par_sum_z(gb, size(gb))
