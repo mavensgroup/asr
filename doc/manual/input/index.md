@@ -39,6 +39,7 @@ in [[asr_driver]]. The old `[calculation] kind = ...` input (`model`, `lmto`,
 | `[scf]` | xc, spin, mixing, convergence, screening model | partly | [Hamiltonian](hamiltonian.html) |
 | `[kspace]` | Brillouin-zone reference | **yes** | [k-space](kspace.html) |
 | `[dos]`, `[output]` | energy window, files | no | below |
+| `[spectral]` | Bloch spectral function A(k, E) after the SCF | no | below |
 
 Only [TB-LMTO-ASA](../hamiltonian/tb_lmto_asa.html) is implemented, so there is
 no key to select a Hamiltonian ([Hamiltonians](../hamiltonian/index.html)).
@@ -69,6 +70,41 @@ The same structure block runs under both methods.  The test inputs in `data/kspa
 | `params_file` | `params.dat` | Potential parameters, `method = "kspace"` only |
 
 See [Output files](../output.html).
+
+## `[spectral]`
+
+The configuration-averaged Bloch spectral function \(A(\mathbf k,E)\), the band structure of the disordered alloy, at the
+final potential.  Route `edc` only.  It is unfolded on the Brillouin zone of the graph lattice (bcc, fcc, sc) and given per
+graph site and per spin.  Every sublattice must be one lattice of translations (random alloys, B2, L2\(_1\); not L1\(_2\)).
+Theory: `docs/DERIVATION_spectral_argon.md`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `kpath` | required | Corners of the path, Cartesian, units \(2\pi/a\) of the graph lattice, at least two |
+| `labels` | empty | One label per corner |
+| `nk` | `30` | Points per segment |
+| `emin`, `emax` | those of `[dos]` | Energy window (Ry) |
+| `npoints` | `201` | Energies |
+| `eta` | `0.01` | Imaginary part of the energy (Ry) |
+| `rmax` | `2.0` | Largest displacement in the Fourier sum, units of \(a\); below `supercell / 2` |
+| `window` | `"ball"` | Weight of each displacement in the Fourier sum: `"ball"` or `"sharp"` (below) |
+| `steps` | `recursion_steps` | Length of the spectral chains |
+| `file` | `spectral.dat` | Output table, one block per k point |
+
+Cost: one chain per spin, component, orbital (9) and energy on the operator reduced with D2h, about twice the nodes of the
+SCF operator.  `asr.out` lists the checks: the largest graph distance of a target against the interior of the node set, the
+difference between the two origins of a pair, the change when the chains are cut four steps earlier, the number of points with
+\(A<0\) (chains that are too short, or the ringing of the sharp window), and the decay of \(\mathrm{Im}\,G\) with the shell.
+
+The window.  The Fourier sum stops at `rmax`.  With `window = "sharp"` every displacement up to `rmax` has weight 1.  The sum
+then rings: for ordered fcc Cu at `eta` 0.01 Ry, \(A\) falls to \(-30\,\%\) of its peak.  The default `"ball"` weights a
+displacement \(R\) by \(w(R) = (1-R/r_{\max})^2\,(1+R/(2r_{\max}))\), the overlap of two balls of diameter \(r_{\max}\).  Its Fourier
+transform is non-negative.  So the result is the exact \(A\) smoothed in \(\mathbf k\) with a positive kernel of width about
+\(1/r_{\max}\): it cannot ring below zero, and its BZ average and its energy integral at each \(\mathbf k\) are unchanged.  The
+price is resolution in \(\mathbf k\).  Raise `rmax` (and `supercell`) for sharper bands.
+
+The energy integral of \(A\) at a k point counts the bands inside the window, at most 9 per spin.  The file sums both spins for
+`spin = 1`.
 
 ## Skeleton
 

@@ -22,8 +22,8 @@ module asr_augcls
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state
   implicit none
   private
-  public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c
+  public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, &
+            augcls_rand, augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_amp_c
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -188,6 +188,19 @@ contains
       out(l) = op%chi(g) * op%sg(l, g) * v(9 * (r - 1) + op%pi(l, g))
     end do
   end subroutine at_link
+
+  !> Amplitudes (9 orbitals) of the unreduced vector at a node, from the reduced vector v in normalised coordinates.  The node is
+  !> given by its link (r, g): r its representative, g the operation that maps it onto r (build_augcls_operator, tnode / tgop).
+  !> v holds sqrt(orbit size) times the amplitude at r, so psi(node) = chi(g) D(g)^T v(r) / sqrt(orbit size).  r = 0: zero.
+  pure function augcls_amp_c(op, v, r, g) result(amp)
+    class(augcls_op), intent(in) :: op
+    complex(dp), intent(in) :: v(:)
+    integer, intent(in) :: r, g
+    complex(dp) :: amp(9)
+    if (r <= 0) then; amp = (0.0_dp, 0.0_dp); return; end if
+    call at_link_c(op, v, r, g, amp)
+    amp = amp / op%sq(r)
+  end function augcls_amp_c
 
   pure subroutine at_link_c(op, v, r, g, out)
     class(augcls_op), intent(in) :: op
@@ -470,7 +483,11 @@ contains
   ! ------------------------------------------------------------------ builder
   !> Node set = closure of the support of H (paths R -> R1 -> R2, every visited site in any of its allowed states), rank-limited,
   !> on canonical representatives.  cls(site) = class of every graph site; perm(:, 1:nop), dmat(9, 9, nop): the group.
-  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable)
+  !> tsite (optional): target graph sites.  For each target and local state k = 0 .. nsc - 1 (the site alone in state k, every
+  !> other site in its reference state) tnode(k + 1, t) returns the representative node and tgop(k + 1, t) the operation that
+  !> maps the node onto it (augcls_amp_c).  tnode = 0: the node is not in the node set (or the site cannot flip).  The node store
+  !> exists only inside this routine, so the lookup is done here (asr_spectral).
+  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable, tsite, tnode, tgop)
     type(graph_t), intent(in) :: g
     type(class_alloy_t), intent(in) :: mdl
     integer, intent(in) :: cls(:), perm(:, :), start, maxlevel
@@ -478,6 +495,8 @@ contains
     type(augcls_op), intent(out) :: op
     integer, intent(in), optional :: maxrank
     logical, intent(in), optional :: flippable(:)
+    integer, intent(in), optional :: tsite(:)
+    integer, allocatable, intent(out), optional :: tnode(:, :), tgop(:, :)
     type(store_t) :: st
     logical, allocatable :: canflip(:)
     integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), stb(:)
@@ -607,6 +626,19 @@ contains
     end do
     op%stab_ptr(st%n + 1) = nstb + 1
     op%stab = stb(1:nstb)
+    if (present(tsite)) then                                           ! target nodes (see the header)
+      if (.not. (present(tnode) .and. present(tgop))) error stop 'build_augcls_operator: tsite needs tnode and tgop'
+      allocate (tnode(nsm, size(tsite)), tgop(nsm, size(tsite))); tnode = 0; tgop = 1
+      do i = 1, size(tsite)
+        r = tsite(i)
+        do k = 0, mdl%nsc(cls(r)) - 1
+          if (k > 0 .and. (r == start .or. .not. canflip(r))) cycle
+          tmp = set_state(cfg0, r, k, nsm)
+          call canon_node(perm, nop, nsm, r, tmp, cs, ccf, osz, gb)
+          tnode(k + 1, i) = find_state(st, cs, ccf); tgop(k + 1, i) = gb
+        end do
+      end do
+    end if
     allocate (op%wk(9 * st%n, 8))
     call augcls_set_start(op, 1, dmat)
   end subroutine build_augcls_operator
