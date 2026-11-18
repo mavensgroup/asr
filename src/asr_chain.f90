@@ -6,7 +6,8 @@ module asr_chain
   use asr_kinds, only: dp
   implicit none
   private
-  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species, ed_project
+  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species, ed_project, chain_teams, chain_serial_frac, &
+            chain_vec_par
 
   !> adaptive depth: from level 8, every 4 levels, stop when the terminated Green function changes by less than ed_depth_tol
   !> (relative); 0 = always use the full depth.  ed_nchain / ed_nlev count chains and levels used (statistics).
@@ -23,8 +24,40 @@ module asr_chain
   !> The chains on a group-reduced operator (asr_edc, asr_ed3) project every new Lanczos vector onto the symmetric subspace
   !> (asr_augcls::augcls_project_c).  .false. switches this off: for tests and diagnostics only.
   logical :: ed_project = .true.
+  !> serial fraction of one chain step when its matrix-vector products run on several threads (chain_teams): the vector
+  !> operations of the Lanczos step stay on one thread.  The matrix-vector product costs about 81 nslot flops per node, the
+  !> vector operations about 10 per orbital, so the serial part is a few per cent; 0.05 is a safe upper value.
+  real(dp) :: chain_serial_frac = 0.05_dp
+  !> the element-wise vector loops of a chain step (asr_edc, asr_ed3, asr_augcls::apply_h) run as parallel loops only when this
+  !> is true: outside any parallel region (tests, one chain on all threads) and inside a thread team (chain_teams, nin > 1).
+  !> With one thread per chain the plain array statements run instead: the entry of an inactive parallel region costs about
+  !> 10 % of a step on small operators.  Both forms do the same operations per element, so the results are the same.
+  logical :: chain_vec_par = .true.
 
 contains
+
+  !> Split nth threads into nout teams of nin threads for ntask chains of similar cost: the outer threads take whole chains
+  !> (dynamic schedule), the nin threads of a team share the matrix-vector products of one chain (the inner parallel loops of
+  !> asr_augcls).  The time is about ceil(ntask / nout) chains of cost f + (1 - f) / nin each (f = chain_serial_frac).  The
+  !> split is nested only when it beats nin = 1 by more than 10 %: with many chains per thread (one node, many energies) the
+  !> program keeps one thread per chain, as before.  It pays when the ranks hold fewer chains than threads (many MPI nodes).
+  !> nin = 1 returns nout = nth, the team of the plain parallel region.
+  pure subroutine chain_teams(ntask, nth, nout, nin)
+    integer, intent(in) :: ntask, nth
+    integer, intent(out) :: nout, nin
+    real(dp) :: c, c1, best
+    integer :: k, no
+    nout = max(nth, 1); nin = 1
+    if (ntask < 1 .or. nth < 2) return
+    c1 = real((ntask + nth - 1) / nth, dp)
+    best = c1
+    do k = 2, nth
+      no = nth / k
+      c = real((ntask + no - 1) / no, dp) * (chain_serial_frac + (1.0_dp - chain_serial_frac) / real(k, dp))
+      if (c < best - 1.0e-12_dp) then; best = c; nin = k; nout = no; end if
+    end do
+    if (best > 0.9_dp * c1) then; nout = nth; nin = 1; end if
+  end subroutine chain_teams
 
   !> g_11 and sum_k c_k [g]_{k1} of the complex-symmetric tridiagonal chain (a, b) with spectral variable z, terminated by a
   !> square-root tail whose band edges are the extreme eigenvalues (real parts) of the finite chain (Beer-Pettifor type): the

@@ -1102,5 +1102,7 @@ contains
     rep%timer = res%timer
     rep%timer%wall_total = rep%wall_total
     rep%timer%cpu_total = cpu_seconds()
+    if (allocated(res%chain_rank_wall)) rep%chain_rank_wall = res%chain_rank_wall
+    rep%chain_split = res%chain_split
   end subroutine rep_from_class_scf
 end module asr_driver

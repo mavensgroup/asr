@@ -42,7 +42,24 @@ title: Recursion and disorder (method = "asr")
 | `energy_block` | `0` | Contour energies per chain block. `0` runs one chain per energy. `8` runs eight in one block, 1.35× faster for CoCrFeNi at about 6× the memory. Same result within the chain's length error |
 | `ef_linear_max` | `0` | Ry. \(E_F\) steps up to this size are taken to first order without a new contour (exact at self-consistency); `0` = off |
 
-An MPI build (`-DUSE_MPI`) splits the chain tasks over ranks with no input change.
+An MPI build (`-DUSE_MPI`) splits the chain tasks over ranks with no input change.  Build it with the flags of your MPI
+library added to the usual ones, for OpenMPI `--flag "... -DUSE_MPI -I<mpi>/include" --link-flag "... -L<mpi>/lib -lmpi_mpifh
+-lmpi"` (MPICH and Intel MPI: `-lmpifort -lmpi`).  Run one rank per node with all its cores as OpenMP threads.  A serial build
+started by `mpirun` stops at once: its copies would all write the same files.
+
+Threads.  A chain task is one start orbital, species, spin and contour energy, so a run has
+\(4\,N_{\text{species}}\,N_{\text{spin}}\,N_E\) of them (random CuZn, 32 energies: 256).  While every thread has several, each
+thread runs whole chains.  When a rank holds fewer chains than threads (many nodes), teams of threads share the
+matrix-vector products of one chain (nested OpenMP); the log says `chains: ... teams of ... threads`.  The results do not
+depend on the split.  With the Intel runtime set `KMP_HOT_TEAMS_MAX_LEVEL=2`, so that the inner teams are kept between
+products (gfortran's runtime keeps them anyway).  Keep the maths library single-threaded (`MKL_NUM_THREADS=1`,
+`OPENBLAS_NUM_THREADS=1`): its calls come from inside the threads.  Thread binding is optional.  If you bind, use
+`OMP_PLACES=cores` with `OMP_PROC_BIND=spread,close`: `spread` gives each outer thread its own share of the cores, and its
+team stays inside that share.  `close` at the outer level does not split the cores between the teams, so teams can land on
+the same cores.
+
+With several ranks, the timing section of `asr.out` (and `timing_s` in `asr.json`) gives each rank's own chain time:
+min, mean, max and max/mean.  A max/mean well above 1 means some ranks wait for others at the sum over ranks.
 
 ### Diagnostics
 

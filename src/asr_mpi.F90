@@ -102,8 +102,32 @@ contains
         rc = c_dup2(fd, 1_c_int); rc = c_close(fd)
       end if
     end if
+#else
+    ! A serial build started by an MPI launcher runs as several independent copies that all write the same files.  The
+    ! launchers tell each copy the number of processes: OpenMPI (OMPI_COMM_WORLD_SIZE), MPICH, Intel MPI and srun with PMI
+    ! (PMI_SIZE).  Stop before anything is written.
+    if (launched_size() > 1) error stop 'par_init: this asr is a serial build, but an MPI launcher started several copies of it; &
+      &build with -DUSE_MPI and link the MPI library (manual: input/asr.md, Speed), or run one copy'
 #endif
   end subroutine par_init
+
+#ifndef USE_MPI
+  !> number of processes an MPI launcher reports in the environment (1 if none)
+  integer function launched_size() result(n)
+    character(len=32) :: v
+    integer :: ln, st, k, ios
+    character(len=*), parameter :: names(2) = [character(len=20) :: 'OMPI_COMM_WORLD_SIZE', 'PMI_SIZE']
+    n = 1
+    do k = 1, size(names)
+      call get_environment_variable(trim(names(k)), v, ln, st)
+      if (st /= 0 .or. ln == 0) cycle
+      read (v(1:ln), *, iostat=ios) n
+      if (ios /= 0) n = 1
+      if (n > 1) return
+    end do
+    n = 1
+  end function launched_size
+#endif
 
   !> end MPI if par_init started it
   subroutine par_finalize()

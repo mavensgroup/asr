@@ -8,7 +8,7 @@ module asr_edc
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_rand_c, augcls_project_c, augcls_amp_c
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
-  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project, chain_vec_par
   use asr_augblk, only: blk_work_t, blk_hamx, blk_project
   implicit none
   private
@@ -81,8 +81,8 @@ contains
     complex(dp), intent(out) :: g
     complex(dp), intent(out), optional :: acoef(:), bcoef(:)
     integer, intent(out), optional :: mused
-    complex(dp) :: ep(9, ed%ns), a(nlev), b(nlev), cc(nlev), gtry, gprev, ftmp, fa
-    integer :: k, l, m, s
+    complex(dp) :: ep(9, ed%ns), a(nlev), b(nlev), cc(nlev), gtry, gprev, ftmp, fa, ak, bk
+    integer :: k, l, m, s, i
     do s = 1, ed%ns
       do l = 1, 9
         ep(l, s) = z - ed%dc(l) * (z - ed%enu(l, s)) / ed%del(l, s)
@@ -93,11 +93,28 @@ contains
     wk%u(iv) = (1.0_dp, 0.0_dp)
     a = 0.0_dp; b = 0.0_dp; cc = 0.0_dp; m = 0
     do k = 1, nlev
-      wk%re = real(wk%u); wk%im = aimag(wk%u)
+      ! element-wise loops: parallel inside a thread team (asr_chain::chain_vec_par), the same operations per element
+      if (chain_vec_par) then
+        !$omp parallel do
+        do i = 1, size(wk%u)
+          wk%re(i) = real(wk%u(i)); wk%im(i) = aimag(wk%u(i))
+        end do
+        !$omp end parallel do
+      else
+        wk%re = real(wk%u); wk%im = aimag(wk%u)
+      end if
       call op%apply(wk%re, wk%sre)
       call op%apply(wk%im, wk%sim)
       call augcls_rand_c(op, ep, wk%u, wk%dg)
-      wk%w = cmplx(wk%sre, wk%sim, dp) + wk%dg
+      if (chain_vec_par) then
+        !$omp parallel do
+        do i = 1, size(wk%w)
+          wk%w(i) = cmplx(wk%sre(i), wk%sim(i), dp) + wk%dg(i)
+        end do
+        !$omp end parallel do
+      else
+        wk%w = cmplx(wk%sre, wk%sim, dp) + wk%dg
+      end if
       a(k) = sum(wk%u * wk%w)
       m = k
       if (k == nlev) exit
@@ -108,13 +125,33 @@ contains
         end if
         gprev = gtry
       end if
-      wk%w = wk%w - a(k) * wk%u
-      if (k > 1) wk%w = wk%w - b(k - 1) * wk%up
+      ak = a(k); bk = (0.0_dp, 0.0_dp); if (k > 1) bk = b(k - 1)
+      if (chain_vec_par) then
+        !$omp parallel do
+        do i = 1, size(wk%w)
+          wk%w(i) = wk%w(i) - ak * wk%u(i)
+          if (k > 1) wk%w(i) = wk%w(i) - bk * wk%up(i)
+        end do
+        !$omp end parallel do
+      else
+        wk%w = wk%w - ak * wk%u
+        if (k > 1) wk%w = wk%w - bk * wk%up
+      end if
       if (ed_project) call augcls_project_c(op, wk%w)        ! rounding leaves the symmetric subspace and is amplified there
       b(k) = sqrt(sum(wk%w * wk%w))
       if (abs(b(k)) < 1.0e-12_dp) exit
-      wk%up = wk%u
-      wk%u = wk%w / b(k)
+      bk = b(k)
+      if (chain_vec_par) then
+        !$omp parallel do
+        do i = 1, size(wk%w)
+          wk%up(i) = wk%u(i)
+          wk%u(i) = wk%w(i) / bk
+        end do
+        !$omp end parallel do
+      else
+        wk%up = wk%u
+        wk%u = wk%w / bk
+      end if
     end do
     !$omp atomic
     ed_nchain = ed_nchain + 1

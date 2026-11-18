@@ -50,7 +50,8 @@ module asr_class_scf
   use asr_edc
   use asr_ed3
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
-  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams, chain_vec_par
+  !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads, omp_get_max_active_levels, omp_set_max_active_levels
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
   use asr_sublattice
@@ -122,6 +123,8 @@ module asr_class_scf
     real(dp) :: depth_mean = 0.0_dp
     integer :: nfall = 0, mix_nrestart = 0, mix_nh = 0
     type(run_timer_t) :: timer                            !! wall / CPU time per part of the run (asr_runstats)
+    real(dp), allocatable :: chain_rank_wall(:)           !! wall time of each rank's own chains, summed over the run (s)
+    integer :: chain_split(2) = [0, 1]                    !! thread split of the last chain pass: teams (nout), threads per team
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e);
                                                            !! huge if an SRO mode has Gamma = 0 (F infinite)
@@ -207,6 +210,7 @@ contains
     integer :: p2
     integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc
     logical :: vb, cubic, hlo, hhi, core_ok, ed3
+    integer :: teams_said(2)                    !! the last thread split of chain_greens that was printed (nout, nin)
     real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
     real(dp) :: phi2, asym_max, psd_max
     integer :: npsd, nnode
@@ -215,6 +219,7 @@ contains
     if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
+    teams_said = 0
     npsd = 0; nnode = 0
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
@@ -687,6 +692,9 @@ contains
     res%moment_site = sum(w * cr(:)%moment)
     res%qch = qch
     res%timer%wall_total = wall_seconds() - tw0; res%timer%cpu_total = cpu_seconds() - tc0
+    do kap = 1, size(cop)
+      call augcls_free(cop(kap)%op)                      ! the node tables are pointers (asr_augcls): release them here
+    end do
 
   contains
 
@@ -882,7 +890,9 @@ contains
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
-      integer :: gg, pp_, nbe, kp, ib
+      integer :: gg, pp_, nbe, kp, ib, nth, nout, nin, nmy, ntg_, t_, lvl
+      real(dp) :: tw0
+      complex(dp), allocatable :: trk(:)
       integer(8) :: cnt0(3), cnt(3)
       ib = tb_chains; if (present(tbk)) ib = tbk
       call timer_start(res%timer, ib)
@@ -911,9 +921,43 @@ contains
         if (present(gb)) gb = (0.0_dp, 0.0_dp)
         cnt0 = [ed_nchain, ed_nlev, ed_nfall]
       end if
-      !$omp parallel
+      ! threads: when this rank holds fewer chains than threads, teams of nin threads share the matrix-vector products of one
+      ! chain (asr_chain::chain_teams; nested OpenMP, the inner loops of asr_augcls).  Otherwise one thread per chain, as before.
+      ! The inner loops write disjoint parts of the vectors, so the results do not depend on the split.
+      ntg_ = size(zs); if (nbe > 0) ntg_ = (size(zs) + nbe - 1) / nbe
+      nmy = 0
+      do t_ = 1, ntg_ * 4 * ncomp * nsp
+        if (mod(t_ - 1 + (t_ - 1) / ntg_, par_size()) == par_rank()) nmy = nmy + 1
+      end do
+      nth = 1
+      !$ nth = omp_get_max_threads()
+      call chain_teams(nmy, nth, nout, nin)
+      call forced_teams(nout, nin)                           ! diagnostic: ASR_CHAIN_TEAMS=nout,nin
+      lvl = 1
+      !$ lvl = omp_get_max_active_levels()
+      !$ if (nin > 1) call omp_set_max_active_levels(max(lvl, 2))
+      if (vb .and. (teams_said(1) /= nout .or. teams_said(2) /= nin)) then
+        if (nin > 1) then
+          print '(a,i0,a,i0,a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: ', nout, ' teams of ', nin, ' threads'
+        else if (teams_said(1) /= 0) then
+          print '(a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: one thread per chain'
+        end if
+        teams_said = [nout, nin]
+      end if
+      tw0 = wall_seconds()
+      chain_vec_par = nin > 1                                 ! the element-wise chain loops: parallel only inside a team
+      !$omp parallel num_threads(nout)
+      !$ if (nin > 1) call omp_set_num_threads(nin)
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
+      chain_vec_par = .true.
+      !$ if (nin > 1) call omp_set_max_active_levels(lvl)
+      ! each rank's own chain time (before the sum over ranks waits for the slowest): the load balance between ranks
+      allocate (trk(par_size())); trk = (0.0_dp, 0.0_dp); trk(par_rank() + 1) = cmplx(wall_seconds() - tw0, 0.0_dp, dp)
+      if (par_size() > 1) call par_sum_z(trk, size(trk))
+      if (.not. allocated(res%chain_rank_wall)) then; allocate (res%chain_rank_wall(par_size())); res%chain_rank_wall = 0.0_dp; end if
+      res%chain_rank_wall = res%chain_rank_wall + real(trk)
+      res%chain_split = [nout, nin]
       if (par_size() > 1) then
         call par_sum_z(gz, size(gz))
         if (present(gb)) call par_sum_z(gb, size(gb))
@@ -926,6 +970,19 @@ contains
       end if
       call timer_stop(res%timer, ib, int(size(zs), i8) * int(4 * ncomp * nsp, i8))
     end subroutine chain_greens
+
+    !> Diagnostic: the environment variable ASR_CHAIN_TEAMS = "nout,nin" forces the thread split of chain_greens (timing of the
+    !> nested teams on one machine, where the contour always has more chains than threads).  The results do not depend on it.
+    subroutine forced_teams(nout, nin)
+      integer, intent(inout) :: nout, nin
+      character(len=32) :: v
+      integer :: ln, st_, ios, a, b
+      call get_environment_variable('ASR_CHAIN_TEAMS', v, ln, st_)
+      if (st_ /= 0 .or. ln == 0) return
+      read (v(1:ln), *, iostat=ios) a, b
+      if (ios /= 0 .or. a < 1 .or. b < 1) error stop 'ASR_CHAIN_TEAMS must be "nout,nin" with two positive integers'
+      nout = a; nin = b
+    end subroutine forced_teams
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
     !> operator per sublattice with its own work space, re-parametrised / re-frozen / re-started only when the chain needs it
@@ -1160,9 +1217,11 @@ contains
       end do
       zs = cmplx(ee, inp%spectral%eta, dp)
       allocate (gdg(9, nt, ne, nsp, ncls), gdg4(9, nt, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
+      chain_vec_par = .false.                                 ! one thread per chain (asr_chain::chain_vec_par)
       !$omp parallel
       call spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
       !$omp end parallel
+      chain_vec_par = .true.
       if (par_size() > 1) then
         call par_sum_z(gdg, size(gdg)); call par_sum_z(gdg4, size(gdg4))
       end if
@@ -1250,6 +1309,9 @@ contains
         print '(a,*(f7.3))', '  spectral: max |Im G| / on-site value ', res%spec_decay
         print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; the number of bands inside the window, at most 9) ', res%spec_sum
       end if
+      do kp = 1, ncls
+        call augcls_free(sop(kp)%op)                     ! shared node tables of the spectral operators (asr_augcls)
+      end do
     end subroutine spectral_final
 
     !> eigenvalues of H^(2)(k) = E_nu + h - h o h, h = c + d S(k) d, S(k) = block0 + sum_slot block(slot) exp(2 pi i k . d_slot),

@@ -126,6 +126,8 @@ module asr_report
     character(len=10) :: finish_date = '', finish_time = ''
     real(dp) :: wall_total = 0.0_dp
     integer :: mpi_ranks = 1
+    real(dp), allocatable :: chain_rank_wall(:)   !! wall time of each rank's own chains (s); recursion only
+    integer :: chain_split(2) = [0, 1]           !! teams x threads per team of the last chain pass
     integer :: omp_threads = 1
     character(len=256) :: infile = ''
     character(len=16) :: fingerprint = '0000000000000000'
@@ -996,6 +998,7 @@ contains
     type(rep_run_t), intent(in) :: r
     real(dp) :: wtot, ctot, wsum, csum
     integer :: ib, rate
+    character(len=160) :: bal
 
     wtot = max(r%timer%wall_total, sum(r%timer%wall), 1.0e-6_dp)
     ctot = max(r%timer%cpu_total, sum(r%timer%cpu))
@@ -1020,6 +1023,16 @@ contains
       rate = int(real(r%timer%work(tb_chains), dp) / max(1.0e-4_dp, r%timer%wall(tb_chains)))
       call wline(u, ' chain evaluations, SCF contour: ' // trim(i8toa(r%timer%work(tb_chains))) // '   (' // trim(itoa(rate)) // &
                  ' per wall second)')
+    end if
+    if (r%chain_split(2) > 1) call wline(u, ' chain threads: ' // trim(itoa(r%chain_split(1))) // ' teams of ' // &
+                                         trim(itoa(r%chain_split(2))) // ' (fewer chains than threads on a rank)')
+    if (allocated(r%chain_rank_wall)) then
+      if (size(r%chain_rank_wall) > 1) then
+        write (bal, '(a,f10.1,a,f10.1,a,f10.1,a,f6.3)') ' chain time per rank [s]: min', minval(r%chain_rank_wall), '  mean', &
+          sum(r%chain_rank_wall) / size(r%chain_rank_wall), '  max', maxval(r%chain_rank_wall), '  max/mean', &
+          maxval(r%chain_rank_wall) / max(1.0e-9_dp, sum(r%chain_rank_wall) / size(r%chain_rank_wall))
+        call wline(u, trim(bal))
+      end if
     end if
     call wline(u, ' rank 0 of ' // trim(itoa(r%mpi_ranks)) // '; CPU time is the process time of this rank (all threads)')
   contains
@@ -1313,6 +1326,15 @@ contains
     write (u, '(a)') '  "timing_s": {'
     write (u, '(a,f12.2,a)') '    "total_wall": ', r%timer%wall_total, ','
     write (u, '(a,f12.2,a)') '    "total_cpu": ', r%timer%cpu_total, ','
+    if (allocated(r%chain_rank_wall)) then
+      write (u, '(a)', advance='no') '    "chain_wall_per_rank": ['
+      do k = 1, size(r%chain_rank_wall)
+        write (u, '(f12.2)', advance='no') r%chain_rank_wall(k)
+        if (k < size(r%chain_rank_wall)) write (u, '(a)', advance='no') ','
+      end do
+      write (u, '(a)') '],'
+      write (u, '(a,i0,a,i0,a)') '    "chain_teams": [', r%chain_split(1), ', ', r%chain_split(2), '],'
+    end if
     write (u, '(a)') '    "parts": {'
     do k = 1, n_tb
       write (u, '(a,a,a,f12.2)', advance='no') '      "', trim(tb_name(k)), '": ', r%timer%wall(k)
