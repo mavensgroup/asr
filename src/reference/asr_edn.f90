@@ -2,34 +2,22 @@
 !> (start site frozen to c), H(E) = [e_R(E)] + h' - h' q h',  h' = g + S',  S' = D_c^1/2 S D_c^1/2,
 !>   g_s = (D_c/D_s)(C_s - E_nu,s),  q_s = o_s D_s/D_c,  e_s(E) = E - D_c (E - E_nu,s)/D_s   (s = species of the random site),
 !> and G_c(E) = <1|(E - H(E))^-1|1> from a complex-symmetric Lanczos chain per energy; one recursion per central species and orbital.
+!> Reference layer (asr_edc is the production route on the class operator).
 module asr_edn
   use asr_kinds, only: dp
   use asr_augn, only: multi_alloy_t, augn_op, augn_rand_c
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species
+  use asr_edc, only: edn_t, edn_work_t, edn_work_init      ! the types live in the production module; re-exported
   implicit none
   private
   public :: edn_t, edn_work_t, edn_setup, edn_green, edn_work_init
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
-  type :: edn_t
-    integer :: ns = 2, central = 1
-    real(dp), allocatable :: dc(:), del(:, :), enu(:, :)    !! D_c (9); D_s, E_nu,s (9, ns)
-  end type edn_t
-
-  type :: edn_work_t
-    real(dp), allocatable :: re(:), im(:), sre(:), sim(:)
-    complex(dp), allocatable :: u(:), up(:), w(:), dg(:)
-  end type edn_work_t
 
 contains
 
-  subroutine edn_work_init(wk, n)
-    type(edn_work_t), intent(out) :: wk
-    integer, intent(in) :: n
-    allocate (wk%re(n), wk%im(n), wk%sre(n), wk%sim(n), wk%u(n), wk%up(n), wk%w(n), wk%dg(n))
-  end subroutine edn_work_init
 
   !> Operator parameters of `mdl` (9 orbitals, ns species; blocks and concentrations already present) for the central species
   !> `central` from the gamma-representation parameters pp(1:ns) and the screening alpha.  mdl%e = 0: the E_nu term is applied

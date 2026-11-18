@@ -14,7 +14,7 @@ module asr_ed3
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
   use asr_augblk, only: blk_work_t, blk_kmul3, blk_project
   implicit none
   private

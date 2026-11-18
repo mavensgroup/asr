@@ -7,9 +7,8 @@
 module asr_edc
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_rand_c, augcls_project_c
-  use asr_edn, only: edn_t, edn_work_t, edn_work_init
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, cf_species, ed_project
   use asr_augblk, only: blk_work_t, blk_hamx, blk_project
   implicit none
   private
@@ -17,7 +16,24 @@ module asr_edc
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
+  !> parameters of the central species and the chain work space (the names come from the n-species route asr_edn)
+  type :: edn_t
+    integer :: ns = 2, central = 1
+    real(dp), allocatable :: dc(:), del(:, :), enu(:, :)    !! D_c (9); D_s, E_nu,s (9, ns)
+  end type edn_t
+
+  type :: edn_work_t
+    real(dp), allocatable :: re(:), im(:), sre(:), sim(:)
+    complex(dp), allocatable :: u(:), up(:), w(:), dg(:)
+  end type edn_work_t
+
 contains
+
+  subroutine edn_work_init(wk, n)
+    type(edn_work_t), intent(out) :: wk
+    integer, intent(in) :: n
+    allocate (wk%re(n), wk%im(n), wk%sre(n), wk%sim(n), wk%u(n), wk%up(n), wk%w(n), wk%dg(n))
+  end subroutine edn_work_init
 
   !> Species parameters of `mdl` (9 orbitals, nsp global species; classes, concentrations and blocks already present) for the
   !> central species `central` from the gamma-representation parameters pp(1:nsp) and the screening alpha.  mdl%e = 0: the E_nu

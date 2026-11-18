@@ -23,24 +23,21 @@ title: Architecture
 
 The code has two layers that meet only in the SCF: the **method** (augmented-space
 recursion, Hamiltonian-agnostic) and the **Hamiltonian** (TB-LMTO-ASA, the one
-implemented). The layering below is the intended structure (the ROADMAP's "no
-upward dependencies" principle); it is conceptual and not enforced by the build.
+implemented). The diagram shows the modules of the program (`app/main.f90`) only.
 
 ```text
- driver        asr_driver (one reader, dispatch on method)   asr_report   app/main.f90
+ driver        asr_driver  asr_inputdump  asr_report  asr_runstats   app/main.f90
                      │
- SCF           asr_class_scf  asr_alloy_scf  asr_mixing  asr_ewald  asr_screening     (joins the two layers)
-                     │                                      │
- ──── METHOD (Hamiltonian-agnostic) ────────┬──── HAMILTONIAN: TB-LMTO-ASA ───────────────────────
- disorder      asr_augcls  asr_augn          │  operator    asr_edc  asr_ed3  asr_ed  asr_edn  asr_endep
-               asr_augspace  asr_augblk      │              asr_augorb  asr_lmto_alloy  asr_lmto_realization
-               asr_augsym  asr_sublattice    │              asr_lmto_ham  asr_lmto_cell
-               asr_sro  asr_lattices         │  physics     asr_radial  asr_potpar  asr_pfun  asr_atom
- recursion     asr_recursion  asr_greens     │              asr_xc  asr_strconst  asr_harmonics
-               asr_terminator  asr_contour   │  input       asr_input_lmto
-               asr_partial  asr_kpm          │
- ──────────────────────────────────────────────────────────────────────────────────────────────────
- base          asr_kinds  asr_operator  asr_symmetry  asr_tomlutil  asr_testing  asr_mpi
+ SCF           asr_class_scf  asr_mixing  asr_ewald  asr_screening   (joins the two layers)
+                     │                                  │
+ ──── METHOD (Hamiltonian-agnostic) ────────┬──── HAMILTONIAN: TB-LMTO-ASA ───────────────────
+ disorder      asr_augcls  asr_augblk        │  operator    asr_edc  asr_ed3  asr_lmto_alloy
+               asr_augspace  asr_sublattice  │              asr_lmto_ham  asr_lmto_cell
+               asr_sro  asr_lattices         │  physics     asr_radial  asr_potpar  asr_atom
+ recursion     asr_chain  asr_contour        │              asr_xc  asr_strconst  asr_harmonics
+                                             │  input       asr_input_lmto
+ ──────────────────────────────────────────────────────────────────────────────────────────────
+ base          asr_kinds  asr_operator  asr_symmetry  asr_tomlutil  asr_lapack  asr_mpi
 ```
 
 The method sees only the abstract operator ([[asr_operator]]) and the class
@@ -50,6 +47,18 @@ clean: the SCF loop still calls the ASA density and Madelung steps, and
 `asr_augcls` assumes the \(h=c+dSd\) structure of the LMTO operator. The ordered
 k-space path ([[asr_lmto_driver]], [[asr_asa]], [[asr_tetra]]) is an internal
 check and sits on the Hamiltonian side.
+
+### The reference layer
+
+`src/reference/` holds the earlier generations of the method and independent
+numerics: the binary operators and routes, the n-species operator on one
+sublattice, the binary SCF, plain Lanczos, terminators, kernel polynomials. The
+program uses none of them. The tests and the probes use them to cross-check the
+production code, for example the class operator with `edc` against the binary
+route, or the recursion against an exact configuration average. A reference
+module may use production modules; a production module never uses a reference
+module. `tools/check_layers.py` checks the rule and prints the size of the
+program (38 modules, about 10 700 lines; reference layer 16 modules).
 
 ## Program flow
 
@@ -74,9 +83,9 @@ species + [asr]
 asr_class_scf (per SCF iteration)
     │  1. asr_radial → asr_potpar : C, √Δ, p, γ, E_ν per species and spin
     │  2. asr_lmto_alloy / asr_sublattice : graph + bond blocks S^α (common screening)
-    │  3. asr_augsym / asr_augcls : node set (hashed), D4h reduction, params → random operators
-    │  4. recursion: Lanczos (energy-independent: stored basis; ED: one chain per z)
-    │  5. asr_partial / asr_endep : species-resolved G(z) → asr_contour moments M_k
+    │  3. asr_augcls : node set (hashed), point-group reduction, params → random operators
+    │  4. asr_edc / asr_ed3 : one complex-symmetric Lanczos chain per energy (asr_augblk: blocks of energies)
+    │  5. asr_chain : terminated continued fraction → G(z) per component → asr_contour moments M_k
     │  6. density, core, Hartree, xc, SIM/Madelung → asr_mixing
     ▼
 converged potentials → final DOS on the real axis
@@ -92,20 +101,13 @@ All modules link to their generated API pages.
 |---|---|
 | [[asr_kinds]] | Kind parameters (`dp`, `i4`, `i8`), \(\pi\), `ci` |
 | [[asr_operator]] | Abstract Hermitian operator `linop` (`apply`, `dim`, `mapply`), CSR matrix |
+| [[asr_lapack]] | Explicit interfaces to the LAPACK routines used |
+| [[asr_mpi]] | MPI wrappers (serial stubs without `USE_MPI`) |
 | [[asr_testing]] | Minimal test harness: `check`, `check_close`, `report` |
 | [[asr_tomlutil]] | Sub-table access and strict key checking for the TOML readers |
 | [[asr_driver]] | The one input reader and the dispatch on `method` |
+| [[asr_inputdump]] | The resolved input (every key with the value used) for the report |
 | [[asr_input_lmto]] | Input record of the k-space method (`lmto_input_t`, species) |
-
-### Recursion core
-
-| Module | Purpose |
-|---|---|
-| [[asr_recursion]] | Lanczos/Haydock recursion with normalised vectors |
-| [[asr_greens]] | Continued-fraction Green function, square-root tails, LDOS |
-| [[asr_terminator]] | Asymptote estimators (last, avg2, Beer–Pettifor, period 2) and joiners (butt, Luchini–Nex) |
-| [[asr_contour]] | Complex-energy contour (closed, open, Fermi-smeared) and occupied moments |
-| [[asr_partial]] | Species-resolved Green functions from the augmented-space recursion |
 
 ### TB-LMTO-ASA Hamiltonian and the k-space method
 
@@ -125,47 +127,52 @@ All modules link to their generated API pages.
 | [[asr_asa]] | Self-consistent ordered TB-LMTO-ASA: multi-class, collinear spin |
 | [[asr_lmto_driver]] | Driver for `method = "kspace"` |
 
-### Disorder and augmented space
+### Disorder, augmented space and the energy-dependent recursion
 
 | Module | Purpose |
 |---|---|
-| [[asr_augspace]] | Binary augmented space (single orbital), hashed states |
+| [[asr_augspace]] | Graph of the lattice and hashed augmented-space states |
 | [[asr_symmetry]] | O\(_h\) site permutations on periodic sc/bcc/fcc supercells; D\(_{4h}\) orbital representations |
-| [[asr_augorb]] | Multi-orbital augmented-space operator \(H=E_\nu+h-hoh\) |
-| [[asr_augsym]] | D\(_{4h}\)-reduced multi-orbital augmented-space operator |
-| [[asr_augn]] | n-component (multicomponent/HEA) augmented space |
-| [[asr_augcls]] | Site-class (sublattice) resolved, point-group reduced augmented space |
+| [[asr_augcls]] | Site-class (sublattice) resolved, point-group reduced augmented space, n species per class |
+| [[asr_augblk]] | Kernels on blocks of contour energies |
 | [[asr_lattices]] | Periodic sc/bcc/fcc graphs and random alloy realisations |
 | [[asr_sublattice]] | Decoration cells: sublattices from Wyckoff positions and centering |
-| [[asr_lmto_alloy]] | Binary-alloy description from own LMTO output (common screening) |
-| [[asr_lmto_realization]] | One numerical alloy realisation, order-2/3 Hamiltonian (KPM/ED ground truth) |
-
-### Energy-dependent routes
-
-| Module | Purpose |
-|---|---|
-| [[asr_pfun]] | Exact ASA potential function at complex energy (KKR-ASA) |
-| [[asr_endep]] | Energy-dependent recursion \(P(z)-S\) (complex-symmetric Lanczos per energy) |
-| [[asr_ed]] | AMscf-form energy-dependent ASR (binary) |
-| [[asr_edn]] | AMscf-form energy-dependent ASR, n species |
-| [[asr_edc]] | AMscf-form energy-dependent ASR on the site-class operator (`route = "edc"`) |
+| [[asr_sro]] | First-shell short-range order: conditional probabilities |
+| [[asr_screening]] | Screened charge-deviation electrostatics (SIM, SRO closure) |
+| [[asr_lmto_alloy]] | Graph and bond blocks \(S^\alpha\) from own LMTO output (common screening) |
+| [[asr_edc]] | AMscf-form energy-dependent ASR on the site-class operator (`route = "edc"`, the default) |
 | [[asr_ed3]] | Full generalised ASA problem on the site-class operator (`route = "ed3"`) |
+| [[asr_chain]] | Terminated continued fraction of a chain, square-root tails, adaptive depth, chain statistics |
+| [[asr_contour]] | Complex-energy contour (closed, open, Fermi-smeared) and occupied moments |
 
-### Self-consistent alloy drivers and reporting
+### Self-consistency and output
 
 | Module | Purpose |
 |---|---|
-| [[asr_alloy_scf]] | SCF for binary alloys (SIM electrostatics, three recursion routes, B2 real-space) |
 | [[asr_class_scf]] | SCF of `method = "asr"`: any decorated structure, ordered or disordered |
-| [[asr_report]] | `asr.out` writer: banner, input echo, SCF history, results, timing |
+| [[asr_runstats]] | Timers and the names of the total-energy terms |
+| [[asr_report]] | `asr.out`, `asr.json` and the DOS file header ([Output files](output.html)) |
 
-### Reference methods and toys
+### Reference layer (`src/reference/`, tests and probes only)
 
-| Module | Purpose |
-|---|---|
-| [[asr_kpm]] | Chebyshev kernel-polynomial DOS with stochastic trace and Jackson kernel |
-| [[asr_kspace]] | Exact k-space Green function of ordered cubic NN bands |
-| [[asr_lattice_toy]] | NN single-orbital clusters for tests |
+| Module | Purpose | Production counterpart |
+|---|---|---|
+| [[asr_alloy_scf]] | SCF for binary alloys (SIM electrostatics, three recursion routes, B2 real-space) | [[asr_class_scf]] |
+| [[asr_augorb]] | Binary multi-orbital augmented-space operator \(H=E_\nu+h-hoh\) | [[asr_augcls]] |
+| [[asr_augsym]] | D\(_{4h}\)-reduced binary operator | [[asr_augcls]] |
+| [[asr_augn]] | n-component augmented space on one sublattice | [[asr_augcls]] |
+| [[asr_ed]] | AMscf-form energy-dependent ASR, binary | [[asr_edc]] |
+| [[asr_edn]] | AMscf-form energy-dependent ASR, n species | [[asr_edc]] |
+| [[asr_endep]] | Potential-function routes \(P(z)-S\), binary; re-exports [[asr_chain]] | [[asr_chain]] |
+| [[asr_lmto_realization]] | One numerical alloy realisation, order-2/3 Hamiltonian (KPM/ED ground truth) | |
+| [[asr_recursion]] | Lanczos/Haydock recursion with normalised vectors | [[asr_edc]] |
+| [[asr_greens]] | Continued-fraction Green function, square-root tails, LDOS | [[asr_chain]] |
+| [[asr_terminator]] | Asymptote estimators and joiners | [[asr_chain]] |
+| [[asr_partial]] | Species-resolved Green functions, partial disorder | [[asr_edc]] |
+| [[asr_kpm]] | Chebyshev kernel-polynomial DOS with stochastic trace and Jackson kernel | |
+| [[asr_pfun]] | Exact ASA potential function at complex energy (KKR-ASA) | |
+| [[asr_kspace]] | Exact k-space Green function of ordered cubic NN bands | |
+| [[asr_lattice_toy]] | NN single-orbital clusters for tests | |
 
 ## Programs
 
@@ -178,13 +185,13 @@ All modules link to their generated API pages.
 
 | Directory | Content |
 |---|---|
-| `src/` | The library (all modules above; `fpm.toml` sets `library = true`) |
+| `src/` | The library (all modules above; `fpm.toml` sets `library = true`); `src/reference/` the reference layer |
 | `app/` | Executables |
 | `test/` | `test_*`: the fast unit tests, run by `fpm test` |
 | `test_slow/` | `test_*`: slow self-consistent and enumeration tests (fpm examples, `asr_test_slow` in `env.sh`) |
 | `probe/` | `probe_*`: exploratory studies that print results and take arguments (fpm examples, `fpm run --example NAME -- ARGS`) |
 | `example/` | Ready-to-run input files |
-| `tools/` | `sqs.py`, a SQS generator |
+| `tools/` | `sqs.py` (SQS generator), `check_layers.py` (the layer rule), `gen_build_info.sh` (build provenance) |
 | `data/reference/` | Validation data: Stuttgart Ag parameters (`ag_fcc_stuttgart`), digitised CuZn/MnCr DOS |
 | `docs/` | Working notes: `STATUS.md` (verified claims), `TODO.md`, `ROADMAP.md`, `VALIDATION_TARGETS.md`, findings |
 | `trial/` | Scratch (git-ignored except `README.md`) |
