@@ -101,14 +101,23 @@ contains
     type(ed3_work_t), intent(inout) :: wk
     complex(dp), intent(in) :: et(:, :), uu(:, :), qt(:, :), x(:)
     complex(dp), intent(out) :: y(:)
+    integer :: i
     call augcls_hp_c(op, x, wk%t1)
     call augcls_rand_c(op, qt, wk%t1, wk%t2)
     call augcls_rand_c(op, uu, x, wk%t3)
-    wk%t3 = wk%t3 - wk%t2
+    !$omp parallel do
+    do i = 1, size(y)                     ! element-wise loops: parallel inside a thread team (asr_chain::chain_teams)
+      wk%t3(i) = wk%t3(i) - wk%t2(i)
+    end do
+    !$omp end parallel do
     call augcls_hp_c(op, wk%t3, wk%t4)
     call augcls_rand_c(op, et, x, y)
     call augcls_rand_c(op, uu, wk%t1, wk%t2)
-    y = y - wk%t1 + wk%t2 + wk%t4
+    !$omp parallel do
+    do i = 1, size(y)
+      y(i) = y(i) - wk%t1(i) + wk%t2(i) + wk%t4(i)
+    end do
+    !$omp end parallel do
   end subroutine ed3_kmul
 
   !> start vectors of the orbital iv = 9 (node - 1) + l0 (node 1 is the start node): |u>, |v> = h'|u>, |a> = |u> + o_c |v>.  The
@@ -136,8 +145,8 @@ contains
     real(dp), intent(in) :: tnorm
     complex(dp), intent(out) :: g, f
     integer, intent(out) :: m
-    complex(dp) :: a(nlev), b(nlev), c(nlev), gtry, ftry, gprev, fprev
-    integer :: k
+    complex(dp) :: a(nlev), b(nlev), c(nlev), gtry, ftry, gprev, fprev, ak, bk
+    integer :: k, i
     logical :: closed
     a = (0.0_dp, 0.0_dp); b = (0.0_dp, 0.0_dp); c = (0.0_dp, 0.0_dp)
     gprev = (0.0_dp, 0.0_dp); fprev = (0.0_dp, 0.0_dp)
@@ -145,7 +154,11 @@ contains
     do k = 1, nlev
       c(k) = sum(wk%tv * wk%u)
       call ed3_kmul(op, wk, et, uu, qt, wk%u, wk%w)
-      wk%w = z * wk%u - wk%w
+      !$omp parallel do
+      do i = 1, size(wk%w)
+        wk%w(i) = z * wk%u(i) - wk%w(i)
+      end do
+      !$omp end parallel do
       a(k) = sum(wk%u * wk%w)
       m = k
       if (k == nlev) exit
@@ -157,13 +170,23 @@ contains
         end if
         gprev = gtry; fprev = ftry
       end if
-      wk%w = wk%w - a(k) * wk%u
-      if (k > 1) wk%w = wk%w - b(k - 1) * wk%up
+      ak = a(k); bk = (0.0_dp, 0.0_dp); if (k > 1) bk = b(k - 1)
+      !$omp parallel do
+      do i = 1, size(wk%w)                ! the same operations per element as w = w - a u, then w = w - b up
+        wk%w(i) = wk%w(i) - ak * wk%u(i)
+        if (k > 1) wk%w(i) = wk%w(i) - bk * wk%up(i)
+      end do
+      !$omp end parallel do
       if (ed_project) call augcls_project_c(op, wk%w)        ! rounding leaves the symmetric subspace and is amplified there
       b(k) = sqrt(sum(wk%w * wk%w))
       if (abs(b(k)) < 1.0e-12_dp) then; closed = .true.; exit; end if
-      wk%up = wk%u
-      wk%u = wk%w / b(k)
+      bk = b(k)
+      !$omp parallel do
+      do i = 1, size(wk%w)
+        wk%up(i) = wk%u(i)
+        wk%u(i) = wk%w(i) / bk
+      end do
+      !$omp end parallel do
     end do
     !$omp atomic
     ed_nchain = ed_nchain + 1

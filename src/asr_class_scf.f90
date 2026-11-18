@@ -673,6 +673,9 @@ contains
     res%moment_site = sum(w * cr(:)%moment)
     res%qch = qch
     res%timer%wall_total = wall_seconds() - tw0; res%timer%cpu_total = cpu_seconds() - tc0
+    do kap = 1, size(cop)
+      call augcls_free(cop(kap)%op)                      ! the node tables are pointers (asr_augcls): release them here
+    end do
 
   contains
 
@@ -910,6 +913,7 @@ contains
       nth = 1
       !$ nth = omp_get_max_threads()
       call chain_teams(nmy, nth, nout, nin)
+      call forced_teams(nout, nin)                           ! diagnostic: ASR_CHAIN_TEAMS=nout,nin
       lvl = 1
       !$ lvl = omp_get_max_active_levels()
       !$ if (nin > 1) call omp_set_max_active_levels(max(lvl, 2))
@@ -945,6 +949,19 @@ contains
       end if
       call timer_stop(res%timer, ib, int(size(zs), i8) * int(4 * ncomp * nsp, i8))
     end subroutine chain_greens
+
+    !> Diagnostic: the environment variable ASR_CHAIN_TEAMS = "nout,nin" forces the thread split of chain_greens (timing of the
+    !> nested teams on one machine, where the contour always has more chains than threads).  The results do not depend on it.
+    subroutine forced_teams(nout, nin)
+      integer, intent(inout) :: nout, nin
+      character(len=32) :: v
+      integer :: ln, st_, ios, a, b
+      call get_environment_variable('ASR_CHAIN_TEAMS', v, ln, st_)
+      if (st_ /= 0 .or. ln == 0) return
+      read (v(1:ln), *, iostat=ios) a, b
+      if (ios /= 0 .or. a < 1 .or. b < 1) error stop 'ASR_CHAIN_TEAMS must be "nout,nin" with two positive integers'
+      nout = a; nin = b
+    end subroutine forced_teams
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
     !> operator per sublattice with its own work space, re-parametrised / re-frozen / re-started only when the chain needs it

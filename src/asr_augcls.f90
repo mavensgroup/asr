@@ -20,10 +20,11 @@ module asr_augcls
   use asr_kinds, only: dp
   use asr_operator, only: linop
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state
+  !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
   public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c
+            augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_free
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -39,12 +40,17 @@ module asr_augcls
     real(dp), allocatable :: mt(:, :, :, :)                       !! mt(l+1, k+1, k', class) = x_k' phi_l(k') phi_k(k')
     real(dp), allocatable :: c(:, :), d(:, :), o(:, :), e(:, :), block0(:, :)
     real(dp), allocatable :: btab(:, :, :, :)                     !! btab(l, l2, slot, g): S block times D(g)^T
-    integer, allocatable :: flipr(:, :), flipg(:, :)              !! (nsmax, node): node with the site's own state set to k-1
-    integer, allocatable :: hopr(:, :), hopg(:, :), lst(:), site(:), ncl(:), frozen(:), level(:)
-    real(dp), allocatable :: norb(:), sq(:)
+    !> The node tables below never change after build_augcls_operator.  They are pointers, so that a copy of the operator (one
+    !> per thread in the chain loops of asr_class_scf) shares them instead of duplicating them; only the small parameter arrays,
+    !> frozen and the work space wk are per copy.  augcls_free releases them (on the original, never on a copy).
+    integer, pointer, contiguous :: flipr(:, :) => null(), flipg(:, :) => null()   !! (nsmax, node): node with the site's own state set to k-1
+    integer, pointer, contiguous :: hopr(:, :) => null(), hopg(:, :) => null(), lst(:) => null(), site(:) => null(), &
+                                    ncl(:) => null(), level(:) => null()
+    integer, allocatable :: frozen(:)
+    real(dp), pointer, contiguous :: norb(:) => null(), sq(:) => null()
     integer, allocatable :: pi(:, :)
     real(dp), allocatable :: sg(:, :), chi(:)
-    integer, allocatable :: stab_ptr(:), stab(:)                  !! stabiliser of node i: operations stab(stab_ptr(i):stab_ptr(i+1)-1)
+    integer, pointer, contiguous :: stab_ptr(:) => null(), stab(:) => null()   !! stabiliser of node i: stab(stab_ptr(i):stab_ptr(i+1)-1)
     real(dp), pointer :: wk(:, :) => null()
   contains
     procedure :: apply => augcls_apply
@@ -403,7 +409,11 @@ contains
     !$omp end parallel do
     call apply_rand(self, self%d, t2, t3)                              ! t3 = D S D x
     call apply_rand(self, self%c, x, hx)                               ! hx = c x
-    hx = hx + t3
+    !$omp parallel do
+    do i = 1, size(hx)
+      hx(i) = hx(i) + t3(i)
+    end do
+    !$omp end parallel do
   end subroutine apply_h
 
   ! ------------------------------------------------------------------ canonical nodes
@@ -467,6 +477,41 @@ contains
     allocate (s(n)); s = t(1:n)
   end subroutine uniq3
 
+  !> append the record rec to the buffer d (nrec entries used), growing it as needed
+  pure subroutine cand_push(d, nrec, rec)
+    integer, allocatable, intent(inout) :: d(:)
+    integer, intent(inout) :: nrec
+    integer, intent(in) :: rec(:)
+    integer, allocatable :: t(:)
+    if (nrec + size(rec) > size(d)) then
+      allocate (t(max(2 * size(d), nrec + size(rec))))
+      t(1:nrec) = d(1:nrec)
+      call move_alloc(t, d)
+    end if
+    d(nrec + 1:nrec + size(rec)) = rec
+    nrec = nrec + size(rec)
+  end subroutine cand_push
+
+  !> release the shared node tables and the work space of an operator from build_augcls_operator.  Call it on the original
+  !> only: the copies share the tables (their own wk is released by whoever allocated it).
+  subroutine augcls_free(op)
+    type(augcls_op), intent(inout) :: op
+    if (associated(op%flipr)) deallocate (op%flipr)
+    if (associated(op%flipg)) deallocate (op%flipg)
+    if (associated(op%hopr)) deallocate (op%hopr)
+    if (associated(op%hopg)) deallocate (op%hopg)
+    if (associated(op%lst)) deallocate (op%lst)
+    if (associated(op%site)) deallocate (op%site)
+    if (associated(op%ncl)) deallocate (op%ncl)
+    if (associated(op%level)) deallocate (op%level)
+    if (associated(op%norb)) deallocate (op%norb)
+    if (associated(op%sq)) deallocate (op%sq)
+    if (associated(op%stab_ptr)) deallocate (op%stab_ptr)
+    if (associated(op%stab)) deallocate (op%stab)
+    if (associated(op%wk)) deallocate (op%wk)
+    op%nn = 0
+  end subroutine augcls_free
+
   ! ------------------------------------------------------------------ builder
   !> Node set = closure of the support of H (paths R -> R1 -> R2, every visited site in any of its allowed states), rank-limited,
   !> on canonical representatives.  cls(site) = class of every graph site; perm(:, 1:nop), dmat(9, 9, nop): the group.
@@ -480,8 +525,13 @@ contains
     logical, intent(in), optional :: flippable(:)
     type(store_t) :: st
     logical, allocatable :: canflip(:)
-    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), stb(:)
-    integer :: nstb
+    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), nstbn(:)
+    integer :: nstb, nthr, i2, ii, nrec
+    type :: cand_t                                       !! candidates of one node: records (site, orbit size, n, cfg(1:n))
+      integer :: n = 0
+      integer, allocatable :: d(:)
+    end type cand_t
+    type(cand_t), allocatable :: cb(:)
     integer :: nop, nsm, i, lev, r, r1, r2, k1, k2, nsit, f, j, idx, rkmax, cs, osz, gb, ns, k, l, gg, jj, kap, ncomb, q, dgt
     logical :: isnew
 
@@ -505,33 +555,57 @@ contains
     call canon_node(perm, nop, nsm, start, cfg0, cs, ccf, osz, gb)
     if (osz /= 1) error stop 'build_augcls_operator: start site is not invariant under the group'
     idx = find_or_add(st, cs, ccf, 0, isnew); st%orb(idx) = 1
+    ! Breadth-first closure, in chunks of nodes that exist already.  The candidates of a chunk (canonical form of every reachable
+    ! configuration) are computed in parallel: canon_node does not depend on the store.  They are then inserted serially in the
+    ! order (node, k1, k2, f) of the plain serial loop, so every node gets the same index as there, for any number of threads.
+    nthr = 1
+    !$ nthr = omp_get_max_threads()
+    allocate (cb(max(16, 4 * nthr)))
     i = 1
     do while (i <= st%n)
-      lev = st%level(i)
-      if (lev >= maxlevel) then; i = i + 1; cycle; end if
-      r = st%site(i)
-      c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
-        if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
-        do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
-          if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
-          call uniq3(r, r1, r2, sites, nsit)
-          ncomb = product(nst(sites))
-          do f = 0, ncomb - 1
-            cc = c0; q = f
-            do j = 1, nsit
-              if (nst(sites(j)) == 1) cycle
-              dgt = mod(q, nst(sites(j))); q = q / nst(sites(j))
-              tmp = set_state(cc, sites(j), dgt, nsm); cc = tmp
+      i2 = min(st%n, i + size(cb) - 1)
+      !$omp parallel do schedule(dynamic) private(lev, r, c0, k1, k2, r1, r2, sites, nsit, ncomb, f, cc, q, j, dgt, tmp, cs, ccf, &
+      !$omp&                                       osz, gb, nrec)
+      do ii = i, i2
+        nrec = 0
+        if (.not. allocated(cb(ii - i + 1)%d)) allocate (cb(ii - i + 1)%d(1024))
+        lev = st%level(ii)
+        if (lev < maxlevel) then
+          r = st%site(ii)
+          c0 = st%data(st%start(ii):st%start(ii) + st%len(ii) - 1)
+          do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
+            if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
+            do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
+              if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
+              call uniq3(r, r1, r2, sites, nsit)
+              ncomb = product(nst(sites))
+              do f = 0, ncomb - 1
+                cc = c0; q = f
+                do j = 1, nsit
+                  if (nst(sites(j)) == 1) cycle
+                  dgt = mod(q, nst(sites(j))); q = q / nst(sites(j))
+                  tmp = set_state(cc, sites(j), dgt, nsm); cc = tmp
+                end do
+                if (size(cc) > rkmax) cycle
+                call canon_node(perm, nop, nsm, r2, cc, cs, ccf, osz, gb)
+                call cand_push(cb(ii - i + 1)%d, nrec, [cs, osz, size(ccf), ccf])
+              end do
             end do
-            if (size(cc) > rkmax) cycle
-            call canon_node(perm, nop, nsm, r2, cc, cs, ccf, osz, gb)
-            idx = find_or_add(st, cs, ccf, lev + 1, isnew)
-            if (isnew) st%orb(idx) = osz
           end do
+        end if
+        cb(ii - i + 1)%n = nrec
+      end do
+      !$omp end parallel do
+      do ii = i, i2                                                      ! serial insertion, in the order of the serial loop
+        lev = st%level(ii); k = 0
+        do while (k < cb(ii - i + 1)%n)
+          cs = cb(ii - i + 1)%d(k + 1); osz = cb(ii - i + 1)%d(k + 2); nsit = cb(ii - i + 1)%d(k + 3)
+          idx = find_or_add(st, cs, cb(ii - i + 1)%d(k + 4:k + 3 + nsit), lev + 1, isnew)
+          if (isnew) st%orb(idx) = osz
+          k = k + 3 + nsit
         end do
       end do
-      i = i + 1
+      i = i2 + 1
     end do
 
     ! ---- tables
@@ -574,18 +648,40 @@ contains
       end do
     end do
     op%chi = 1.0_dp
-    allocate (op%stab_ptr(st%n + 1), stb(nop * st%n)); nstb = 0
+    ! node tables: stabilisers counted in a first parallel pass (their offsets need a prefix sum), then every column i of the
+    ! tables filled in parallel; the store is read only (find_state), so the result does not depend on the threads
+    allocate (op%stab_ptr(st%n + 1), nstbn(st%n))
+    !$omp parallel do schedule(dynamic, 64) private(r, c0, gg, c2)
     do i = 1, st%n
       r = st%site(i)
       c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      op%stab_ptr(i) = nstb + 1                                        ! stabiliser: g maps the site and the configuration onto themselves
+      nstbn(i) = 0
       do gg = 1, nop
         if (perm(r, gg) /= r) cycle
         c2 = [(perm(c0(k) / nsm, gg) * nsm + mod(c0(k), nsm), k=1, size(c0))]
         call sort_small(c2)
-        if (all(c2 == c0)) then; nstb = nstb + 1; stb(nstb) = gg; end if
+        if (all(c2 == c0)) nstbn(i) = nstbn(i) + 1
       end do
-      if ((nstb - op%stab_ptr(i) + 1) * st%orb(i) /= nop) error stop 'build_augcls_operator: stabiliser size /= group order / orbit size'
+      if (nstbn(i) * st%orb(i) /= nop) error stop 'build_augcls_operator: stabiliser size /= group order / orbit size'
+    end do
+    !$omp end parallel do
+    op%stab_ptr(1) = 1
+    do i = 1, st%n
+      op%stab_ptr(i + 1) = op%stab_ptr(i) + nstbn(i)
+    end do
+    nstb = op%stab_ptr(st%n + 1) - 1
+    allocate (op%stab(nstb))
+    !$omp parallel do schedule(dynamic, 64) private(r, c0, gg, c2, j, k, tmp, cs, ccf, osz, gb)
+    do i = 1, st%n
+      r = st%site(i)
+      c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
+      j = op%stab_ptr(i)                                               ! stabiliser: g maps the site and the configuration onto themselves
+      do gg = 1, nop
+        if (perm(r, gg) /= r) cycle
+        c2 = [(perm(c0(k) / nsm, gg) * nsm + mod(c0(k), nsm), k=1, size(c0))]
+        call sort_small(c2)
+        if (all(c2 == c0)) then; op%stab(j) = gg; j = j + 1; end if
+      end do
       op%level(i) = st%level(i); op%norb(i) = real(st%orb(i), dp); op%sq(i) = sqrt(op%norb(i)); op%site(i) = r
       op%ncl(i) = cls(r)
       op%lst(i) = get_state(c0, r, nsm)
@@ -605,8 +701,7 @@ contains
         if (j > 0) then; op%hopr(k, i) = j; op%hopg(k, i) = gb; end if
       end do
     end do
-    op%stab_ptr(st%n + 1) = nstb + 1
-    op%stab = stb(1:nstb)
+    !$omp end parallel do
     allocate (op%wk(9 * st%n, 8))
     call augcls_set_start(op, 1, dmat)
   end subroutine build_augcls_operator
