@@ -6,7 +6,8 @@ module asr_chain
   use asr_kinds, only: dp
   implicit none
   private
-  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species, ed_project, chain_teams, chain_serial_frac
+  public :: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, cf_species, ed_project, chain_teams, chain_serial_frac, &
+            chain_vec_par
 
   !> adaptive depth: from level 8, every 4 levels, stop when the terminated Green function changes by less than ed_depth_tol
   !> (relative); 0 = always use the full depth.  ed_nchain / ed_nlev count chains and levels used (statistics).
@@ -27,6 +28,11 @@ module asr_chain
   !> operations of the Lanczos step stay on one thread.  The matrix-vector product costs about 81 nslot flops per node, the
   !> vector operations about 10 per orbital, so the serial part is a few per cent; 0.05 is a safe upper value.
   real(dp) :: chain_serial_frac = 0.05_dp
+  !> the element-wise vector loops of a chain step (asr_edc, asr_ed3, asr_augcls::apply_h) run as parallel loops only when this
+  !> is true: outside any parallel region (tests, one chain on all threads) and inside a thread team (chain_teams, nin > 1).
+  !> With one thread per chain the plain array statements run instead: the entry of an inactive parallel region costs about
+  !> 10 % of a step on small operators.  Both forms do the same operations per element, so the results are the same.
+  logical :: chain_vec_par = .true.
 
 contains
 

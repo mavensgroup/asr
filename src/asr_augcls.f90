@@ -21,6 +21,7 @@ module asr_augcls
   use asr_operator, only: linop
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state
   !$ use omp_lib, only: omp_get_max_threads
+  use asr_chain, only: chain_vec_par
   implicit none
   private
   public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, &
@@ -422,11 +423,15 @@ contains
     !$omp end parallel do
     call apply_rand(self, self%d, t2, t3)                              ! t3 = D S D x
     call apply_rand(self, self%c, x, hx)                               ! hx = c x
-    !$omp parallel do
-    do i = 1, size(hx)
-      hx(i) = hx(i) + t3(i)
-    end do
-    !$omp end parallel do
+    if (chain_vec_par) then
+      !$omp parallel do
+      do i = 1, size(hx)
+        hx(i) = hx(i) + t3(i)
+      end do
+      !$omp end parallel do
+    else
+      hx = hx + t3
+    end if
   end subroutine apply_h
 
   ! ------------------------------------------------------------------ canonical nodes

@@ -50,7 +50,7 @@ module asr_class_scf
   use asr_edc
   use asr_ed3
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
-  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams, chain_vec_par
   !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads, omp_get_max_active_levels, omp_set_max_active_levels
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
@@ -945,10 +945,12 @@ contains
         teams_said = [nout, nin]
       end if
       tw0 = wall_seconds()
+      chain_vec_par = nin > 1                                 ! the element-wise chain loops: parallel only inside a team
       !$omp parallel num_threads(nout)
       !$ if (nin > 1) call omp_set_num_threads(nin)
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
+      chain_vec_par = .true.
       !$ if (nin > 1) call omp_set_max_active_levels(lvl)
       ! each rank's own chain time (before the sum over ranks waits for the slowest): the load balance between ranks
       allocate (trk(par_size())); trk = (0.0_dp, 0.0_dp); trk(par_rank() + 1) = cmplx(wall_seconds() - tw0, 0.0_dp, dp)
@@ -1215,9 +1217,11 @@ contains
       end do
       zs = cmplx(ee, inp%spectral%eta, dp)
       allocate (gdg(9, nt, ne, nsp, ncls), gdg4(9, nt, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
+      chain_vec_par = .false.                                 ! one thread per chain (asr_chain::chain_vec_par)
       !$omp parallel
       call spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
       !$omp end parallel
+      chain_vec_par = .true.
       if (par_size() > 1) then
         call par_sum_z(gdg, size(gdg)); call par_sum_z(gdg4, size(gdg4))
       end if
