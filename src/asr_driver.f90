@@ -380,7 +380,7 @@ contains
       if (kspace) then; msg = '[spectral] is read with method = "asr" only'; return; end if
       call section(table, 'spectral', child)
       call check_keys(child, ['kpath  ', 'labels ', 'nk     ', 'emin   ', 'emax   ', 'npoints', 'eta    ', 'rmax   ', 'steps  ', &
-                              'file   '], '[spectral]', msg)
+                              'file   ', 'window '], '[spectral]', msg)
       if (len(msg) > 0) return
       if (trim(inp%ci%route) /= 'edc') then; msg = '[spectral] needs route = "edc"'; return; end if
       nullify (arr); call get_value(child, 'kpath', arr, requested=.false.)
@@ -404,6 +404,9 @@ contains
       call get_value(child, 'npoints', inp%ci%spectral%ne, 201)
       call get_value(child, 'eta', inp%ci%spectral%eta, 0.01_dp)
       call get_value(child, 'rmax', inp%ci%spectral%rmax, 2.0_dp)
+      call get_value(child, 'window', str, 'ball')
+      if (str /= 'ball' .and. str /= 'sharp') then; msg = '[spectral] window must be "ball" or "sharp"'; return; end if
+      inp%ci%spectral%window = str
       call get_value(child, 'steps', inp%ci%spectral%nsteps, 0)
       call get_value(child, 'file', inp%spec_file, 'spectral.dat')
       if (inp%ci%spectral%nk < 1) then; msg = '[spectral] nk must be >= 1'; return; end if
@@ -793,7 +796,7 @@ contains
       write (us, '(a)') '# ASR ' // what
       write (us, '(a)') '# run        : ' // trim(rep%title) // '   (' // trim(rep%infile) // ', git ' // trim(rep%git_rev) // ')'
       write (us, '(a,i0,a,f8.5,a,i0,a,f6.3,a)') '# route      : recursion edc, levels ', inp%ci%nlevels, ';  eta ', inp%ci%spectral%eta, &
-        ' Ry;  chain steps ', res%spec_nsteps, ';  rmax ', inp%ci%spectral%rmax, ' alat'
+        ' Ry;  chain steps ', res%spec_nsteps, ';  rmax ', inp%ci%spectral%rmax, ' alat;  window ' // trim(inp%ci%spectral%window)
       write (us, '(a,f12.8,a)') '# E_F        : ', res%ef, ' Ry'
       if (bands) then
         write (us, '(a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points'
@@ -1081,7 +1084,7 @@ contains
       rep%spec%has_bands = allocated(res%spec_bands)
       rep%spec%nk = size(res%spec_dist); rep%spec%ne = size(res%spec_e)
       rep%spec%emin = res%spec_e(1); rep%spec%emax = res%spec_e(size(res%spec_e))
-      rep%spec%eta = inp%ci%spectral%eta; rep%spec%rmax = inp%ci%spectral%rmax
+      rep%spec%eta = inp%ci%spectral%eta; rep%spec%rmax = inp%ci%spectral%rmax; rep%spec%window = inp%ci%spectral%window
       rep%spec%nsteps = res%spec_nsteps; rep%spec%nt = res%spec_nt
       rep%spec%maxhop = res%spec_maxhop; rep%spec%hoplim = res%spec_hoplim; rep%spec%nneg = res%spec_nneg
       rep%spec%rdef = res%spec_rdef; rep%spec%spread = res%spec_spread; rep%spec%spread0 = res%spec_spread0

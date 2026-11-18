@@ -58,7 +58,8 @@ module asr_class_scf
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
-  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing
+  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, &
+                          spectral_window
   implicit none
   private
   public :: class_scf_input_t, class_scf_result_t, class_scf
@@ -1078,7 +1079,7 @@ contains
       type(edn_t), allocatable :: es(:, :)
       integer, allocatable :: clsb(:), clsr(:), perm_(:, :), mats_(:, :, :), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
       integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:), kop(:)
-      real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:)
+      real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:), wwin(:)
       complex(dp), allocatable :: zs(:), gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
       real(dp) :: rmax2, gmax, gmax0, a_, de, amax
       integer :: ne, nst, nt, nsm, ks, cl_, t_, kp, pp_, gg, i, j, l_, ik, nkp, nsh, t0, nopd, it_
@@ -1204,7 +1205,8 @@ contains
       ! ---- Bloch sums along the path
       call spectral_kpath(inp%spectral%kpts, inp%spectral%nk, res%spec_k, res%spec_dist, res%spec_icorner)
       nkp = size(res%spec_dist)
-      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(nt))
+      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(nt), wwin(nt))
+      do t_ = 1, nt; wwin(t_) = spectral_window(inp%spectral%window, norm2(tdisp(:, t_)), inp%spectral%rmax); end do
       res%spec_e = ee; res%spec_a = 0.0_dp; res%spec_ac = 0.0_dp
       do gg = 1, nsp
         do kp = 1, ncls
@@ -1214,6 +1216,7 @@ contains
               do it_ = 1, 9
                 if (lorb9(it_) == l_) v = v - aimag(gdg(it_, :, j, gg, kp)) / pi
               end do
+              v = v * wwin
               do ik = 1, nkp
                 a_ = inp%dec%frac(kp) * spectral_unfold(tdisp, v, res%spec_k(:, ik))
                 res%spec_a(j, ik, l_, gg) = res%spec_a(j, ik, l_, gg) + a_
@@ -1241,10 +1244,11 @@ contains
           ' steps, ', nkp, ' k points, ', nt, ' target sites'
         print '(a,es9.2,a,es9.2,a,es9.2)', '  spectral: reciprocity defect ', res%spec_rdef, ', step spread (4 steps) off-site ', &
           res%spec_spread, ' on-site ', res%spec_spread0
-        print '(a,i0,a,es9.2)', '  spectral: points with A < 0: ', res%spec_nneg, ', min A / max A ', res%spec_amin
+        print '(a,a,a,i0,a,es9.2)', '  spectral: window ', trim(inp%spectral%window), ';  points with A < 0: ', res%spec_nneg, &
+          ', min A / max A ', res%spec_amin
         print '(a,*(f7.3))', '  spectral: shell radius (alat)        ', res%spec_rsh
         print '(a,*(f7.3))', '  spectral: max |Im G| / on-site value ', res%spec_decay
-        print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; 9 = every band inside) ', res%spec_sum
+        print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; the number of bands inside the window, at most 9) ', res%spec_sum
       end if
     end subroutine spectral_final
 

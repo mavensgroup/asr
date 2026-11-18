@@ -4,17 +4,17 @@
 !> diagonal elements G_{0L,RL} on the targets within rmax, unfolded with the Bloch phases, must give the A(k, E) of class_scf
 !> (targets, mirror images, symmetrisation, D2h readout, unfolding).  Also: no reciprocity defect.  The node set here is the
 !> whole periodic cell (256 sites), so the dense sum over every site is the exact A(k, E) of the cell at the commensurate k of the
-!> path, which is non-negative.  The sharp cutoff at rmax gives small negative values in this ordered metal (ringing).
+!> path, which is non-negative.  The default ball window (asr_spectral) turns the cutoff sum into that exact A convolved in k
+!> with a non-negative kernel, so A(k, E) of class_scf must be non-negative here too (the sharp cutoff rings in this metal).
 program test_spectral_scf
   use asr_kinds, only: dp, pi
   use asr_driver, only: run_input_t, read_run_input, class_species
   use asr_class_scf, only: class_scf, class_scf_result_t
-  use asr_spectral, only: spectral_unfold
+  use asr_spectral, only: spectral_unfold, spectral_window
   use asr_augspace, only: graph_t
   use asr_augcls
   use asr_edc
-  use asr_lmto_alloy, only: orb_alloy_t
-  use asr_lmto_alloy, only: build_lmto_alloy
+  use asr_lmto_alloy, only: orb_alloy_t, build_lmto_alloy
   use asr_lmto_ham, only: potpar_t
   use asr_strconst, only: standard_alpha
   use asr_lapack, only: zgesv
@@ -57,7 +57,8 @@ program test_spectral_scf
   call check(allocated(r%spec_a), 'class_scf returns the spectral function')
   ne = size(r%spec_e); nkp = size(r%spec_dist)
   call check(ne == 9 .and. nkp == 5, 'spectral grid: 9 energies, 5 k points')
-  print '(a,i0,a,es10.2)', '  sharp cutoff at rmax = 1.5: points with A < 0: ', r%spec_nneg, ', min A / max A ', r%spec_amin
+  print '(a,i0,a,es10.2)', '  ball window, rmax = 1.5: points with A < 0: ', r%spec_nneg, ', min A / max A ', r%spec_amin
+  call check(trim(inp%ci%spectral%window) == 'ball', 'default Fourier window: ball')
   call check_close(r%spec_rdef, 0.0_dp, 1.0e-8_dp, 'ordered: G(0L,RL) = G(0L,-RL) (inversion)')
 
   ! ---- dense reference on the same node set, from the final potential parameters of the run
@@ -109,7 +110,9 @@ program test_spectral_scf
     call zgesv(nd, 9, km, nd, ipiv, rhs, nd, info)
     if (info /= 0) error stop 'test_spectral_scf: zgesv'
     do l = 1, 9
-      do i = 1, nt; v(i) = -aimag(rhs(9 * (tn(1, i) - 1) + l, l)) / pi; end do
+      do i = 1, nt
+        v(i) = -aimag(rhs(9 * (tn(1, i) - 1) + l, l)) / pi * spectral_window('ball', norm2(tdisp(:, i)), 1.5_dp)
+      end do
       do i = 1, opu%nn; vall(i) = -aimag(rhs(9 * (i - 1) + l, l)) / pi; end do
       do ik = 1, nkp
         aref(j, ik) = aref(j, ik) + spectral_unfold(tdisp, v, r%spec_k(:, ik))
@@ -121,6 +124,8 @@ program test_spectral_scf
   err = maxval(abs(sum(r%spec_a(:, :, :, 1), dim=3) - aref)) / amax
   print '(a,es10.2,a,f8.3)', '  max |A(class_scf) - A(dense)| / max A = ', err, ',  max A = ', amax
   call check_close(err, 0.0_dp, 1.0e-6_dp, 'A(k, E) of class_scf = dense inverse on the node set (200-step chains)')
+  call check(minval(sum(r%spec_a(:, :, :, 1), dim=3)) > -1.0e-6_dp * amax, &
+             'ball window: A(k, E) >= 0 (exact G of the cell convolved with a non-negative kernel)')
   call check(opu%nn == g%n, 'reference: the node set is the whole periodic cell')
   print '(a,es10.2)', '  sum over every site of the cell: min A / max A = ', minval(afull) / maxval(afull)
   call check(minval(afull) > 0.0_dp, 'sum over every site of the cell (exact A of the cell at commensurate k): A > 0')

@@ -102,6 +102,7 @@ module asr_report
     logical :: has_bands = .false.         !! exact H^(2)(k) bands written beside (ordered, one species)
     integer :: nk = 0, ne = 0              !! k points on the path, energies per k
     real(dp) :: emin = 0.0_dp, emax = 0.0_dp, eta = 0.0_dp, rmax = 0.0_dp
+    character(len=8) :: window = ''        !! Fourier window: 'ball' or 'sharp'
     integer :: nsteps = 0, nt = 0, maxhop = 0, hoplim = 0, nneg = 0
     real(dp) :: rdef = 0.0_dp, spread = 0.0_dp, spread0 = 0.0_dp, amin = 0.0_dp
     integer, allocatable :: nodes(:)       !! D2h-reduced nodes per origin class
@@ -1302,6 +1303,7 @@ contains
       write (u, '(a,a,a)') '    "file": "', trim(json_escape(r%spec%file)), '",'
       write (u, '(a,i0,a,i0,a)') '    "nk": ', r%spec%nk, ', "ne": ', r%spec%ne, ','
       write (u, '(a,es24.16,a,es24.16,a)') '    "eta_ry": ', r%spec%eta, ', "rmax_alat": ', r%spec%rmax, ','
+      write (u, '(a,a,a)') '    "window": "', trim(r%spec%window), '",'
       write (u, '(a,i0,a,i0,a)') '    "chain_steps": ', r%spec%nsteps, ', "target_sites": ', r%spec%nt, ','
       write (u, '(a,es24.16,a)') '    "reciprocity_defect": ', r%spec%rdef, ','
       write (u, '(a,es24.16,a,es24.16,a)') '    "step_spread_offsite": ', r%spec%spread, ', "step_spread_onsite": ', r%spec%spread0, ','
@@ -1618,6 +1620,11 @@ contains
             trim(ftoa(r%spec%emax, 4)) // ' Ry;  eta ' // trim(ftoa(r%spec%eta, 4)) // ' Ry')
     call kv(u, 'chains', trim(itoa(r%spec%nsteps)) // ' steps;  ' // trim(itoa(r%spec%nt)) // ' target sites within rmax ' // &
             trim(ftoa(r%spec%rmax, 3)) // ' alat')
+    if (trim(r%spec%window) == 'sharp') then
+      call kv(u, 'Fourier window', 'sharp (w = 1 up to rmax; rings, A can be negative)')
+    else
+      call kv(u, 'Fourier window', 'ball, w = (1 - R/rmax)^2 (1 + R/(2 rmax));  A >= 0 for exact G')
+    end if
     if (allocated(r%spec%nodes)) then
       line = ''
       do i = 1, size(r%spec%nodes)
@@ -1640,7 +1647,7 @@ contains
         write (b1, '(f8.3)') r%spec%sumrule(i, 1)
         write (b2, '(f8.3)') r%spec%sumrule(i, size(r%spec%sumrule, 2))
         call wcheck(u, 'integral of A, first / last k, spin ' // trim(itoa(i)), trim(adjustl(b1)) // ' / ' // trim(adjustl(b2)), &
-                    '9 all bands', 'info')
+                    '<= 9', 'info')
       end do
     end if
     if (allocated(r%spec%rsh) .and. allocated(r%spec%decay)) then

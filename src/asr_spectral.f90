@@ -19,14 +19,21 @@
 !> vectors of the graph lattice, so it is non-negative for the exact average, and its BZ average is the DOS per site.  For an
 !> ordered decoration it is the unfolded band structure.  It needs every sublattice to be one lattice of translations
 !> (random alloys, B2, L2_1; not L1_2, whose face sites are related by rotations only): spectral_translations_ok.
-!> The truncation of the Fourier sum at rmax is sharp (no window; review of the derivation).
+!>
+!> Window.  The Fourier sum stops at rmax.  A sharp stop rings: for an ordered metal with eta 0.01 Ry, A dips to -30 % of its
+!> peak (desktop desk27).  The default window is the ball window of the derivation (Result Q4.2): w(R) is the overlap volume of two
+!> balls of diameter rmax at distance R, divided by the volume of one ball, w(R) = (1 - R/rmax)^2 (1 + R/(2 rmax)) for R < rmax.
+!> Its Fourier transform is |FT of the ball|^2 >= 0.  Samples of such a function on a lattice keep a non-negative Fourier series
+!> (Poisson summation: the series is the periodic sum of the continuum transform).  So the windowed A is the exact A convolved in
+!> k with a non-negative kernel of width about 1 / rmax: A >= 0 wherever the real-space elements are exact, at every k.  w(0) = 1,
+!> so the BZ average (the on-site DOS) and the energy integral at each k are unchanged.  As rmax grows, w -> 1 and A -> the exact A.
 module asr_spectral
   use asr_kinds, only: dp, pi
   use asr_sublattice, only: decoration_t
   use asr_augcls, only: augn_basis
   implicit none
   private
-  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing
+  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, spectral_window
 
   type :: spectral_input_t
     logical :: on = .false.
@@ -38,6 +45,7 @@ module asr_spectral
     real(dp) :: emin = -0.9_dp, emax = 0.5_dp          !! energy window (Ry)
     real(dp) :: eta = 0.01_dp                          !! imaginary part of the energy (Ry)
     real(dp) :: rmax = 2.0_dp                          !! largest displacement in the Fourier sum (units of alat)
+    character(len=8) :: window = 'ball'                !! 'ball' (positive, module header) or 'sharp' (w = 1 up to rmax)
   end type spectral_input_t
 
 contains
@@ -87,6 +95,22 @@ contains
       if (count(dec%pcls == i) /= nt) ok = .false.
     end do
   end function spectral_translations_ok
+
+  !> weight of a displacement of length r (units alat) in the Fourier sum: 'ball' (module header) or 'sharp'
+  pure real(dp) function spectral_window(kind, r, rmax) result(w)
+    character(len=*), intent(in) :: kind
+    real(dp), intent(in) :: r, rmax
+    real(dp) :: d
+    d = r / rmax
+    if (d > 1.0_dp + 1.0e-12_dp) then
+      w = 0.0_dp
+    else if (trim(kind) == 'sharp') then
+      w = 1.0_dp
+    else
+      d = min(d, 1.0_dp)
+      w = (1.0_dp - d)**2 * (1.0_dp + 0.5_dp * d)
+    end if
+  end function spectral_window
 
   !> sum_t cos(2 pi k . d_t) v_t: the unfolded Bloch sum of real-space values v_t at the displacements d_t (units alat).
   pure real(dp) function spectral_unfold(disp, v, k) result(a)

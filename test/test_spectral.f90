@@ -1,7 +1,8 @@
 !> Bloch spectral function (asr_spectral, asr_edc::edc_green_proj, the target lookup of asr_augcls).
 !>  (A) helpers: the k path; the unfolded Bloch sum is exact for a lattice Green function (simple cubic s band on a periodic
 !>      cell: A(k) = -Im 1/(z - eps_k) / pi at every commensurate k); the translation test of the decoration (fcc, B2 yes;
-!>      L1_2 no); the dressing weights (frozen centre, one species, equal Delta).
+!>      L1_2 no); the dressing weights (frozen centre, one species, equal Delta); the Fourier window (values; the ball
+!>      window has a non-negative Fourier series on fcc and bcc, the sharp one does not).
 !>  (B) readout on a random bcc binary (rank 1, levels 2): the projections of the chains on the target nodes are the same with
 !>      the operator reduced by D4h, by D2h and by the identity alone (the same Krylov process in three bases), for every start
 !>      orbital that the group allows; the projection on the origin equals g_11; the cubic rotation (x, y, z) -> (y, z, x) maps
@@ -24,7 +25,7 @@ program test_spectral
   real(dp), allocatable :: kv(:, :), dist(:), disp(:, :), v(:)
   integer, allocatable :: icorner(:)
   type(decoration_t) :: dec
-  real(dp) :: kp(3, 3), tau(9, 3), dc(9), del(9, 2), err, k(3), ek, gmax
+  real(dp) :: kp(3, 3), tau(9, 3), dc(9), del(9, 2), err, k(3), ek, gmax, wmin_b, wmin_s
   complex(dp) :: z, gsum
   integer :: i, n, ix, iy, iz, jx, jy, jz, nt
 
@@ -66,6 +67,18 @@ program test_spectral
   call check(spectral_translations_ok(dec), 'translations: B2 (two classes, one site each)')
   call set_dec(dec, reshape([0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1], [3, 4]), [1, 2, 2, 2], 2)
   call check(.not. spectral_translations_ok(dec), 'translations: L1_2 is refused (face sites related by rotations only)')
+
+  ! ---- (A) the Fourier window
+  call check(spectral_window('ball', 0.0_dp, 2.0_dp) == 1.0_dp .and. spectral_window('ball', 2.0_dp, 2.0_dp) == 0.0_dp .and. &
+             spectral_window('ball', 2.5_dp, 2.0_dp) == 0.0_dp, 'ball window: w(0) = 1, w(rmax) = 0, zero beyond')
+  call check_close(spectral_window('ball', 1.0_dp, 2.0_dp), 0.3125_dp, 1.0e-15_dp, 'ball window: w(rmax/2) = 5/16 (two-ball overlap)')
+  call check(spectral_window('sharp', 2.0_dp, 2.0_dp) == 1.0_dp .and. spectral_window('sharp', 2.01_dp, 2.0_dp) == 0.0_dp, &
+             'sharp window: 1 up to rmax')
+  call window_series(1, 'ball', wmin_b); call window_series(1, 'sharp', wmin_s)
+  call check(wmin_b > -1.0e-12_dp .and. wmin_s < -0.01_dp, 'fcc, rmax 1, 1.5, 2, 3: Fourier series of the ball window >= 0 at &
+             &random k; the sharp one goes negative')
+  call window_series(2, 'ball', wmin_b); call window_series(2, 'sharp', wmin_s)
+  call check(wmin_b > -1.0e-12_dp .and. wmin_s < -0.01_dp, 'bcc, the same')
 
   ! ---- (A) dressing weights
   dc = 0.04_dp; del(:, 1) = 0.04_dp; del(:, 2) = 0.09_dp
@@ -211,4 +224,38 @@ contains
     end do
     call check_close(erot, 0.0_dp, 1.0e-11_dp, 'cubic rotation: G_{px,px}(d) = G_{pz,pz}(P d)')
   end subroutine readout_test
+
+  !> min over random k and rmax of sum_R w(|R|) cos(2 pi k . R) / sum_R w(|R|), R on the fcc (lat 1) or bcc (lat 2) lattice
+  !> (units alat).  Ball window: >= 0 (asr_spectral header, Poisson summation of a positive-definite function).
+  subroutine window_series(lat, kind, wmin)
+    integer, intent(in) :: lat
+    character(len=*), intent(in) :: kind
+    real(dp), intent(out) :: wmin
+    real(dp), parameter :: rm(4) = [1.0_dp, 1.5_dp, 2.0_dp, 3.0_dp]
+    real(dp), allocatable :: rr(:, :), ww(:)
+    real(dp) :: kk(3), a, s0, h(3)
+    integer :: ir, i1, i2, i3, n_, ik_
+    wmin = huge(1.0_dp)
+    do ir = 1, size(rm)
+      allocate (rr(3, 20000), ww(20000)); n_ = 0
+      do i1 = -8, 8
+        do i2 = -8, 8
+          do i3 = -8, 8
+            h = 0.5_dp * real([i1, i2, i3], dp)                   ! half-lattice points; keep the lattice ones
+            if (lat == 1 .and. mod(i1 + i2 + i3, 2) /= 0) cycle  ! fcc: even sum
+            if (lat == 2 .and. (mod(i1 - i2, 2) /= 0 .or. mod(i2 - i3, 2) /= 0)) cycle   ! bcc: all even or all odd
+            if (norm2(h) > rm(ir) + 1.0e-9_dp) cycle
+            n_ = n_ + 1; rr(:, n_) = h; ww(n_) = spectral_window(kind, norm2(h), rm(ir))
+          end do
+        end do
+      end do
+      s0 = sum(ww(1:n_))
+      do ik_ = 1, 400
+        call random_number(kk); kk = 2.0_dp * kk - 1.0_dp
+        a = spectral_unfold(rr(:, 1:n_), ww(1:n_), kk)
+        wmin = min(wmin, a / s0)
+      end do
+      deallocate (rr, ww)
+    end do
+  end subroutine window_series
 end program test_spectral
