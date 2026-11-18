@@ -30,12 +30,14 @@ contains
   !> square-root tail whose band edges are the extreme eigenvalues (real parts) of the finite chain (Beer-Pettifor type): the
   !> tail band then contains the spectral variable wherever the energy lies inside the band, giving a continuum instead of
   !> m isolated poles.  tail_in overrides ed_tail (thread-safe tail scans); edges returns the tail's (centre, quarter width).
-  subroutine cf_species(a, b, c, m, z, g11, f, tail_in, edges)
+  !> pv(1:m) returns the factors of f = sum_k c_k pv_k, pv_k = [g]_{k1} (asr_spectral: many projections from one chain).
+  subroutine cf_species(a, b, c, m, z, g11, f, tail_in, edges, pv)
     complex(dp), intent(in) :: a(:), b(:), c(:), z
     integer, intent(in) :: m
     complex(dp), intent(out) :: g11, f
     character(len=*), intent(in), optional :: tail_in
     complex(dp), intent(out), optional :: edges(2)
+    complex(dp), intent(out), optional :: pv(:)
     complex(dp) :: gt(m + 1), prod, tail, bb, d, s, g1, g2, aa
     complex(dp) :: tm(m, m), ev(m), vl(1, 1), vr(1, 1), wrk(8 * m + 8)
     real(dp) :: rw(2 * m)
@@ -81,6 +83,7 @@ contains
     f = (0.0_dp, 0.0_dp); prod = gt(1)
     do k = 1, m
       f = f + c(k) * prod
+      if (present(pv)) pv(k) = prod
       if (k < m) prod = prod * b(k) * gt(k + 1)
     end do
   contains

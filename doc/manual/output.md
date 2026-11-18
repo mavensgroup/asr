@@ -34,6 +34,7 @@ tail -2 asr.out          # the status line
 | `total energy` | The terms of \(E_{tot}\) (see below) per site, and per component for alloys |
 | `converged results` | \(E_F\), the cell charge residual, the moment per site; per component \(Z\), valence, concentration, weight, \(S\), electrons in the sphere, net charge, moment; the potential parameters and the moments with the DOS at \(E_F\) for each spin and \(l\) |
 | `Fermi level` | \(N(E_F)\) per site (both spins), its broadening, the bare Sommerfeld coefficient \(\gamma_e\) and the bare Pauli susceptibility \(\chi_P\), and \(N(E_F)\) per component and \(l\) |
+| `Bloch spectral function` | Only with `[spectral]`: the k path with its corners, the energy mesh, the chain steps and the target sites, the nodes per origin class, a table of the built-in checks (reciprocity defect, change of \(G\) when the chains are cut 4 steps earlier, points with \(A<0\), the energy integral of \(A\) at the first and the last k point) and the decay of the off-site \(\mathrm{Im}\,G\) with distance |
 | `health checks` | Each check with its value, its limit and a status: `OK`, `WARN`, `FAIL` or `info` (see below) |
 | `timing` | Wall and CPU time per part of the run, calls, CPU/wall and share; the time outside the parts; chain evaluations per second |
 | `warnings` | Every `WARN` and `FAIL` of the health checks and every warning of the run; `none` if there are none |
@@ -176,6 +177,23 @@ import numpy as np
 d = np.loadtxt("dos.dat")
 E, total = d[:, 0], d[:, 1]
 ```
+
+## `[spectral]` file
+
+The Bloch spectral function \(A(\mathbf k, E)\) (`file`, default `spectral.dat`), in
+states/Ry per graph site. The header records the run, the route, \(\eta\), the chain
+steps, \(r_{max}\), \(E_F\), the mesh, the units and the corners of the k path (label,
+block index, path distance, \(\mathbf k\) in units \(2\pi/a\)). Two aligned comment rows
+close the header, as in the DOS file. One block of energies follows per k point; a blank
+line separates the blocks, so gnuplot reads them with `index` or `splot`.
+
+Columns: path distance, \(k_x, k_y, k_z\), \(E\) (Ry), \(A\) summed over spins and
+\(s, p, d\), its \(s, p, d\) parts, with `spin = 2` the two spin channels, and the part of
+each origin sublattice (the parts add up to \(A\)).
+
+For an ordered structure with one species, the file `<file>.bands` gives the exact
+eigenvalues of the same \(H^{(2)}(\mathbf k)\) along the path (9 per spin channel, Ry), with
+the same header.
 
 ## `params_file` (`method = "kspace"` only)
 

@@ -14,7 +14,7 @@ module asr_runstats
   implicit none
   private
   public :: run_timer_t, timer_start, timer_stop, wall_seconds, cpu_seconds
-  public :: tb_setup, tb_params, tb_chains, tb_below, tb_dos, tb_bands, tb_density, tb_mix, tb_io, n_tb, tb_name
+  public :: tb_setup, tb_params, tb_chains, tb_below, tb_dos, tb_bands, tb_density, tb_mix, tb_io, tb_spectral, n_tb, tb_name
   public :: et_band, et_core, et_dc, et_hartree, et_xc, et_mad, et_sim, n_et, et_name
 
   !> timer buckets
@@ -27,11 +27,12 @@ module asr_runstats
                         tb_density = 7, & !! densities, core states, Hartree, xc, electrostatics, total energy
                         tb_mix = 8, &     !! Anderson mixing, step limits and E_nu windows
                         tb_io = 9, &      !! restart file
-                        n_tb = 9
+                        tb_spectral = 10, & !! Bloch spectral function A(k, E) after the SCF
+                        n_tb = 10
   character(len=*), parameter :: tb_name(n_tb) = [character(len=36) :: &
     'setup (graph, operators, screening)', 'potential parameters', 'recursion chains: SCF contour', &
     'recursion chains: bottom check', 'DOS on the real axis', 'k-space bands and BZ integration', &
-    'density, core, Hartree, xc, energy', 'mixing and E_nu windows', 'restart file']
+    'density, core, Hartree, xc, energy', 'mixing and E_nu windows', 'restart file', 'Bloch spectral function A(k,E)']
 
   !> total-energy terms (Ry).  Kohn-Sham form: output density in the input potential.  Their sum is etot (to rounding).
   !> v~_in = v_in + 2Z/r: the nuclear terms -2Z int n / r of the kinetic energy and of the sphere electrostatics cancel, so
