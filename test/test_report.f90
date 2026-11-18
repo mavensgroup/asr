@@ -53,6 +53,7 @@ contains
     rep%git_dirty = .false.
     rep%compiler_ver = 'Intel(R) Fortran Compiler 2025.0'
     rep%compiler_opts = '-O3 -xHost -qopenmp'
+    rep%mpi_ranks = 3; rep%chain_rank_wall = [1210.5_dp, 1302.25_dp, 1198.0_dp]; rep%chain_split = [16, 3]
     rep%host = 'testbox'
     rep%pid = 12345
     rep%start_date = '2026-11-17'
@@ -296,7 +297,7 @@ contains
     type(rep_run_t) :: rep
     character(len=256) :: line
     integer :: u, ios, nlines
-    logical :: has_schema, has_provenance, has_fermi
+    logical :: has_schema, has_provenance, has_fermi, has_ranks
 
     call make_synthetic_run(rep, 2, 1, .false.)
 
@@ -304,10 +305,12 @@ contains
     call rep_write_json(rep, 'test_summary.json')
     open (newunit=u, file='test_summary.json', status='old', action='read', iostat=ios)
     call check(ios == 0, 'open generated JSON file')
-    has_schema = .false.; has_provenance = .false.; has_fermi = .false.
+    has_schema = .false.; has_provenance = .false.; has_fermi = .false.; has_ranks = .false.
     do
       read (u, '(a)', iostat=ios) line
       if (ios /= 0) exit
+      if (index(line, '"chain_wall_per_rank": [') > 0 .and. index(line, '1302.25') > 0 .and. index(line, '],') > 0) &
+        has_ranks = .true.
       if (index(line, '"schema": "asr-summary-1"') > 0) has_schema = .true.
       if (index(line, '"provenance": {') > 0) has_provenance = .true.
       if (index(line, '"fermi_energy_ry":') > 0) has_fermi = .true.
@@ -316,6 +319,7 @@ contains
     call check(has_schema, 'JSON contains schema key')
     call check(has_provenance, 'JSON contains provenance block')
     call check(has_fermi, 'JSON contains fermi_energy_ry')
+    call check(has_ranks, 'JSON contains the chain time per rank')
 
     ! Test DOS header writer
     open (newunit=u, file='test_dos_header.dat', status='replace', action='write')

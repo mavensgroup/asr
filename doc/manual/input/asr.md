@@ -52,8 +52,14 @@ Threads.  A chain task is one start orbital, species, spin and contour energy, s
 thread runs whole chains.  When a rank holds fewer chains than threads (many nodes), teams of threads share the
 matrix-vector products of one chain (nested OpenMP); the log says `chains: ... teams of ... threads`.  The results do not
 depend on the split.  With the Intel runtime set `KMP_HOT_TEAMS_MAX_LEVEL=2`, so that the inner teams are kept between
-products.  Keep the maths library single-threaded (`MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`): its calls come from
-inside the threads.
+products (gfortran's runtime keeps them anyway).  Keep the maths library single-threaded (`MKL_NUM_THREADS=1`,
+`OPENBLAS_NUM_THREADS=1`): its calls come from inside the threads.  Thread binding is optional.  If you bind, use
+`OMP_PLACES=cores` with `OMP_PROC_BIND=spread,close`: `spread` gives each outer thread its own share of the cores, and its
+team stays inside that share.  `close` at the outer level does not split the cores between the teams, so teams can land on
+the same cores.
+
+With several ranks, the timing section of `asr.out` (and `timing_s` in `asr.json`) gives each rank's own chain time:
+min, mean, max and max/mean.  A max/mean well above 1 means some ranks wait for others at the sum over ranks.
 
 ### Diagnostics
 

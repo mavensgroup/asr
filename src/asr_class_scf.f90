@@ -119,6 +119,8 @@ module asr_class_scf
     real(dp) :: depth_mean = 0.0_dp
     integer :: nfall = 0, mix_nrestart = 0, mix_nh = 0
     type(run_timer_t) :: timer                            !! wall / CPU time per part of the run (asr_runstats)
+    real(dp), allocatable :: chain_rank_wall(:)           !! wall time of each rank's own chains, summed over the run (s)
+    integer :: chain_split(2) = [0, 1]                    !! thread split of the last chain pass: teams (nout), threads per team
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e);
                                                            !! huge if an SRO mode has Gamma = 0 (F infinite)
@@ -867,6 +869,8 @@ contains
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
       integer :: gg, pp_, nbe, kp, ib, nth, nout, nin, nmy, ntg_, t_, lvl
+      real(dp) :: tw0
+      complex(dp), allocatable :: trk(:)
       integer(8) :: cnt0(3), cnt(3)
       ib = tb_chains; if (present(tbk)) ib = tbk
       call timer_start(res%timer, ib)
@@ -917,11 +921,18 @@ contains
         end if
         teams_said = [nout, nin]
       end if
+      tw0 = wall_seconds()
       !$omp parallel num_threads(nout)
       !$ if (nin > 1) call omp_set_num_threads(nin)
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
       !$ if (nin > 1) call omp_set_max_active_levels(lvl)
+      ! each rank's own chain time (before the sum over ranks waits for the slowest): the load balance between ranks
+      allocate (trk(par_size())); trk = (0.0_dp, 0.0_dp); trk(par_rank() + 1) = cmplx(wall_seconds() - tw0, 0.0_dp, dp)
+      if (par_size() > 1) call par_sum_z(trk, size(trk))
+      if (.not. allocated(res%chain_rank_wall)) then; allocate (res%chain_rank_wall(par_size())); res%chain_rank_wall = 0.0_dp; end if
+      res%chain_rank_wall = res%chain_rank_wall + real(trk)
+      res%chain_split = [nout, nin]
       if (par_size() > 1) then
         call par_sum_z(gz, size(gz))
         if (present(gb)) call par_sum_z(gb, size(gb))
