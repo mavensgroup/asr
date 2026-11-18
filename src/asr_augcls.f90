@@ -4,7 +4,7 @@
 !>
 !> Site R of class kappa carries an independent random species s_R in {spc(1,kappa) .. spc(nsc(kappa),kappa)} (global species
 !> indices) with probabilities conc(k, kappa).  Its local configuration space has the orthonormal basis phi_0 = 1, phi_1 ..
-!> phi_{nsc-1} (asr_augn::augn_basis on the class concentrations), and a site-diagonal random parameter X_R becomes
+!> phi_{nsc-1} (augn_basis on the class concentrations), and a site-diagonal random parameter X_R becomes
 !>     W_lk = sum_k' X_{spc(k',kappa)} x_k' phi_l(k') phi_k(k')        (local state l -> k);
 !> an ordered class (nsc = 1) never flips and carries X of its species.  A node is (site, flipped sites with their states
 !> 1..nsc-1); a config entry is the integer code  site*nsmax + state.  A site may be non-flippable (average medium, W -> W_00) or
@@ -20,10 +20,9 @@ module asr_augcls
   use asr_kinds, only: dp
   use asr_operator, only: linop
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state
-  use asr_augn, only: augn_basis
   implicit none
   private
-  public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
+  public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
             augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c
 
   type :: class_alloy_t
@@ -53,6 +52,27 @@ module asr_augcls
   end type augcls_op
 
 contains
+
+  !> phi(l, s), l = 0..ns-1 (row l+1), s = 1..ns: orthonormal in <f,g> = sum_s x_s f(s) g(s), phi_0 = 1.
+  subroutine augn_basis(conc, phi)
+    real(dp), intent(in) :: conc(:)
+    real(dp), allocatable, intent(out) :: phi(:, :)
+    integer :: ns, l, m
+    real(dp) :: ip
+    ns = size(conc)
+    allocate (phi(ns, ns)); phi = 0.0_dp
+    phi(1, :) = 1.0_dp
+    do l = 2, ns
+      phi(l, :) = 0.0_dp; phi(l, l - 1) = 1.0_dp                         ! indicator of species l-1
+      do m = 1, l - 1                                                    ! twice: numerical stability
+        ip = sum(conc * phi(m, :) * phi(l, :)); phi(l, :) = phi(l, :) - ip * phi(m, :)
+      end do
+      do m = 1, l - 1
+        ip = sum(conc * phi(m, :) * phi(l, :)); phi(l, :) = phi(l, :) - ip * phi(m, :)
+      end do
+      phi(l, :) = phi(l, :) / sqrt(sum(conc * phi(l, :)**2))
+    end do
+  end subroutine augn_basis
 
   pure integer function augcls_dim(self)
     class(augcls_op), intent(in) :: self
@@ -107,7 +127,7 @@ contains
   end subroutine augcls_set_class_conc
 
   !> mt(l+1, k+1, k') = x_k' phi_l(k') phi_k(k') for one class.  The basis phi_0 .. phi_{n'-1} is built on the n' species of
-  !> non-zero weight only (asr_augn::augn_basis is singular otherwise); local states n' .. n-1 then have all mt entries zero, so
+  !> non-zero weight only (augn_basis is singular otherwise); local states n' .. n-1 then have all mt entries zero, so
   !> they are never coupled to the rest of the node set and drop out of every chain.
   subroutine class_mt(conc, mt)
     real(dp), intent(in) :: conc(:)

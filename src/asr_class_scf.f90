@@ -45,14 +45,13 @@ module asr_class_scf
   use asr_kinds, only: i8
   use asr_runstats
   use asr_augspace, only: graph_t, graph_distances
-  use asr_augorb, only: orb_alloy_t
   use asr_augcls
   use asr_edc
   use asr_ed3
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
   use asr_symmetry, only: class_ops, orbital_rep
-  use asr_lmto_alloy, only: build_lmto_alloy
+  use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
@@ -80,7 +79,7 @@ module asr_class_scf
     logical :: relativistic = .true.
     real(dp) :: ed_eta = 0.01_dp, fermi_kt = 0.001_dp, depth_tol = 1.0e-5_dp
     integer :: fermi_poles = 0
-    character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
+    character(len=8) :: ed_tail = 'hull'                !! asr_chain%ed_tail; 'bp' is not safe on complex chains
     character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
     real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
     integer :: eblock = 0                               !! contour energies per chain block (asr_augblk); 0 (default): one energy per chain, real kernels

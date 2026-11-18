@@ -5,15 +5,25 @@
 module asr_lmto_alloy
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
-  use asr_augorb, only: orb_alloy_t
   use asr_lattices, only: periodic_graph_shells
   use asr_strconst, only: lattice_cluster, screened_cluster, avg_ws_radius, hardcore_alpha
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   implicit none
   private
-  public :: build_lmto_alloy, set_alloy_params
+  public :: build_lmto_alloy, set_alloy_params, orb_alloy_t
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
+
+  !> binary model on the graph: species parameters as X0 + X1 n (n = 1: A) and the bond blocks S^alpha.  The class SCF
+  !> uses the bond blocks only (block, block0).
+  type :: orb_alloy_t
+    integer :: nl = 1
+    real(dp) :: x = 0.5_dp
+    real(dp), allocatable :: c0(:), c1(:), d0(:), d1(:), o0(:), o1(:), e0(:), e1(:)   !! (nl); E_nu = e0 + e1 n
+    real(dp), allocatable :: p0(:), p1(:)          !! p^gamma (third-order Hamiltonian only)
+    real(dp), allocatable :: block(:, :, :)        !! block(L,L',slot): S_{R,R'} for R' = nbr(R,slot)
+    real(dp), allocatable :: block0(:, :)          !! on-site block S_{R,R} (optional; zero if not allocated)
+  end type orb_alloy_t
 
 contains
 
