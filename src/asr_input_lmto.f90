@@ -17,6 +17,7 @@ module asr_input_lmto
 
   type :: lmto_input_t
     character(len=:), allocatable :: name, lattice, xc, bz, dos_file, params_file, out_file, workdir, infile
+    character(len=:), allocatable :: resolved          !! resolved input text for the report (asr_driver)
     real(dp) :: alat_angstrom = 0.0_dp, ratio = 1.0_dp
     type(lmto_species_t), allocatable :: species(:)
     integer :: spin = 1, nk = 12, maxit = 100

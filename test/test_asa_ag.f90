@@ -7,6 +7,7 @@ program test_asa_ag
   use asr_atom, only: shell_t
   use asr_lmto_cell
   use asr_testing
+  use asr_runstats, only: et_sim, et_mad, tb_bands
   implicit none
   type(asa_input_t) :: inp
   type(asa_result_t) :: res
@@ -35,6 +36,13 @@ program test_asa_ag
   inp%cls(1)%sws = cell%w * inp%alat           ! equal-sphere cell (Ag experimental lattice constant)
   call asa_scf(inp, cell, res)
   call check(res%converged, 'Ag ASA SCF converged')
+  ! report data: the energy terms add up to etot, the timers lie inside the total
+  print '(a,7f16.8)', '    energy terms (Ry/atom): ', res%eterm
+  call check_close(sum(res%eterm), res%etot, 1.0e-8_dp, 'energy terms sum to etot')
+  call check(res%eterm(et_sim) == 0.0_dp .and. abs(res%eterm(et_mad)) < 1.0e-6_dp, 'one atom per cell: no Madelung or SIM energy')
+  call check(res%timer%wall_total > 0.0_dp .and. sum(res%timer%wall) <= res%timer%wall_total * (1.0_dp + 1.0e-9_dp) + 1.0e-6_dp, &
+             'timer buckets lie inside the total wall time')
+  call check(res%timer%ncall(tb_bands) == res%iter .and. all(res%hist_wall(1:res%iter) >= 0.0_dp), 'one bands call per iteration')
   do l = 0, 2
     print '(a,i1,a,3f9.5,a,3f9.5)', '    l=', l, '  sqrdel gamma p (ours): ', abs(res%cls(1)%pp(l, 1)%sqrdel), res%cls(1)%pp(l, 1)%gamma, res%cls(1)%pp(l, 1)%p, &
       '   oracle: ', o_sd(l), o_g(l), o_p(l)

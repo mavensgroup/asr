@@ -47,7 +47,8 @@
 !> Al (0,0,0); Fe/Cr (1/2,1/2,1/2); Co (1/4,1/4,1/4) and (3/4,3/4,3/4).  Unknown sections/keys are errors.
 module asr_driver
   use asr_kinds, only: dp
-  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, len
+  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, set_value, len
+  use asr_inputdump, only: resolved_input
   use asr_tomlutil, only: section, check_keys
   use asr_input_lmto, only: lmto_species_t, lmto_input_t
   use asr_asa, only: core_shells_for, asa_class_result_t
@@ -61,10 +62,11 @@ module asr_driver
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
-  public :: run_input_t, read_run_input, run_input, kspace_cell, class_species
+  public :: run_input_t, read_run_input, run_input, kspace_cell, class_species, rep_from_class_scf
 
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
+    character(len=:), allocatable :: resolved           !! every input key with the value used (asr_inputdump); for the report
     type(class_scf_input_t) :: ci                      !! method = "asr"
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
@@ -174,6 +176,8 @@ contains
       if (associated(ka)) then
         if (len(ka) /= 4) then; msg = '[[species]] konfig needs 4 integers (s,p,d,f)'; return; end if
         do j = 1, 4; call get_value(ka, j, inp%species(i)%konfig(j - 1)); end do
+      else                                             ! the default, written into the table for the resolved input
+        call get_value(sp, 'konfig', ka); call set_value(ka, inp%species(i)%konfig)
       end if
       nullify (ka)
       call get_value(sp, 'occupations', ka, requested=.false.)
@@ -181,6 +185,8 @@ contains
         if (len(ka) /= 2) then; msg = '[[species]] occupations needs 2 numbers (s,d)'; return; end if
         call get_value(ka, 1, x); inp%species(i)%occ_s = x
         call get_value(ka, 2, x); inp%species(i)%occ_d = x
+      else
+        call get_value(sp, 'occupations', ka); call set_value(ka, [inp%species(i)%occ_s, inp%species(i)%occ_d])
       end if
       if (inp%species(i)%z <= 0.0_dp .or. inp%species(i)%nval <= 0) then; msg = '[[species]] needs z and nval'; return; end if
       do j = 1, i - 1
@@ -258,6 +264,7 @@ contains
         else
           if (nsc /= 1) then; msg = '[[sublattice]] with several species needs concentrations'; return; end if
           inp%ci%conc(1, i) = 1.0_dp
+          call get_value(sp, 'concentrations', ka); call set_value(ka, [1.0_dp])
         end if
         if (any(inp%ci%conc(1:nsc, i) <= 0.0_dp) .or. abs(sum(inp%ci%conc(1:nsc, i)) - 1.0_dp) > 1.0e-8_dp) then
           msg = '[[sublattice]] concentrations must be > 0 and sum to 1'; return
@@ -381,9 +388,11 @@ contains
     if (ratio <= 0.0_dp) msg = '[kspace] sphere_ratio must be > 0'
     if (inp%emax <= inp%emin) msg = '[dos] emax must exceed emin'
     if (len(msg) > 0) return
+    call resolved_input(table, filename, inp%method, inp%resolved)
 
     if (kspace) then
       ! the k-space input of the same structure
+      inp%li%resolved = inp%resolved
       inp%li%name = inp%name; inp%li%infile = inp%infile; inp%li%workdir = inp%workdir
       inp%li%dos_file = inp%dos_file; inp%li%out_file = inp%out_file
       inp%li%alat_angstrom = alat; inp%li%xc = trim(inp%ci%xc); inp%li%spin = inp%ci%nspin
@@ -578,35 +587,36 @@ contains
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
     type(class_scf_result_t) :: res
-    integer :: i, ie, l, p, sg, u, nsp, ncomp, ru, nthr, kap, k
+    type(rep_run_t) :: rep
+    character(len=10) :: start_d, start_t
+    integer :: ie, l, p, sg, u, nsp, ncomp, nthr
     character(len=:), allocatable :: dfile
-    character(len=8), allocatable :: labels(:)
-    real(dp), allocatable :: zc(:), swsc(:), tsp(:)
-    integer, allocatable :: nvc(:), natc(:)
+    character(len=16), allocatable :: labels(:)
+    real(dp), allocatable :: tsp(:)
     real(dp) :: t0, t_scf, avw, tot, qcell, mcell, fsp
 
     ok = .false.
+    call date_and_time(start_d, start_t)
     t0 = rep_wall()
     nsp = size(inp%species)
     call class_species(inp)
     print '(a,a)', 'asr (augmented-space recursion)  ', inp%name
     print '(a,a,a,f9.5,a,i0,a,i0,a,i0)', '  graph lattice ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, '  period=', inp%ci%dec%period, &
       '  sites per decoration cell=', inp%ci%dec%nsite, '  spin=', inp%ci%nspin
-    do kap = 1, inp%ci%dec%ncls
-      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(kap), '  site fraction=', inp%ci%dec%frac(kap), '  species: ', &
-        (trim(inp%species(inp%ci%spc(i, kap))%symbol)//' ', i=1, inp%ci%nsc(kap))
+    do p = 1, inp%ci%dec%ncls
+      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(p), '  site fraction=', inp%ci%dec%frac(p), '  species: ', &
+        (trim(inp%species(inp%ci%spc(ie, p))%symbol)//' ', ie=1, inp%ci%nsc(p))
     end do
     inp%ci%ndos = inp%npoints; inp%ci%dos_emin = inp%emin; inp%ci%dos_emax = inp%emax; inp%ci%dos_eta = inp%eta
     t_scf = rep_wall()
     call class_scf(inp%ci, res, verbose=.true.)
     t_scf = rep_wall() - t_scf
     ncomp = res%ncomp
-    allocate (labels(ncomp), zc(ncomp), swsc(ncomp), nvc(ncomp), natc(ncomp), tsp(res%nspin))
+    allocate (labels(ncomp), tsp(res%nspin))
     avw = avg_ws(trim(inp%ci%lattice)) * inp%ci%alat
     qcell = 0.0_dp; mcell = 0.0_dp
     do p = 1, ncomp
       labels(p) = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
-      zc(p) = inp%species(res%comp_spec(p))%z; nvc(p) = inp%species(res%comp_spec(p))%nval; swsc(p) = avw; natc(p) = 1
       qcell = qcell + res%comp_w(p) * res%comp(p)%qnet * inp%ci%dec%nsite
       mcell = mcell + res%comp_w(p) * res%comp(p)%moment * inp%ci%dec%nsite
     end do
@@ -614,7 +624,7 @@ contains
     print '(a,f18.8,a)', '  total energy =', res%etot, ' Ry per site'
     if (.not. res%converged) print '(a)', '  WARNING: SCF did not converge'
     do p = 1, ncomp
-      print '(a,a12,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
+      print '(a,a16,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
     end do
     print '(a,i0,a,f9.5,a,es10.2)', '  per decoration cell (', inp%ci%dec%nsite, ' sites): moment=', mcell, '  net charge=', qcell
 
@@ -622,16 +632,14 @@ contains
     if (.not. par_root()) then
       ok = res%converged; return
     end if
+
+    nthr = 1
+    !$ nthr = omp_get_max_threads()
+    call rep_from_class_scf(inp, res, rep, t0, nthr, start_d, start_t)
+
     dfile = inp%workdir//inp%dos_file
     open (newunit=u, file=dfile, status='replace', action='write')
-    write (u, '(a)') '# '//inp%name//'   states/Ry per atom of each component, summed over spin; total = per site (weighted)'
-    write (u, '(a,f12.8)') '# E_F = ', res%ef
-    if (res%nspin == 2) then                           ! spin-resolved columns per component follow (per atom, per spin)
-      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2', &
-        ('  '//trim(labels(p))//'_up_s _p _d _dn_s _p _d', p=1, ncomp)
-    else
-      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2'
-    end if
+    call rep_write_dos_header(u, rep, inp%npoints, inp%emin, inp%emax)
     fsp = 2.0_dp / real(res%nspin, dp)                 ! res%edos is per spin channel; spin = 1 holds both spins in one
     do ie = 1, inp%npoints
       tsp = 0.0_dp
@@ -643,117 +651,288 @@ contains
         write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp, &
           (((res%edos(ie, l, p, sg), l=0, 2), sg=1, 2), p=1, ncomp)
       else
-        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
+        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp)
       end if
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
 
-    nthr = 1
-    !$ nthr = omp_get_max_threads()
-    call rep_open(ru, inp%workdir//inp%out_file, 'Sublattice alloy, augmented-space recursion + TB-LMTO-ASA: '//inp%name, inp%infile, nthr)
-    if (par_size() > 1) write (ru, '(a,i0,a)') ' MPI ranks: ', par_size(), ' (the recursion chains of each energy pass are split over the ranks)'
-    call rep_echo_input(ru, inp%infile)
-    call rep_section(ru, 'method')
-    if (trim(inp%ci%route) == 'ed3') then
-      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, full generalised ASA problem (route ed3, two chains per energy), one potential per (sublattice, species) component')
-    else
-      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, energy-dependent ASR (asr_ed form), one potential per (sublattice, species) component')
-    end if
-    if (inp%ci%alpha_scale /= 1.0_dp) write (ru, '(a,f7.4)') '  screening constants scaled by ', inp%ci%alpha_scale
-    write (ru, '(a,i0,a,i0,a,i0,a,i0)') '  levels=', inp%ci%nlevels, '  recursion steps=', merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0), &
-      '  max rank=', inp%ci%maxrank, '  supercell=', inp%ci%lsuper
-    write (ru, '(a,*(i0,1x))') '  augmented-space nodes per sublattice: ', res%nodes
-    write (ru, '(a,f6.3,a,f6.3,a,f7.4,a)') '  SIM beta=', inp%ci%sim_beta, '   mixing=', inp%ci%beta, '   fermi_kt=', inp%ci%fermi_kt, ' Ry'
-    if (res%screen%unscreened) then
-      write (ru, '(a)') '  screening: none (sim_beta = 0; fluctuations interact as bare point charges)'
-    else
-      write (ru, '(a,f8.4,a,f7.4,a,f8.4,a,f8.4,a,f7.4,a,f7.4)') '  screening (charge-excess model of the graph lattice): hardness a=', &
-        res%screen%a, ' Ry/e  G00=', res%screen%g00, '  G1=', res%screen%g1, '  W00/G00=', res%screen%w00 / res%screen%g00, &
-        '  first-shell weight lambda=', res%screen%lambda, '  beta max=', res%screen%beta_max
-    end if
-    if (inp%ci%sro .and. allocated(res%mode_lam)) then
-      write (ru, '(a)') '  SRO modes (closure of the first-shell SRO, asr_screening): eigenvalue of Ahat, Gamma = dq/db, first-shell'// &
-        ' form G00 + G1 lambda, F (Ry/e)'
-      do i = 1, size(res%mode_lam)
-        if (res%mode_gam(i) > 1.0e-9_dp * res%screen%g00) then
-          write (ru, '(4x,f9.4,2f11.5,f12.4)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
-            mode_f(res%screen, res%mode_lam(i), res%mode_gam(i))
-        else
-          write (ru, '(4x,f9.4,2f11.5,a)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
-            '    infinite (full clustering: this charge deviation vanishes)'
-        end if
-      end do
-      if (res%uform) write (ru, '(a)') '  SRO potential iterated in the drive u = db: V = a (1 - Gamma) u, u_out = dq + (1 - Gamma) u_in'
-    end if
-    call rep_line(ru, 'electrostatics  Madelung of the sublattice-average charges (Ewald, decoration cell) + screened deviations (SIM; with SRO'// &
-                  ' the conditional first shell, asr_screening)')
-    call rep_section(ru, 'structure')
-    write (ru, '(a,a,a,f12.6,a,f10.6,a)') ' graph lattice ', trim(inp%ci%lattice), '  a = ', inp%ci%alat, ' Bohr = ', inp%ci%alat * 0.529177210903_dp, ' Angstrom'
-    write (ru, '(a,i0,a,i0,a,f9.5,a)') ' decoration cell ', inp%ci%dec%period, '^3 conventional cubes, ', inp%ci%dec%nsite, ' sites;  S_ws = ', avw, ' Bohr (equal spheres)'
-    do kap = 1, inp%ci%dec%ncls
-      write (ru, '(a,a8,a,f7.4,a,*(a))') ' sublattice ', inp%subname(kap), '  site fraction ', inp%ci%dec%frac(kap), '   ', &
-        (trim(inp%species(inp%ci%spc(i, kap))%symbol)//' ', i=1, inp%ci%nsc(kap))
-      write (ru, '(a,*(f8.4))') '      concentrations ', inp%ci%conc(1:inp%ci%nsc(kap), kap)
-    end do
-    if (inp%ci%sro) then
-      write (ru, '(a)') ' first-shell short-range order (Warren-Cowley): P(neighbour species | centre species); shell sites'// &
-        ' independent given the centre, uncorrelated beyond the first shell; electrostatics: screened conditional shell (asr_screening)'
-      do kap = 1, inp%ci%dec%ncls
-        do k = 1, inp%ci%dec%ncls
-          if (all(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
-                      spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) < 1.0e-12_dp)) cycle
-          do i = 1, inp%ci%nsc(kap)
-            write (ru, '(a,a8,a,a8,a,a4,a,*(f8.4))') '   centre on ', inp%subname(kap), ' neighbour on ', inp%subname(k), &
-              ' centre ', trim(inp%species(inp%ci%spc(i, kap))%symbol), ': ', inp%ci%sro_cond(i, 1:inp%ci%nsc(k), kap, k)
-          end do
-        end do
-      end do
-    end if
-    call rep_scf_history(ru, labels, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%ci%tol, res%converged)
-    if (res%nclamp > 0) then
-      write (ru, '(a,i0,a)') ' WARNING: E_nu was held at its band window in the last iteration (', res%nclamp, ' channels).  This is not a'
-      write (ru, '(a)') '          fixed point: the result depends on the window margin.  Reported as not converged.'
-    end if
-    write (ru, '(a,i0)') ' E_nu band-window clamp, events in the whole run (path only when 0 in the last iteration): ', res%nclamp_run
-    write (ru, '(a,2es10.2,a)') ' valence weight within 3 Ry below the contour bottom, first / final potential:', res%wbelow1, res%wbelow, &
-      ' electrons per site'
-    if (.not. res%below_ok) write (ru, '(a)') ' WARNING: states below the contour bottom: the charges and the energy miss them'
-    write (ru, '(a,i0,a,i0)') ' contour node values with a non-causal Green function (-Im G <= 0) in the last iteration: ', res%nnoncausal, &
-      ' of ', res%nnode
-    if (res%nnoncausal > 0) write (ru, '(a)') ' WARNING: the truncated energy-dependent chain is not causal at these nodes; the charges carry the chain error there'
-    write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
-    write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)
-    write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per site'
-    block
-      type(asa_class_result_t), allocatable :: rc(:)
-      rc = res%comp
-      if (res%nspin == 1) then
-        do p = 1, ncomp; rc(p)%q = 2.0_dp * rc(p)%q; end do
-      end if
-      call rep_classes(ru, labels, zc, nvc, swsc, natc, rc, res%nspin, res%ef, mcell, ' (per component atom; cell = decoration cell)', &
-                       natw=res%comp_w * inp%ci%dec%nsite)
-    end block
-    if (trim(inp%ci%route) == 'ed3') then
-      write (ru, '(a)') ' route ed3: sphere charge per channel, s p d, per spin channel (q0 + p q2; the table above lists q0 alone)'
-      do p = 1, ncomp
-        write (ru, '(3x,a12,*(3f10.5,2x))') labels(p), (2.0_dp / res%nspin * res%qch(p, sg, :), sg=1, res%nspin)
-      end do
-    end if
-    write (ru, '(a)') ' components are (species@sublattice); qnet/moments per atom of that component; cell moment per decoration cell'
-    call rep_dos_at_ef(ru, labels, res%edos_e, res%edos, res%ef, inp%eta, res%nspin, 'per-component LDOS from the recursion (eta broadening)')
-    call rep_section(ru, 'timing')
-    write (ru, '(a,f10.2,a)') ' SCF + DOS  ', t_scf, ' s'
-    write (ru, '(a)') ' files written:'
-    write (ru, '(a)') '   '//dfile
-    call rep_close(ru, res%converged, rep_wall() - t0)
+    call rep_write_report(rep, inp%workdir//inp%out_file)
     print '(a,a)', '  wrote ', inp%workdir//inp%out_file
+
+    call rep_write_json(rep, inp%workdir//rep%json_file)
+    print '(a,a)', '  wrote ', inp%workdir//rep%json_file
+
     ok = res%converged
   contains
     real(dp) function avg_ws(kind)
-      use asr_strconst, only: avg_ws_radius
+      use asr_strconst, only: avg_ws_radius, standard_alpha
       character(len=*), intent(in) :: kind
       avg_ws = avg_ws_radius(kind)
     end function avg_ws
   end subroutine run_asr
+
+  !> Fill rep_run_t from recursion class_scf_result_t
+  subroutine rep_from_class_scf(inp, res, rep, t0, nthr, start_d, start_t)
+    use iso_fortran_env, only: compiler_version, compiler_options
+    use asr_build_info, only: git_rev, git_dirty
+    use asr_kinds, only: dp, pi
+    use asr_mpi, only: par_size
+    use asr_strconst, only: avg_ws_radius, standard_alpha
+    use asr_contour, only: fermi_npole, fermi_nodes_count
+    use asr_runstats, only: cpu_seconds
+    type(run_input_t), intent(in) :: inp
+    type(class_scf_result_t), intent(in) :: res
+    type(rep_run_t), intent(out) :: rep
+    real(dp), intent(in) :: t0
+    integer, intent(in) :: nthr
+    character(len=10), intent(in) :: start_d, start_t
+    real(dp) :: fsp, avw
+    integer :: p, sg, l, kap, k, i, j, n1, n2, nmax, dot
+
+    rep%prog_name = 'asr'
+    rep%prog_version = '0.1.0'
+    rep%git_rev = git_rev
+    rep%git_dirty = git_dirty
+    rep%compiler_ver = compiler_version()
+    rep%compiler_opts = compiler_options()
+    rep%host = get_host()
+    rep%pid = get_pid()
+    rep%start_date = start_d
+    rep%start_time = start_t
+    call date_and_time(rep%finish_date, rep%finish_time)
+    rep%wall_total = rep_wall() - t0
+    rep%mpi_ranks = par_size()
+    rep%omp_threads = nthr
+    rep%infile = inp%infile
+    rep%fingerprint = fnv1a64_file(inp%infile)
+    rep%workdir = inp%workdir
+    rep%out_file = inp%out_file
+    dot = index(inp%out_file, '.', back=.true.)
+    if (dot > 0) then
+      rep%json_file = inp%out_file(1:dot - 1)//'.json'
+    else
+      rep%json_file = trim(inp%out_file)//'.json'
+    end if
+    rep%dos_file = inp%dos_file
+    if (len_trim(inp%ci%pot_out) > 0) rep%pot_file = inp%ci%pot_out
+    rep%title = inp%name
+    if (allocated(inp%resolved)) rep%resolved = inp%resolved
+
+    ! Method
+    rep%method = 'asr'
+    rep%route = trim(inp%ci%route)
+    rep%xc = trim(inp%ci%xc)
+    rep%relativistic = inp%ci%relativistic
+    rep%nspin = inp%ci%nspin
+    rep%ncomp = res%ncomp
+    rep%nlevels = inp%ci%nlevels
+    rep%nrec = merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0)
+    rep%maxrank = inp%ci%maxrank
+    rep%lsuper = inp%ci%lsuper
+    if (allocated(res%nodes)) rep%nodes = res%nodes
+    allocate (rep%subname(inp%ci%dec%ncls))
+    rep%subname = inp%subname
+    rep%s_range = inp%ci%rcl
+    rep%inv_radius = max(inp%ci%rcl, inp%ci%rinv)            ! rinv = 0: the inversion cluster is the kept range
+    rep%alpha = standard_alpha() * inp%ci%alpha_scale
+    rep%alpha_scale = inp%ci%alpha_scale
+    rep%terminator = inp%ci%ed_tail
+    rep%depth_tol = inp%ci%depth_tol
+    ! occupation contour as asr_class_scf builds it (contour): Fermi function with poles, or a closed contour without smearing
+    rep%contour_main = inp%ci%ncont
+    if (inp%ci%fermi_kt > 0.0_dp) then
+      rep%contour_poles = fermi_npole(inp%ci%fermi_kt)
+      if (inp%ci%fermi_poles > 0) rep%contour_poles = inp%ci%fermi_poles
+      rep%contour_nodes = fermi_nodes_count(rep%contour_poles, inp%ci%ncont, 16)
+    else
+      rep%contour_poles = 0
+      rep%contour_nodes = inp%ci%ncont + 8
+    end if
+    rep%fermi_kt = inp%ci%fermi_kt
+    rep%fermi_poles = inp%ci%fermi_poles
+    rep%ebot_offset = inp%ci%ebot_offset
+    rep%eta = inp%eta
+    rep%ed_eta = inp%ci%ed_eta
+    rep%sim_beta = inp%ci%sim_beta
+    rep%has_screen = .true.
+    rep%unscreened = res%screen%unscreened
+    if (.not. res%screen%unscreened) then
+      rep%screen_a = res%screen%a
+      rep%screen_g00 = res%screen%g00
+      rep%screen_g1 = res%screen%g1
+      rep%screen_w00_g00 = res%screen%w00 / res%screen%g00
+      rep%screen_lambda = res%screen%lambda
+      rep%screen_beta_max = res%screen%beta_max
+    end if
+
+    ! SRO
+    rep%sro%has_sro = inp%ci%sro
+    if (inp%ci%sro) then
+      if (inp%ci%dec%ncls == 1) then
+        rep%sro%sub_centre = inp%subname(1)
+        rep%sro%sub_neigh = inp%subname(1)
+        rep%sro%coord_num = res%screen%z
+        nmax = inp%ci%nsc(1)
+        rep%sro%nspec = nmax
+        allocate (rep%sro%species(nmax), rep%sro%cond_p(nmax, nmax), rep%sro%alpha(nmax, nmax))
+        do i = 1, nmax
+          rep%sro%species(i) = inp%species(inp%ci%spc(i, 1))%symbol
+          do j = 1, nmax
+            rep%sro%cond_p(i, j) = inp%ci%sro_cond(i, j, 1, 1)
+            rep%sro%alpha(i, j) = 1.0_dp - inp%ci%sro_cond(i, j, 1, 1) / max(1.0e-12_dp, inp%ci%conc(j, 1))
+          end do
+        end do
+      else
+        find_pair: do kap = 1, inp%ci%dec%ncls
+          do k = 1, inp%ci%dec%ncls
+            if (any(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
+                        spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) > 1.0e-12_dp)) then
+              rep%sro%sub_centre = inp%subname(kap)
+              rep%sro%sub_neigh = inp%subname(k)
+              rep%sro%coord_num = res%screen%z
+              n1 = inp%ci%nsc(kap); n2 = inp%ci%nsc(k)
+              rep%sro%nspec = n1
+              allocate (rep%sro%species(n1), rep%sro%cond_p(n1, n2), rep%sro%alpha(n1, n2))
+              do i = 1, n1
+                rep%sro%species(i) = inp%species(inp%ci%spc(i, kap))%symbol
+                do j = 1, n2
+                  rep%sro%cond_p(i, j) = inp%ci%sro_cond(i, j, kap, k)
+                  rep%sro%alpha(i, j) = 1.0_dp - inp%ci%sro_cond(i, j, kap, k) / max(1.0e-12_dp, inp%ci%conc(j, k))
+                end do
+              end do
+              exit find_pair
+            end if
+          end do
+        end do find_pair
+      end if
+      if (allocated(res%mode_lam)) then
+        rep%sro%nmodes = size(res%mode_lam)
+        allocate (rep%sro%mode_lam(rep%sro%nmodes), rep%sro%mode_gam(rep%sro%nmodes), &
+                  rep%sro%mode_gform(rep%sro%nmodes), rep%sro%mode_f(rep%sro%nmodes), &
+                  rep%sro%mode_inf(rep%sro%nmodes))
+        rep%sro%mode_lam = res%mode_lam
+        rep%sro%mode_gam = res%mode_gam
+        rep%sro%mode_gform = res%screen%g00 + res%screen%g1 * res%mode_lam
+        do i = 1, rep%sro%nmodes
+          rep%sro%mode_inf(i) = (res%mode_gam(i) <= 1.0e-9_dp * res%screen%g00)
+          if (.not. rep%sro%mode_inf(i)) then
+            rep%sro%mode_f(i) = mode_f(res%screen, res%mode_lam(i), res%mode_gam(i))
+          else
+            rep%sro%mode_f(i) = 0.0_dp
+          end if
+        end do
+      end if
+      rep%sro%uform = res%uform
+      if (allocated(res%udrive)) rep%sro%udrive = res%udrive
+    end if
+
+    ! Mixing
+    rep%mix_type = 'Anderson'
+    rep%mix_beta = inp%ci%beta
+    rep%mix_history = inp%ci%mix_history
+    rep%mix_restart = inp%ci%beta_restart
+    rep%dvmax = 0.15_dp
+    rep%denumax = 0.08_dp
+    rep%tol = inp%ci%tol
+
+    ! Structure
+    rep%lattice = trim(inp%ci%lattice)
+    rep%alat = inp%ci%alat
+    rep%period = inp%ci%dec%period
+    rep%nsite = inp%ci%dec%nsite
+    avw = avg_ws_radius(trim(inp%ci%lattice)) * inp%ci%alat
+    rep%sws_avg = avw
+    rep%cell_vol = (4.0_dp * pi / 3.0_dp) * avw**3 * inp%ci%dec%nsite
+    rep%nsub = inp%ci%dec%ncls
+    allocate (rep%sub(rep%nsub))
+    do kap = 1, rep%nsub
+      rep%sub(kap)%name = inp%subname(kap)
+      rep%sub(kap)%frac = inp%ci%dec%frac(kap)
+      rep%sub(kap)%nspec = inp%ci%nsc(kap)
+      allocate (rep%sub(kap)%species(rep%sub(kap)%nspec), rep%sub(kap)%conc(rep%sub(kap)%nspec))
+      do i = 1, rep%sub(kap)%nspec
+        rep%sub(kap)%species(i) = inp%species(inp%ci%spc(i, kap))%symbol
+        rep%sub(kap)%conc(i) = inp%ci%conc(i, kap)
+      end do
+    end do
+
+    ! Components
+    allocate (rep%comp(res%ncomp))
+    fsp = 2.0_dp / real(res%nspin, dp)
+    do p = 1, res%ncomp
+      rep%comp(p)%label = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
+      rep%comp(p)%species = inp%species(res%comp_spec(p))%symbol
+      rep%comp(p)%subname = inp%subname(res%comp_cls(p))
+      rep%comp(p)%z = inp%species(res%comp_spec(p))%z
+      rep%comp(p)%valence = inp%species(res%comp_spec(p))%nval
+      rep%comp(p)%concentration = res%comp_x(p)
+      rep%comp(p)%weight_per_site = res%comp_w(p)
+      rep%comp(p)%sws = avw
+      rep%comp(p)%qnet = res%comp(p)%qnet
+      rep%comp(p)%moment = res%comp(p)%moment
+      rep%comp(p)%enu = res%comp(p)%enu
+      do sg = 1, res%nspin
+        do l = 0, 2
+          rep%comp(p)%c(l, sg) = res%comp(p)%pp(l, sg)%c
+          rep%comp(p)%sqrdel(l, sg) = res%comp(p)%pp(l, sg)%sqrdel
+          rep%comp(p)%p(l, sg) = res%comp(p)%pp(l, sg)%p
+          rep%comp(p)%gamma(l, sg) = res%comp(p)%pp(l, sg)%gamma
+        end do
+      end do
+      rep%comp(p)%q = fsp * res%comp(p)%q
+      do sg = 1, res%nspin
+        do l = 0, 2
+          if (allocated(res%qch)) then
+            rep%comp(p)%qch(l, sg) = fsp * res%qch(p, sg, l)
+          else
+            rep%comp(p)%qch(l, sg) = rep%comp(p)%q(0, l, sg)
+          end if
+          if (allocated(res%dosef)) then
+            rep%comp(p)%dosef(l, sg) = fsp * res%dosef(p, sg, l)
+          end if
+        end do
+      end do
+      if (allocated(res%ecomp)) then
+        rep%comp(p)%ecomp = res%ecomp(:, p)
+      end if
+    end do
+
+    ! SCF history and observables
+    rep%iter = res%iter
+    rep%converged = res%converged
+    rep%ef = res%ef
+    rep%etot = res%etot
+    rep%eterm = res%eterm
+    if (allocated(res%ecomp)) rep%ecomp = res%ecomp
+    if (allocated(res%hist_etot)) rep%hist_etot = res%hist_etot
+    if (allocated(res%hist_dv)) rep%hist_dv = res%hist_dv
+    if (allocated(res%hist_denu)) rep%hist_denu = res%hist_denu
+    if (allocated(res%hist_ef)) rep%hist_ef = res%hist_ef
+    if (allocated(res%hist_npass)) rep%hist_npass = res%hist_npass
+    if (allocated(res%hist_wall)) rep%hist_wall = res%hist_wall
+    if (allocated(res%hist_moment)) rep%hist_moment = res%hist_moment
+    if (allocated(res%hist_qnet)) rep%hist_qnet = res%hist_qnet
+    rep%qcell = res%qcell
+    rep%moment_site = res%moment_site
+    rep%dosef_site = sum([(res%comp_w(p) * sum(rep%comp(p)%dosef), p=1, res%ncomp)])
+
+    ! Diagnostics
+    rep%nclamp = res%nclamp
+    rep%nclamp_run = res%nclamp_run
+    rep%nnoncausal = res%nnoncausal
+    rep%nnode = res%nnode
+    rep%wbelow1 = res%wbelow1
+    rep%wbelow = res%wbelow
+    rep%below_ok = res%below_ok
+    rep%depth_mean = res%depth_mean
+    rep%nfall = res%nfall
+    rep%mix_nrestart = res%mix_nrestart
+    rep%mix_nh = res%mix_nh
+
+    ! Timing: the parts from the SCF; the total is the whole run so far (input, SCF, DOS), as the end-of-run line
+    rep%timer = res%timer
+    rep%timer%wall_total = rep%wall_total
+    rep%timer%cpu_total = cpu_seconds()
+  end subroutine rep_from_class_scf
 end module asr_driver
