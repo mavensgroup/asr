@@ -107,3 +107,117 @@ unscreened limit of the model.  A large $\chi_p$ gives $a \to U_p$.  The model n
    \ce{CuZn}).  The model has one $a$ for all sites.  The spread of $a_p$ over the species is its error bar.
 
 Status.  Derived.  Not tested.  It becomes a default only after the test in item 3.
+
+## C. A predictor of the self-consistent change from one fixed-potential iteration
+
+Written 2026-11-16 (Fable 5.2).  Part A gives $x_2 - x_1 = (1 - J)^{-1} d(x_1)$.  This part gives a model of $(1 - J)^{-1}$ in
+the moments and charges of the components.  It uses only chains that the code already runs.  It has no fitted number.
+Tool: `tools/scf_response.py` (input: an `ef_scan_dump` file with three scan energies and the `asr.out` of the same potential).
+
+### C.1 Three response functions per component and spin
+Let $q_{p\sigma}$ be the charge of component $p$ in spin $\sigma$.  The potential enters the chains of one spin only.
+
+1. Uniform shift of the potential of spin $\sigma$ on all sites.  It equals a shift of $E_F$.  The response is the thermal
+   density of states, $n_{p\sigma} = \partial q_{p\sigma} / \partial E_F = -\frac{1}{\pi}\, \mathrm{Im} \sum_j w_j\, G'_{p\sigma}(z_j)$.
+2. Shift on the site alone.  Result B1: $\chi_{p\sigma} = \frac{1}{\pi}\, \mathrm{Im} \sum_j w_j \sum_L G_{pL\sigma}(z_j)^2$.
+3. Shift on all other sites.  By 1 and 2 its response is $n_{p\sigma} - \chi_{p\sigma} = \frac{1}{\pi}\, \mathrm{Im} \sum_j w_j \sum_L
+   (-G' - G^2)$.  This is exact.  It is negative when the site takes charge from its neighbours ($\chi > n$).
+
+A shift on the other sites of one species $p'$ needs a closure.  In the single-site picture a species shift $\delta v_{p'}$
+changes the effective medium by $\delta\sigma(z) = \sum_{p'} w_{p'} \kappa_{p'}(z)\, \delta v_{p'}$ with the vertex weights
+$$\kappa_{p'}(z) = \frac{G_{p'}(z)^2}{\sum_{p''} w_{p''} G_{p''}(z)^2}, \qquad \sum_{p'} w_{p'} \kappa_{p'} = 1 .$$
+This is the single-site (CPA) derivative of the coherent potential, $\partial\sigma / \partial\varepsilon_{p'} = w_{p'} D_{p'}^2 /
+\sum w D^2$ with $D_p = G_p / \bar G$.  The average $\bar G$ cancels.  So
+$$B_{pp'\sigma} = w_{p'}\, \frac{1}{\pi}\, \mathrm{Im} \sum_j w_j \sum_L \big(-G'_{pL\sigma} - G_{pL\sigma}^2\big)\, \kappa_{p'L\sigma}(z_j),
+\qquad \sum_{p'} B_{pp'\sigma} = n_{p\sigma} - \chi_{p\sigma} .$$
+The sum rule holds exactly (checked to $10^{-14}$).  Equal weights $\kappa = 1$ give the simpler closure
+$B_{pp'} = (n_p - \chi_p)\, w_{p'}$.
+
+$G'$ at a node comes from the scan: the nodes move with $E_F$, so $G' = [G(z_j^+) - G(z_j^-)] / (z_j^+ - z_j^-)$.  The nodes
+that do not move lie far below the bands, where $G' = -G^2$.  The node sum of $-G'/\pi$ equals the scan difference of the
+charges to $5 \times 10^{-3}$ states/Ry.
+
+### C.2 The model
+A change $(\delta m_p, \delta q_p)$ of the output moments and charges changes the input potential by
+$$\delta v_{p\sigma} = -\sigma\, \tfrac12 I_p\, \delta m_p + \kappa_q\, \delta q_p, \qquad I_p = \frac{C_{d\downarrow} - C_{d\uparrow}}{m_p} .$$
+$I_p$ is the Stoner parameter of the component.  The code prints $C_d$ and $m$ in `asr.out`.  The values are 0.068 (Fe),
+0.082 (Ni), 0.061 (Cr) and 0.070 (Co) Ry/$\mu_B$ in every state looked at.  $\kappa_q$ is the hardness of the component
+charge, about 1 Ry/e ($U$ of the sphere minus $2\beta/R_1$).  The output then changes by
+$$\delta n_{p\sigma} = -\chi_{p\sigma}\, \delta v_{p\sigma} - \sum_{p'} B_{pp'\sigma}\, \delta v_{p'\sigma} + n_{p\sigma}\, \delta\mu .$$
+
+**Result C1.**  Let $(\delta m^0, \delta q^0)$ be the change after one iteration at the fixed potential.  To first order the
+self-consistent change solves the linear system
+$$\delta m_p = \delta m^0_p + \sum_\sigma \sigma\, \delta n_{p\sigma}, \qquad \delta q_p = \delta q^0_p + \sum_\sigma \delta n_{p\sigma},
+\qquad \sum_p w_p\, \delta q_p = 0 .$$
+It has $2 n_c + 1$ unknowns ($\delta m$, $\delta q$, $\delta\mu$).
+
+This is Result A1 with $J$ restricted to rigid shifts.  Limits.  (a) One component, no charge change: $\delta m = \delta m^0
+/ (1 - I\, \tilde n)$ with $\tilde n = 2 n_\uparrow n_\downarrow / (n_\uparrow + n_\downarrow)$.  This is the Stoner
+enhancement at a fixed charge.  (b) $\kappa_q \to \infty$: $\delta q = 0$, the charges are frozen.  For $\kappa_q \chi \gg 1$ the
+charge change is $\delta q^0 / (\kappa_q \chi)$, about 0.04 $\delta q^0$, as measured (part A).  The moments do not depend on
+$\kappa_q$ between 0.5 and 5 Ry/e (fourth digit).  (c) $B = 0$: every component has its own Stoner factor with $\chi$ in
+place of $n$.
+
+### C.3 Test
+Data.  $n$, $\chi$, $B$ from chain dumps at the converged rank-1 potentials (desktop `desk4/f4scan/fnc_rand_ef`,
+`desk15/fnc_L2`, `desk15/cfcn_L2`, `desk15/cfcn_L3`; levels as stated, 24 steps, `hull`).  \ce{Fe66Ni14Cr20}, levels 3:
+
+| | Fe up / down | Ni up / down | Cr up / down |
+|---|---|---|---|
+| $n$ (1/Ry) | 12.18 / 10.99 | 7.46 / 7.20 | 8.84 / 9.25 |
+| $\chi$ (1/Ry) | 10.82 / 15.56 | 6.00 / 8.36 | 11.50 / 12.82 |
+
+Gain matrix $\partial\, \delta m / \partial\, \delta m^0$ (rows and columns Fe, Ni, Cr): $(6.7,\ 0.1,\ -1.0;\ 0.6,\ 2.4,\ -0.2;\ -3.8,\ -0.2,\ 4.0)$.
+Fe is soft.  Cr follows Fe with the opposite sign.  Ni is stiff.
+
+Changes in per cent of $|m_p|$.  "Fixed" is the measured change after one iteration.  "SCF" is the measured
+self-consistent change.  The three closures are the predictions.
+
+| case | species | fixed | on-site ($B = 0$) | equal weights | vertex weights | SCF |
+|---|---|---|---|---|---|---|
+| \ce{Fe66Ni14Cr20}, levels 3, rank 1 to 2 | Fe | $-0.5$ | $-5.4$ | $-4.1$ | $-5.1$ | $-6.3$ |
+| | Ni | $+0.2$ | $-0.4$ | $-0.2$ | $-2.8$ | $-4.0$ |
+| | Cr | $+2.6$ | $+10.5$ | $+12.1$ | $+13.6$ | $+11.5$ |
+| \ce{Fe66Ni14Cr20}, rank 1, levels 3 to 4 | Fe | $+0.6$ | $+5.3$ | $+3.1$ | $+3.5$ | $+5.0$ |
+| | Ni | $+1.8$ | $+7.1$ | $+6.9$ | $+8.0$ | $+8.6$ |
+| | Cr | $+0.2$ | $+0.4$ | $-2.1$ | $-2.7$ | $-3.6$ |
+| \ce{Fe66Ni14Cr20}, levels 2, rank 1 to 2 | Fe | $-0.8$ | $-4.8$ | $-4.2$ | $-5.5$ | $-6.3$ |
+| | Ni | $-1.5$ | $-3.7$ | $-3.4$ | $-3.6$ | $-4.6$ |
+| | Cr | $+2.7$ | $+10.4$ | $+12.2$ | $+14.9$ | $+13.7$ |
+
+A positive change of Cr is a smaller magnitude (the Cr moment is negative).  The levels-2 line uses the change at the
+levels-2 rank-1 fixed point (`desk15/fnc_L2_r2_it1`: moments 1.6653 / 0.3281 / $-1.1026$ against 1.6785 / 0.3332 / $-1.1334$).
+The pair in `desk4/cal` started from the levels-3 potential, which is not that fixed point.
+
+Reading.
+- The vertex closure gives every sign.  This includes the reversal of Ni under rank 2 and the Cr change under levels 4.
+  Both come from the coupling to Fe.  The on-site model has no such coupling and misses both.
+- The magnitudes are within 1.5 points of $|m|$ in all nine entries (0.7 to 0.8 of the SCF change for Fe).
+- The predicted charge changes are below 0.001 e.  The measured ones are below 0.0022 e.
+- The error bar of the predictor follows from its own gain.  A gain $g$ turns a relative error $\epsilon$ of $I \chi$ into
+  $g\, \epsilon$.  For Fe ($g$ about 7) an error of 3 % in $I$ or in the response gives 20 % in the predicted change.  The
+  rigid-shift form of $I$ (the $d$ splitting for all channels) is of that accuracy.  So 20 to 30 % of the change is the
+  honest error bar.  It is 1 to 2 points of the moment here.
+
+### C.4 Prediction for CoCrFeNi, levels 3, rank 2
+Input: the converged rank-1 potential (`desk2/crfeconi_b12`, $\beta$ 1.2; moments Co 0.9142, Cr $-0.6185$, Fe 1.7511,
+Ni 0.2664) and the first iteration of the rank-2 run (`desk4/cfcn_L3_rank2`: 0.9137 / $-0.5934$ / 1.7372 / 0.2652; charges
+0.0813 / $-0.2123$ / $-0.0210$ / 0.1519 against 0.0947 / $-0.2402$ / $-0.0090$ / 0.1544).  Dump: `desk15/cfcn_L3`.
+
+| | Co | Cr | Fe | Ni |
+|---|---|---|---|---|
+| fixed-potential change (% of $|m|$) | $-0.1$ | $+4.1$ | $-0.8$ | $-0.5$ |
+| predicted self-consistent change | $-3.5$ | $+18.5$ | $-4.0$ | $-3.7$ |
+| predicted moments ($\mu_B$) | 0.882 | $-0.504$ | 1.680 | 0.257 |
+| run at iteration 15 (dV $1.0 \times 10^{-4}$, not converged) | 0.8845 | $-0.5184$ | 1.6769 | 0.2591 |
+
+The predicted charge changes are below 0.001 e.  The run was at iteration 15 when this was written, and its moments were
+known.  The prediction does not use them.  Error bar: 30 % of each change, so Cr $-0.50 \pm 0.035$.
+
+### C.5 Use
+1. One rank-2 iteration at the rank-1 potential plus one three-energy dump at rank 1 give the self-consistent rank-2 moments
+   to 1 to 2 points.  For CoCrFeNi at levels 3 this is one rank-2 iteration (5.4 h) and a dump (47 min) instead of about 20
+   iterations (4.5 days).
+2. The same gain matrix serves every small change of the method at that state: rank, levels, steps, the tail.  It turns a
+   fixed-potential error into the self-consistent error (see `DERIVATION_levels_steps.md`).
+3. The gain matrix is a property of the alloy state.  It says which moments are soft before a costly run is started.

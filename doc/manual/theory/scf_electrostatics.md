@@ -86,7 +86,8 @@ gives \(\Gamma=G_{00}+G_1\hat A\). For strong clustering this has a zero, becaus
 negative. The code keeps the first-shell structure factor wherever it is non-negative, which matches the ASR's own model
 of uncorrelated sites beyond the first shell. Beyond that range it clips the structure factor at zero and renormalises it,
 so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. It vanishes only for complete segregation, where the
-segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite.
+segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite. \(\delta b\) is saved in `save_potential`. A start
+without it (free atoms, or a potential of a run without SRO) starts it at zero, because such a potential holds no SRO part.
 `asr.out` lists the SRO modes with \(\Gamma\), the first-shell value and \(F\).
 
 For the **ordered B2** real-space route the two-site Madelung shifts are exact
