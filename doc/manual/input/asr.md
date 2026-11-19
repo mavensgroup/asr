@@ -106,7 +106,8 @@ clustering depends on the order beyond the first shell, which this input does no
 
 Effective pair interactions of the converged alloy ([[asr_epi]]). They are the input
 of the short-range order thermodynamics (`tools/sro_alpha`). The section needs
-`method = "asr"` and `route = "edc"`.
+`method = "asr"`. Both routes work. `edc` uses \(H^{(2)}\), and `ed3` uses the full
+generalised ASA problem of the SCF.
 
 | Key | Default | Meaning |
 |---|---|---|

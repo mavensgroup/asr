@@ -5,7 +5,8 @@
 !> A wrong species index, start vector or frozen site in the chain loop breaks them.  A second run with the pair-exchange
 !> symmetry option must give the same computed entries.  A third run with energy blocks ([asr] energy_block = 8, in the SCF
 !> and in the pair chains) must give the same table within the rounding scatter of the chains.  The run goes through the driver, which
-!> writes the report and the pair file (build/test_epi_scf_epi.toml).  Small settings (two SCF iterations, levels 2, first
+!> writes the report and the pair file (build/test_epi_scf_epi.toml).  Two more runs use route ed3 (the full-ASA pair chains,
+!> asr_ed3): the same exact statements, and energy blocks equal to single energies.  Small settings (two SCF iterations, levels 2, first
 !> neighbours only, one path point): the numbers are not converged.
 program test_epi_scf
   use asr_kinds, only: dp
@@ -15,7 +16,7 @@ program test_epi_scf
   use asr_testing
   implicit none
   type(run_input_t) :: inp
-  type(class_scf_result_t) :: r, rs, rb
+  type(class_scf_result_t) :: r, rs, rb, r3, r3b
   character(len=:), allocatable :: msg
   real(dp), allocatable :: v(:, :)
   real(dp) :: u22
@@ -92,6 +93,32 @@ program test_epi_scf
     call check_close(maxval(abs(rb%epi(1)%uband(2:3, 2:3) - rb%epi(1)%uband(2, 2))) / abs(u22), 0.0_dp, 1.0e-7_dp, &
                      'energy_block = 8: U(2,2) = U(2,3) = U(3,2) = U(3,3) for the relabelled species')
     call check(rb%epi_wbelow < wbelow_tol, 'energy_block = 8: no weight of a path site below the contour bottom')
+  end if
+
+  ! route ed3: the full-ASA pair chains, first shell, single energies and energy blocks
+  inp%ci%route = 'ed3'; inp%ci%eblock = 0; inp%ci%epi_shells = 1
+  call class_scf(inp%ci, r3)
+  call check(size(r3%epi) == 1, 'route ed3: one pair type')
+  if (size(r3%epi) == 1) then
+    associate (ub => r3%epi(1)%uband, ue => r3%epi(1)%ues)
+      print '(a,4es16.8)', '  route ed3: U band (2,2) (2,3) (3,2) (3,3) (Ry) ', ub(2:3, 2:3)
+      print '(a,2f10.4)', '  route ed3 / edc: V(Cu,Ni) band (mRy; settings not converged) ', 1.0e3_dp * ub(2, 2), 1.0e3_dp * u22
+      call check(all(ub(1, :) == 0.0_dp) .and. all(ub(:, 1) == 0.0_dp), 'route ed3: the rows and columns of the reference species vanish')
+      call check(abs(ub(2, 2)) > 1.0e-5_dp .and. abs(ub(2, 2) - u22) < abs(u22), &
+                 'route ed3: the Cu-Ni band interaction is not small and has the size of the edc one')
+      call check_close(maxval(abs(ub(2:3, 2:3) - ub(2, 2))) / abs(ub(2, 2)), 0.0_dp, 1.0e-7_dp, &
+                       'route ed3: U(2,2) = U(2,3) = U(3,2) = U(3,3) for the relabelled species')
+      call check(ue(2, 2) > 0.0_dp, 'route ed3: the screened Coulomb interaction favours unlike neighbours')
+    end associate
+    call check(r3%epi_wbelow < wbelow_tol, 'route ed3: no weight of a path site below the contour bottom')
+    inp%ci%eblock = 8
+    call class_scf(inp%ci, r3b)
+    if (size(r3b%epi) == 1) then
+      call check_close(maxval(abs(r3b%epi(1)%uband - r3%epi(1)%uband)) / abs(r3%epi(1)%uband(2, 2)), 0.0_dp, 1.0e-6_dp, &
+                       'route ed3, energy_block = 8: the band table equals that of the single-energy chains')
+    else
+      call check(.false., 'route ed3, energy_block = 8: one pair type')
+    end if
   end if
 
   ! the driver: pair file

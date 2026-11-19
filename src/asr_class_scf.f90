@@ -225,7 +225,6 @@ contains
 
     ed3 = trim(inp%route) == 'ed3'
     if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
-    if (ed3 .and. inp%epi_shells > 0) error stop 'class_scf: effective pair interactions need route = edc'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
     teams_said = 0
@@ -1101,11 +1100,12 @@ contains
       logical, allocatable :: flip(:)
       real(dp), allocatable :: pd(:, :, :), chi(:, :), xl(:), wl(:), db(:), rvs(:, :), gr(:), wr(:)
       complex(dp), allocatable :: zq(:), wq(:), tz(:, :, :, :, :, :), zb(:), wb(:), tb(:, :, :, :, :, :)
-      real(dp) :: vec(9, 9), tailmax, ebot, dls, dl0, acc
+      real(dp) :: vec(9, 9), tailmax, ebot, dls, dl0, acc, dtol
       integer :: lo(9), kp, k2, ip, nq, n1, n2, nlam, ntab, c, s, il, gg, ia, j, jsite, nfr, nbe
       character(len=:), allocatable :: emsg
       integer, parameter :: nba = 16, nbv = 4
       nlam = inp%epi_nlam
+      dtol = ed_depth_tol; ed_depth_tol = 0.0_dp      ! full depth: U is a small difference of large numbers (route ed3 adapts)
       allocate (par(ncomp, nsp), xl(nlam), wl(nlam), db(ncomp), tab(0), zb(nba + nbv), wb(nba + nbv))
       do gg = 1, nsp
         do c = 1, ncomp; par(c, gg) = epi_species(pps(c, gg), alpha); end do
@@ -1211,6 +1211,7 @@ contains
         deallocate (rvs, gr, wr)
       end do
       res%epi = tab(1:ntab)
+      ed_depth_tol = dtol
       if (vb .or. res%epi_wbelow >= wbelow_tol) print '(a,es10.2,a)', &
         '  effective pair interactions: largest weight of a path site below the contour bottom:', res%epi_wbelow, ' electrons (must vanish)'
       if (res%epi_wbelow >= wbelow_tol) print '(a)', '  WARNING: a path species has states below the contour bottom: the pair tables miss them'
@@ -1232,9 +1233,11 @@ contains
       real(dp), intent(inout) :: tl
       type(augcls_op) :: lop
       type(epi_work_t) :: wk
+      type(ed3_work_t) :: w3
       type(blk_work_t) :: bw
       type(class_alloy_t) :: ml
       type(edn_t) :: edl
+      type(ed3_t) :: e3l
       type(epi_path_t) :: pt
       complex(dp) :: xb(0:3, max(nbe, 1))
       real(dp) :: tloc
@@ -1244,7 +1247,11 @@ contains
       rk = par_rank(); nr = par_size()
       lop = pop
       nullify (lop%wk); allocate (lop%wk(size(pop%wk, 1), size(pop%wk, 2)))
-      call epi_work_init(wk, lop%dim())
+      if (ed3) then
+        call ed3_work_init(w3, lop%dim())
+      else
+        call epi_work_init(wk, lop%dim())
+      end if
       if (nbe > 0) call blk_work_init(bw, nbe, lop%dim())
       cur = -1; cura = -1; tloc = 0.0_dp
       !$omp do schedule(dynamic)
@@ -1259,27 +1266,48 @@ contains
         if (any(cur /= [c, il, s, gg])) then
           pt = epi_path(par(mp%spc(1, kp), gg), par(mp%spc(c, kp), gg), xl(il))
           ml = mp
-          call epi_setup(ml, par(:, gg), pt, edl)
+          if (ed3) then
+            call epi3_setup(ml, par(:, gg), pt, e3l)
+          else
+            call epi_setup(ml, par(:, gg), pt, edl)
+          end if
           call augcls_set_params(lop, ml)
           call augcls_freeze_any(lop, 1, ncomp + 1); call augcls_freeze_any(lop, jsite, mp%spc(s, k2))
           cur = [c, il, s, gg]; cura = -1
         end if
         if (cura /= ia) then
           call augcls_set_chi(lop, chi(1:lop%nop, ia))
-          call epi_start(lop, wk, vec(:, ia)); cura = ia
+          if (ed3) then
+            call epi3_start(lop, w3, e3l, vec(:, ia), lo(ia))
+          else
+            call epi_start(lop, wk, vec(:, ia))
+          end if
+          cura = ia
         end if
         if (nbe == 0) then
           j1 = jb; j2 = jb
-          call epi_blocks(lop, wk, edl, zs(j1), nlev, xb(:, 1))
+          if (ed3) then
+            call ed3_blocks(lop, w3, e3l, zs(j1), lo(ia), nlev, xb(:, 1))
+          else
+            call epi_blocks(lop, wk, edl, zs(j1), nlev, xb(:, 1))
+          end if
         else
           j1 = (jb - 1) * nbe + 1; j2 = min(nz, jb * nbe)
-          call epi_blocks_blk(lop, wk, bw, edl, zs(j1:j2), nlev, xb(:, 1:j2 - j1 + 1))
+          if (ed3) then
+            call ed3_blocks_blk(lop, w3, bw, e3l, zs(j1:j2), lo(ia), nlev, xb(:, 1:j2 - j1 + 1))
+          else
+            call epi_blocks_blk(lop, wk, bw, edl, zs(j1:j2), nlev, xb(:, 1:j2 - j1 + 1))
+          end if
         end if
         do j = j1, j2
           if (g0) then
             tz(j, ia, gg, s, il, c) = xb(0, j - j1 + 1)
           else
-            tz(j, ia, gg, s, il, c) = epi_integrand(pt, lo(ia), zs(j), xb(:, j - j1 + 1))
+            if (ed3) then
+              tz(j, ia, gg, s, il, c) = epi3_integrand(pt, lo(ia), zs(j), xb(:, j - j1 + 1))
+            else
+              tz(j, ia, gg, s, il, c) = epi_integrand(pt, lo(ia), zs(j), xb(:, j - j1 + 1))
+            end if
             tloc = max(tloc, abs(xb(3, j - j1 + 1)) / max(abs(xb(1, j - j1 + 1)), tiny(1.0_dp)))
           end if
         end do

@@ -10,7 +10,11 @@
 !>  (P) path points: the error of 1 to 4 Gauss-Legendre nodes for species that are close to each other (the case of neighbours
 !>      in a transition series) and for the far species of (T).  Result: 2 nodes are enough for close species (0.01 %); 1 node
 !>      is not safe (2 % of the largest entry, a factor 2 on a small one); far species need 4 (0.1 %);
-!>  (S) the shell values of the screening kernel.
+!>  (S) the shell values of the screening kernel;
+!>  (D3) route ed3: as (D) for the full-ASA secular matrix K(z) = eps - h + u h + h u - h Q h (dense, unscaled) with the
+!>      trace formula of epi3_integrand and the chains of asr_ed3;
+!>  (T3) route ed3: the Fermi contour of the ed3 chains equals sum_i f(e_i) de_i/dlambda of the generalised eigenproblem
+!>      H x = e O x (dense, ordered medium).
 program test_epi
   use asr_kinds, only: dp, pi
   use asr_augspace, only: graph_t
@@ -27,7 +31,8 @@ program test_epi
   use asr_contour
   use asr_screening
   use asr_testing
-  use asr_lapack, only: zgesv, dsyev
+  use asr_lapack, only: zgesv, dsyev, dsygv
+  use asr_ed3, only: ed3_t, ed3_work_t, ed3_work_init, ed3_blocks
   !$ use omp_lib, only: omp_set_num_threads
   implicit none
   integer, parameter :: lsup = 2, mg = 2 * lsup
@@ -66,6 +71,7 @@ program test_epi
   call part_ti()
   call part_path()
   call part_screen()
+  call part_ed3()
   call report()
 
 contains
@@ -527,4 +533,215 @@ contains
     call screen_shells('bcc', al, s, rv, gr, wr)
     call check_close(wr(3), 2.0_dp / al, 1.0e-14_dp, 'screen_shells: unscreened kernel is 2 / R')
   end subroutine part_screen
+  ! ---------------------------------------------------------------- route ed3 (D3, T3)
+  !> dense unscaled h = c + d S d of the 16-site cell (species as dense_h) and the parameters e, o, p of every row
+  subroutine dense_h0(spsite, pt, sj, h, ev, ov, pv)
+    integer, intent(in) :: spsite(:), sj
+    type(epi_path_t), intent(in) :: pt
+    real(dp), allocatable, intent(out) :: h(:, :), ev(:), ov(:), pv(:)
+    type(class_alloy_t) :: md
+    type(augcls_op) :: o1
+    logical :: fl(g%n)
+    real(dp), allocatable :: x(:), y(:)
+    integer :: s, k, n, sp, l
+    md%nl = 9; md%nsp = 4; md%ncls = 3
+    allocate (md%nsc(3), md%spc(1, 3), md%conc(1, 3)); md%nsc = 1; md%spc(1, :) = [1, 2, 3]; md%conc = 1.0_dp
+    md%block = m0%block; md%block0 = m0%block0
+    allocate (md%c(9, 4), md%d(9, 4), md%o(9, 4), md%e(9, 4)); md%o = 0.0_dp; md%e = 0.0_dp
+    do s = 1, 3
+      md%c(:, s) = par(s)%c; md%d(:, s) = par(s)%d
+    end do
+    md%c(:, 4) = pt%c; md%d(:, 4) = pt%d
+    fl = .false.
+    call build_augcls_operator(g, md, spsite, perm1, d1, 1, 6, o1, maxrank=1, flippable=fl)
+    if (o1%nn /= g%n) error stop 'dense_h0: node set /= sites'
+    call augcls_freeze_any(o1, 1, 4); call augcls_freeze_any(o1, jp, sj)
+    n = 9 * o1%nn
+    allocate (h(n, n), x(n), y(n), ev(n), ov(n), pv(n))
+    do k = 1, n
+      x = 0.0_dp; x(k) = 1.0_dp
+      call o1%apply(x, y); h(:, k) = y
+    end do
+    do k = 1, o1%nn
+      sp = spsite(o1%site(k))
+      if (o1%site(k) == 1) sp = 4
+      if (o1%site(k) == jp) sp = sj
+      do l = 1, 9
+        if (sp == 4) then
+          ev(9 * (k - 1) + l) = pt%e(l); ov(9 * (k - 1) + l) = pt%o(l); pv(9 * (k - 1) + l) = pt%p(l)
+        else
+          ev(9 * (k - 1) + l) = par(sp)%e(l); ov(9 * (k - 1) + l) = par(sp)%o(l); pv(9 * (k - 1) + l) = par(sp)%p(l)
+        end if
+      end do
+    end do
+    call augcls_free(o1)
+  end subroutine dense_h0
+
+  !> dense H and O of the generalised problem: K(E) = E O - H = eps - h + u h + h u - h Q h, eps = E - e, u = o eps, Q = o - p eps
+  subroutine dense_ho(spsite, pt, sj, hh, oo)
+    integer, intent(in) :: spsite(:), sj
+    type(epi_path_t), intent(in) :: pt
+    real(dp), allocatable, intent(out) :: hh(:, :), oo(:, :)
+    real(dp), allocatable :: h(:, :), ev(:), ov(:), pv(:)
+    integer :: n, i, j
+    call dense_h0(spsite, pt, sj, h, ev, ov, pv)
+    n = size(h, 1)
+    allocate (hh(n, n), oo(n, n))
+    do j = 1, n
+      do i = 1, n
+        oo(i, j) = ov(i) * h(i, j) + h(i, j) * ov(j)
+        hh(i, j) = h(i, j) + ov(i) * ev(i) * h(i, j) + h(i, j) * ov(j) * ev(j)
+      end do
+    end do
+    oo = oo + matmul(h, spread(pv, 2, n) * h)
+    hh = hh + matmul(h, spread(ov + pv * ev, 2, n) * h)
+    do i = 1, n
+      oo(i, i) = oo(i, i) + 1.0_dp; hh(i, i) = hh(i, i) + ev(i)
+    end do
+  end subroutine dense_ho
+
+  !> Tr[K^-1 dK/dlambda] - 2 sum_L kappa_L at z on the path a -> b (minus the sum of epi3_integrand over site 0)
+  function ref_trace3(spsite, a, b, lam, sj, z) result(tr)
+    integer, intent(in) :: spsite(:), a, b, sj
+    real(dp), intent(in) :: lam
+    complex(dp), intent(in) :: z
+    complex(dp) :: tr
+    real(dp), parameter :: hs = 1.0e-2_dp
+    real(dp) :: ls(4), cf(4)
+    real(dp), allocatable :: hh(:, :), oo(:, :)
+    complex(dp), allocatable :: km(:, :), rhs(:, :)
+    integer, allocatable :: ipiv(:)
+    type(epi_path_t) :: pt
+    integer :: n, k, info, m
+    ls = lam + hs * [-2.0_dp, -1.0_dp, 1.0_dp, 2.0_dp]; cf = [1.0_dp, -8.0_dp, 8.0_dp, -1.0_dp] / (12.0_dp * hs)
+    call dense_ho(spsite, epi_path(par(a), par(b), lam), sj, hh, oo)
+    n = size(hh, 1)
+    allocate (km(n, n), rhs(n, n), ipiv(n))
+    km = z * oo - hh
+    rhs = (0.0_dp, 0.0_dp)
+    do m = 1, 4
+      call dense_ho(spsite, epi_path(par(a), par(b), ls(m)), sj, hh, oo)
+      rhs = rhs + cf(m) * (z * oo - hh)
+    end do
+    call zgesv(n, n, km, n, ipiv, rhs, n, info)
+    if (info /= 0) error stop 'ref_trace3: zgesv failed'
+    tr = (0.0_dp, 0.0_dp)
+    do k = 1, n; tr = tr + rhs(k, k); end do
+    pt = epi_path(par(a), par(b), lam)
+    tr = tr - 2.0_dp * sum(pt%dk)
+  end function ref_trace3
+
+  !> sum over the nine start vectors of epi3_integrand from the ed3 chains (as chain_trace)
+  function chain_trace3(op, mdl, dd, a, b, lam, sj, z, nlev) result(tr)
+    type(augcls_op), intent(inout) :: op
+    type(class_alloy_t), intent(in) :: mdl
+    real(dp), intent(in) :: dd(:, :, :), lam
+    integer, intent(in) :: a, b, sj, nlev
+    complex(dp), intent(in) :: z
+    complex(dp) :: tr, x(0:3)
+    type(class_alloy_t) :: ml
+    type(ed3_t) :: ed
+    type(ed3_work_t) :: wk
+    type(epi_path_t) :: pt
+    real(dp) :: vec(9, 9), chi(16, 9)
+    integer :: lo(9), ia
+    ml = mdl
+    pt = epi_path(par(a), par(b), lam)
+    call epi3_setup(ml, par, pt, ed)
+    call augcls_set_params(op, ml)
+    call augcls_freeze_any(op, 1, 4); call augcls_freeze_any(op, jp, sj)
+    call epi_adapted(dd, vec, chi, lo)
+    call ed3_work_init(wk, op%dim())
+    tr = (0.0_dp, 0.0_dp)
+    do ia = 1, 9
+      call augcls_set_chi(op, chi(1:op%nop, ia))
+      call epi3_start(op, wk, ed, vec(:, ia), lo(ia))
+      call ed3_blocks(op, wk, ed, z, lo(ia), nlev, x)
+      tr = tr + epi3_integrand(pt, lo(ia), z, x)
+    end do
+  end function chain_trace3
+
+  subroutine part_ed3()
+    integer, parameter :: npl = 2, nmain = 32, nstep = 16
+    real(dp), parameter :: xc(3) = [0.5_dp, 0.3_dp, 0.2_dp], lam = 0.35_dp, kt = 0.04_dp
+    type(class_alloy_t) :: mdl
+    type(augcls_op) :: op, opu
+    logical :: fl(g%n)
+    integer :: spsite(g%n), r1, r2, s1, s2, sj, n, info, i, j, nq
+    complex(dp) :: z, ref, tr, tru
+    real(dp) :: mu, ebot, dref, acc, de, lw
+    real(dp), allocatable :: hh(:, :), oo(:, :), h1(:, :), o1(:, :), hp(:, :), op_(:, :), hm(:, :), om_(:, :), ev(:), work(:)
+    real(dp), allocatable :: h2p(:, :), o2p(:, :)
+    complex(dp), allocatable :: zq(:), wq(:)
+    real(dp), parameter :: hs = 1.0e-2_dp
+    ! (D3) disorder at one energy
+    r1 = site_at([2, 0, 0]); r2 = site_at([0, 2, 0])
+    allocate (cls(g%n)); cls = 1; cls(r1) = 2; cls(r2) = 2; cls(jp) = 3
+    fl = .false.; fl(r1) = .true.; fl(r2) = .true.
+    mdl%nl = 9; mdl%nsp = 4; mdl%ncls = 3
+    allocate (mdl%nsc(3), mdl%spc(3, 3), mdl%conc(3, 3)); mdl%spc = 0; mdl%conc = 0.0_dp
+    mdl%nsc = [1, 3, 1]; mdl%spc(1, 1) = 1; mdl%spc(:, 2) = [1, 2, 3]; mdl%spc(1, 3) = 1
+    mdl%conc(1, 1) = 1.0_dp; mdl%conc(:, 2) = xc; mdl%conc(1, 3) = 1.0_dp
+    mdl%block = m0%block; mdl%block0 = m0%block0
+    call epi_pair_ops(coord, mg, cls, perm, mats)
+    call orbital_rep(mats, d)
+    call build_augcls_operator(g, mdl, cls, perm, d, 1, 8, op, maxrank=2, flippable=fl)
+    call build_augcls_operator(g, mdl, cls, perm1, d1, 1, 8, opu, maxrank=2, flippable=fl)
+    z = cmplx(0.12_dp, 0.3_dp, dp)
+    do sj = 2, 3
+      ref = (0.0_dp, 0.0_dp)
+      do s1 = 1, 3
+        do s2 = 1, 3
+          spsite = 1; spsite(r1) = s1; spsite(r2) = s2
+          ref = ref - xc(s1) * xc(s2) * ref_trace3(spsite, 1, 2, lam, sj, z)
+        end do
+      end do
+      tr = chain_trace3(op, mdl, d, 1, 2, lam, sj, z, 140)
+      tru = chain_trace3(opu, mdl, d1, 1, 2, lam, sj, z, 140)
+      print '(a,i0,a,2f14.9,a,2es9.2)', '  ed3, partner species ', sj, ': exact average ', ref, '  chains - exact (reduced, unreduced) ', &
+        abs(tr - ref), abs(tru - ref)
+      call check_close(abs(tr - ref) / abs(ref), 0.0_dp, 1.0e-8_dp, 'ed3: frozen-pair chains (pair group) == exact configuration average of -Tr[K^-1 dK/dlambda]')
+      call check_close(abs(tru - ref) / abs(ref), 0.0_dp, 1.0e-8_dp, 'ed3: frozen-pair chains (no symmetry) == exact configuration average')
+    end do
+    call augcls_free(op); call augcls_free(opu); deallocate (cls)
+    ! (T3) contour against the generalised eigenproblem, ordered medium, path 1 -> 3 at lambda 0.6, partner species 2
+    allocate (cls(g%n)); cls = 1; cls(jp) = 2
+    fl = .false.; spsite = 1
+    deallocate (mdl%nsc, mdl%spc, mdl%conc)
+    mdl%ncls = 2; allocate (mdl%nsc(2), mdl%spc(1, 2), mdl%conc(1, 2)); mdl%nsc = 1; mdl%spc = 1; mdl%conc = 1.0_dp
+    call epi_pair_ops(coord, mg, cls, perm, mats)
+    call orbital_rep(mats, d)
+    call build_augcls_operator(g, mdl, cls, perm, d, 1, 6, op, maxrank=1, flippable=fl)
+    call dense_ho(spsite, epi_path(par(1), par(3), 0.6_dp), 2, hh, oo)
+    call dense_ho(spsite, epi_path(par(1), par(3), 0.6_dp + hs), 2, hp, op_)          ! dH, dO: 5-point differences
+    call dense_ho(spsite, epi_path(par(1), par(3), 0.6_dp - hs), 2, hm, om_)
+    hp = 8.0_dp * (hp - hm); op_ = 8.0_dp * (op_ - om_)
+    call dense_ho(spsite, epi_path(par(1), par(3), 0.6_dp + 2.0_dp * hs), 2, h2p, o2p)
+    call dense_ho(spsite, epi_path(par(1), par(3), 0.6_dp - 2.0_dp * hs), 2, hm, om_)
+    hp = (hp - (h2p - hm)) / (12.0_dp * hs); op_ = (op_ - (o2p - om_)) / (12.0_dp * hs)
+    n = size(hh, 1)
+    allocate (ev(n), work(8 * n), h1(n, n), o1(n, n))
+    h1 = hh; o1 = oo
+    call dsygv(1, 'V', 'U', n, h1, n, o1, n, ev, work, size(work), info)
+    call check(info == 0, 'ed3: O of the test operator is positive definite (dsygv)')
+    if (info /= 0) return
+    mu = 0.5_dp * (ev(n / 3) + ev(n / 3 + 1)) + 0.013_dp; ebot = ev(1) - 0.4_dp
+    dref = 0.0_dp
+    do i = 1, n                                       ! de_i/dlambda = x_i^T (dH - e_i dO) x_i, x_i^T O x_i = 1
+      de = dot_product(h1(:, i), matmul(hp - ev(i) * op_, h1(:, i)))
+      lw = 1.0_dp / (1.0_dp + exp((ev(i) - mu) / kt))
+      dref = dref + lw * de
+    end do
+    nq = fermi_nodes_count(npl, nmain, nstep)
+    allocate (zq(nq), wq(nq))
+    call contour_nodes_fermi(ebot, mu, kt, npl, nmain, nstep, zq, wq)
+    acc = 0.0_dp
+    do j = 1, nq
+      acc = acc - aimag(wq(j) * chain_trace3(op, mdl, d, 1, 3, 0.6_dp, 2, zq(j), 100)) / pi
+    end do
+    print '(a,f8.4,a,i0,a,2f14.9)', '  ed3: mu = ', mu, '  contour nodes ', nq, ':  dOmega/dlambda from the chains, exact ', acc, dref
+    call check_close(acc, dref, 1.0e-6_dp, 'ed3: dOmega/dlambda, Fermi contour of the chains == sum_i f(e_i) de_i/dlambda (H x = e O x)')
+    call augcls_free(op); deallocate (cls)
+  end subroutine part_ed3
+
 end program test_epi
