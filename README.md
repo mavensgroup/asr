@@ -1,7 +1,7 @@
 # asr — augmented-space recursion for disordered alloys
 
 [![GitHub](https://img.shields.io/badge/GitHub-mavensgroup%2Fasr-181717?logo=github&logoColor=white)](https://github.com/mavensgroup/asr)
-[![Release](https://img.shields.io/badge/release-v0.1.0-blue.svg)](https://github.com/mavensgroup/asr/releases)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/mavensgroup/asr/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Fortran](https://img.shields.io/badge/Fortran-2008%20%7C%202018-734f96?logo=fortran&logoColor=white)](https://fortran-lang.org)
 [![Build with fpm](https://img.shields.io/badge/build-fpm-008080?logo=fortran&logoColor=white)](https://fpm.fortran-lang.org)

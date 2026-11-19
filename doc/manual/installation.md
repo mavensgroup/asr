@@ -242,7 +242,7 @@ asr_run -- /tmp/asr_smoke/fcc_ordered.toml
 Expected output:
 
 ```text
-asr 0.1.0  fcc NN s-band
+asr 1.0.0  fcc NN s-band
 input: /tmp/asr_smoke/fcc_ordered.toml
 wrote /tmp/asr_smoke/fcc_ordered_dos.dat
 ```
