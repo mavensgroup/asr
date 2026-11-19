@@ -35,6 +35,7 @@ tail -2 asr.out          # the status line
 | `converged results` | \(E_F\), the cell charge residual, the moment per site; per component \(Z\), valence, concentration, weight, \(S\), electrons in the sphere, net charge, moment; the potential parameters and the moments with the DOS at \(E_F\) for each spin and \(l\) |
 | `Fermi level` | \(N(E_F)\) per site (both spins), its broadening, the bare Sommerfeld coefficient \(\gamma_e\) and the bare Pauli susceptibility \(\chi_P\), and \(N(E_F)\) per component and \(l\) |
 | `Bloch spectral function` | Only with `[spectral]`: the k path with its corners, the energy mesh, the chain steps and the target sites, the nodes per origin class, a table of the built-in checks (reciprocity defect, change of \(G\) when the chains are cut 4 steps earlier, points with \(A<0\), the energy integral of \(A\) at the first and the last k point) and the decay of the off-site \(\mathrm{Im}\,G\) with distance |
+| `effective pair interactions` | Only with `[epi]`: per pair type (sublattices, shell, vector, distance, sites in the shell, group order, nodes, the \(X_1\) mismatch of the two chains, the kernel \(W(R)\)) the tables \(U(c,s)\) in mRy (band, screened Coulomb, total) and, on one sublattice, the exchange interactions \(V(p,q)\) with the asymmetry of the band \(U\) as the error measure |
 | `health checks` | Each check with its value, its limit and a status: `OK`, `WARN`, `FAIL` or `info` (see below) |
 | `timing` | Wall and CPU time per part of the run, calls, CPU/wall and share; the time outside the parts; chain evaluations per second |
 | `warnings` | Every `WARN` and `FAIL` of the health checks and every warning of the run; `none` if there are none |
@@ -144,6 +145,8 @@ the text report. Numbers carry the full double precision; units are in the key n
 | `dos_ef_per_site_per_ry` | \(N(E_F)\) per site |
 | `history` | per iteration: `etot_ry`, `dv_ry`, `ef_ry`, `npass`, `wall_s` |
 | `checks` | non-causal values, contour values, weight below the contour (first, final), \(E_\nu\) clamps (last, run), cell charge residual |
+| `spectral` | only with `[spectral]`: file, k points, energies, \(\eta\), `rmax`, window, chain steps, target sites and the built-in checks |
+| `epi` | only with `[epi]`: file, path points, `symmetric`, `energy_block`, the weight below the contour bottom, and per pair type the data of the report with `u_band_ry` and `u_es_ry` (Ry, full precision) |
 | `timing_s` | total wall and CPU time, wall time per part |
 
 ```python

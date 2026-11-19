@@ -25,7 +25,8 @@ module asr_augcls
   implicit none
   private
   public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, &
-            augcls_rand, augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_amp_c, augcls_free
+            augcls_rand, augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_amp_c, augcls_free, &
+            augcls_freeze_any, augcls_set_chi
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -51,7 +52,7 @@ module asr_augcls
     real(dp), pointer, contiguous :: norb(:) => null(), sq(:) => null()
     integer, allocatable :: pi(:, :)
     real(dp), allocatable :: sg(:, :), chi(:)
-    real(dp), allocatable :: csg(:, :)                            !! csg(l, g) = chi(g) sg(l, g), exactly 0 or +-1
+    real(dp), allocatable :: csg(:, :)                            !! csg(l, g) = chi(g) sg(l, g); set chi with augcls_set_chi only
     integer, pointer, contiguous :: stab_ptr(:) => null(), stab(:) => null()   !! stabiliser of node i: stab(stab_ptr(i):stab_ptr(i+1)-1)
     real(dp), pointer :: wk(:, :) => null()
   contains
@@ -123,6 +124,39 @@ contains
       end if
     end do
   end subroutine augcls_freeze_site
+
+  !> Freeze `site` to the parameters of the species index sp (1 .. nsp).  The species need not belong to the class of the site:
+  !> the frozen partner of a pair, or a start site on a path between two species (asr_epi).  The site must have been
+  !> non-flippable when the node set was built.  nfound (optional): number of nodes on that site (0: the site is outside the
+  !> node set and the freeze has no effect).
+  subroutine augcls_freeze_any(op, site, sp, nfound)
+    type(augcls_op), intent(inout) :: op
+    integer, intent(in) :: site, sp
+    integer, intent(out), optional :: nfound
+    integer :: i, n
+    if (sp < 1 .or. sp > op%nsp) error stop 'augcls_freeze_any: species index out of range'
+    n = 0
+    do i = 1, op%nn
+      if (op%site(i) == site) then
+        if (op%lst(i) /= 0 .or. count(op%flipr(:, i) /= 0) > 1) error stop 'augcls_freeze_any: the frozen site was flippable'
+        op%frozen(i) = sp; n = n + 1
+      end if
+    end do
+    if (present(nfound)) nfound = n
+  end subroutine augcls_freeze_any
+
+  !> Characters of the start vector under the group (asr_epi: a symmetry-adapted start).  Sets chi and the signed orbital
+  !> table csg = chi sg together; writing op%chi alone leaves csg stale.
+  subroutine augcls_set_chi(op, chi)
+    type(augcls_op), intent(inout) :: op
+    real(dp), intent(in) :: chi(:)
+    integer :: g
+    if (size(chi) /= op%nop) error stop 'augcls_set_chi: one character per group operation'
+    op%chi = chi
+    do g = 1, op%nop
+      op%csg(:, g) = op%chi(g) * op%sg(:, g)
+    end do
+  end subroutine augcls_set_chi
 
   !> New concentrations of class kap (same species list and node set): short-range order sets the first-shell class of the frozen
   !> start site to the conditional concentrations of the central species.  Species of zero weight are allowed (see class_mt).

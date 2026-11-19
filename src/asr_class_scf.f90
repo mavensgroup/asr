@@ -55,9 +55,10 @@ module asr_class_scf
   use asr_symmetry, only: class_ops, orbital_rep
   use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
   use asr_sublattice
-  use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count
+  use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count, gauss_legendre
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
-  use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f
+  use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f, screen_shells
+  use asr_epi
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
   use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, &
                           spectral_window
@@ -95,6 +96,9 @@ module asr_class_scf
     real(dp) :: dos_emin = -1.0_dp, dos_emax = 1.0_dp, dos_eta = 0.02_dp
     character(len=256) :: pot_in = '', pot_out = ''
     real(dp) :: ebot_offset = 1.2_dp                   !! the contour starts ebot_offset (Ry) below the lowest E_nu; res%wbelow checks it
+    integer :: epi_shells = 0                          !! effective pair interactions (asr_epi) on this many shells after the SCF; 0: off
+    integer :: epi_nlam = 4                            !! Gauss-Legendre nodes of the species path
+    logical :: epi_sym = .false.                       !! one sublattice: compute U(c, s) for s >= c only, U(s, c) = U(c, s)
     type(spectral_input_t) :: spectral                 !! Bloch spectral function after the SCF (asr_spectral; route edc)
   end type class_scf_input_t
 
@@ -144,6 +148,10 @@ module asr_class_scf
     !> causal: -Im G <= 0 (edc) or the block -Im G not positive semidefinite (ed3).  A Herglotz function has none.  The
     !> truncated energy-dependent chain can have some (docs/DERIVATION_f4.md); the charges then carry the chain error there.
     integer :: nnode = 0, nnoncausal = 0
+    !> effective pair interactions (asr_epi), one entry per pair type; epi_wbelow: largest valence weight of the path site
+    !> (electrons) in the 3 Ry below the contour bottom over all path points (must vanish, as wbelow)
+    type(epi_table_t), allocatable :: epi(:)
+    real(dp) :: epi_wbelow = 0.0_dp
     !> Bloch spectral function (asr_spectral), per graph site and per spin channel: spec_a(energy, k, l, spin) summed over the
     !> origin classes with their site fractions, spec_ac(energy, k, class, spin) the part of each origin class (sum = total).
     real(dp), allocatable :: spec_k(:, :), spec_dist(:), spec_e(:), spec_a(:, :, :, :), spec_ac(:, :, :, :)
@@ -217,6 +225,7 @@ contains
 
     ed3 = trim(inp%route) == 'ed3'
     if (ed3 .and. len_trim(inp%ef_scan_dump) > 0) error stop 'class_scf: ef_scan_dump is not available with route = ed3'
+    if (ed3 .and. inp%epi_shells > 0) error stop 'class_scf: effective pair interactions need route = edc'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
     teams_said = 0
@@ -686,6 +695,9 @@ contains
     if (inp%spectral%on) then
       call timer_start(res%timer, tb_spectral); call spectral_final(); call timer_stop(res%timer, tb_spectral)
     end if
+    if (inp%epi_shells > 0) then
+      call timer_start(res%timer, tb_epi); call epi_run(); call timer_stop(res%timer, tb_epi)
+    end if
     res%ncomp = ncomp; res%nspin = nsp
     res%comp_cls = pcl; res%comp_spec = psp; res%comp_w = w; res%comp_x = xp
     res%comp = cr
@@ -1073,6 +1085,211 @@ contains
         if (cur(1, kp) >= 0) deallocate (lop(kp)%wk)
       end do
     end subroutine chain_worker
+
+    !> Effective pair interactions of the final potentials (asr_epi) on the first inp%epi_shells shells of every sublattice.
+    !> One operator per pair type: origin on sublattice kp, the partner site frozen, every other site averaged with the
+    !> concentrations of its sublattice (no SRO shell: the pair table is that of the uncorrelated medium around the pair).
+    !> The chains (path species x path point x partner species x spin x start vector x energy) run in parallel as in
+    !> chain_greens.  A pair type between two sublattices is computed once, from the lower sublattice.
+    subroutine epi_run()
+      type(epi_pair_t), allocatable :: prs(:)
+      type(epi_table_t), allocatable :: tab(:)
+      type(class_alloy_t) :: mp
+      type(augcls_op) :: pop
+      type(epi_par_t), allocatable :: par(:, :)
+      integer, allocatable :: cl0(:), clp(:), pperm(:, :), pmats(:, :, :)
+      logical, allocatable :: flip(:)
+      real(dp), allocatable :: pd(:, :, :), chi(:, :), xl(:), wl(:), db(:), rvs(:, :), gr(:), wr(:)
+      complex(dp), allocatable :: zq(:), wq(:), tz(:, :, :, :, :, :), zb(:), wb(:), tb(:, :, :, :, :, :)
+      real(dp) :: vec(9, 9), tailmax, ebot, dls, dl0, acc
+      integer :: lo(9), kp, k2, ip, nq, n1, n2, nlam, ntab, c, s, il, gg, ia, j, jsite, nfr, nbe
+      character(len=:), allocatable :: emsg
+      integer, parameter :: nba = 16, nbv = 4
+      nlam = inp%epi_nlam
+      allocate (par(ncomp, nsp), xl(nlam), wl(nlam), db(ncomp), tab(0), zb(nba + nbv), wb(nba + nbv))
+      do gg = 1, nsp
+        do c = 1, ncomp; par(c, gg) = epi_species(pps(c, gg), alpha); end do
+      end do
+      call gauss_legendre(nlam, xl, wl)
+      xl = 0.5_dp * (1.0_dp + xl); wl = 0.5_dp * wl
+      call contour(ef, zq, wq, nq)
+      ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
+      call contour_nodes_closed(ebot - 3.0_dp, ebot, 0.05_dp, nba, nbv, zb, wb)
+      ! drive deviations of the charge-excess model: the SRO drive itself, or dq / G00 in the random alloy
+      if (res%uform) then
+        db = ucur
+      else
+        do c = 1, ncomp; db(c) = (cr(c)%qnet - qbar(pcl(c))) / res%screen%g00; end do
+      end if
+      res%epi_wbelow = 0.0_dp; ntab = 0
+      if (vb) print '(a,i0,a,i0,a,a,a,i0)', '  effective pair interactions: ', inp%epi_shells, ' shells, ', nlam, ' path points', &
+        trim(merge(', pair-exchange symmetry used', '                             ', inp%epi_sym)), ', energy_block ', inp%eblock
+      do kp = 1, ncls
+        call decoration_classes(inp%dec, coord, mg, kp, cl0)
+        call epi_pair_list(coord, mg, cl0, inp%epi_shells, prs, emsg)
+        if (len(emsg) > 0) error stop emsg
+        if (size(prs) == 0) cycle
+        allocate (rvs(3, size(prs)), gr(size(prs)), wr(size(prs)))
+        do ip = 1, size(prs); rvs(:, ip) = 0.5_dp * inp%alat * real(prs(ip)%vec, dp); end do
+        call screen_shells(trim(inp%lattice), inp%alat, res%screen, rvs, gr, wr)
+        do ip = 1, size(prs)
+          k2 = prs(ip)%cls2; jsite = prs(ip)%site
+          n1 = inp%nsc(kp); n2 = inp%nsc(k2)
+          if (k2 < kp .or. n1 < 2 .or. n2 < 2) cycle        ! the other sublattice computes it; one species: nothing to exchange
+          ! pair operator: the sublattice classes, the partner in a class of its own, one more species (the path site)
+          clp = cl0; clp(jsite) = ncls + 1
+          mp%nl = 9; mp%nsp = ncomp + 1; mp%ncls = ncls + 1
+          if (allocated(mp%nsc)) deallocate (mp%nsc, mp%spc, mp%conc)
+          allocate (mp%nsc(ncls + 1), mp%spc(size(mdl%spc, 1), ncls + 1), mp%conc(size(mdl%conc, 1), ncls + 1))
+          mp%nsc(1:ncls) = mdl%nsc(1:ncls); mp%spc(:, 1:ncls) = mdl%spc(:, 1:ncls); mp%conc(:, 1:ncls) = mdl%conc(:, 1:ncls)
+          mp%nsc(ncls + 1) = mdl%nsc(k2); mp%spc(:, ncls + 1) = mdl%spc(:, k2); mp%conc(:, ncls + 1) = mdl%conc(:, k2)
+          mp%block = mdl%block; mp%block0 = mdl%block0
+          flip = flippable; flip(jsite) = .false.
+          call epi_pair_ops(coord, mg, clp, pperm, pmats)
+          call orbital_rep(pmats, pd)
+          call build_augcls_operator(g, mp, clp, pperm, pd, 1, ngen, pop, inp%maxrank, flip)
+          if (allocated(chi)) deallocate (chi)
+          allocate (chi(size(pperm, 2), 9))
+          call epi_adapted(pd, vec, chi, lo)
+          call augcls_freeze_any(pop, jsite, mdl%spc(1, k2), nfr)
+          if (nfr == 0) print '(a,i0,a)', '  WARNING: effective pair interactions, shell ', prs(ip)%shell, &
+            ': the partner site is outside the node set (increase [asr] levels); this pair table is zero'
+          allocate (tz(nq, 9, nsp, n2, nlam, n1), tb(nba + nbv, 9, nsp, 1, nlam, n1))
+          tz = (0.0_dp, 0.0_dp); tb = (0.0_dp, 0.0_dp); tailmax = 0.0_dp
+          ! energies per chain block ([asr] energy_block, as in chain_greens): the same on every thread, one thread's block
+          ! work space (10 vectors per member) below 400 MB
+          nbe = 0
+          if (inp%eblock > 0) nbe = blk_nbmax(inp%eblock, pop%dim(), 10, 400.0_dp)
+          !$omp parallel
+          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zq(1:nq), xl, n2, .false., min(nbe, nq), tz, tailmax)
+          call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zb, xl, 1, .true., min(nbe, nba + nbv), tb, tailmax)
+          !$omp end parallel
+          if (par_size() > 1) then
+            call par_sum_z(tz, size(tz)); call par_sum_z(tb, size(tb))
+          end if
+          ntab = ntab + 1
+          tab = [tab, epi_table_t()]
+          associate (t => tab(ntab))
+            t%kap = kp; t%kap2 = k2; t%shell = prs(ip)%shell; t%mult = prs(ip)%mult; t%nop = size(pperm, 2); t%nodes = pop%nn
+            t%vec = prs(ip)%vec; t%orbit = prs(ip)%orbit; t%dist = norm2(rvs(:, ip)); t%wr = wr(ip); t%tail = tailmax
+            allocate (t%uband(n1, n2), t%ues(n1, n2)); t%uband = 0.0_dp; t%ues = 0.0_dp
+            do c = 2, n1
+              do il = 1, nlam
+                dl0 = 0.0_dp
+                do s = 1, n2
+                  if (epi_skip(inp%epi_sym, kp == k2, c, s)) cycle
+                  dls = 0.0_dp
+                  do gg = 1, nsp; do ia = 1, 9; do j = 1, nq
+                    dls = dls - fs * aimag(wq(j) * tz(j, ia, gg, s, il, c)) / pi
+                  end do; end do; end do
+                  if (s == 1) dl0 = dls
+                  t%uband(c, s) = t%uband(c, s) + wl(il) * (dls - dl0)
+                end do
+                acc = 0.0_dp                                 ! weight of the path site below the contour bottom
+                do gg = 1, nsp; do ia = 1, 9; do j = 1, nba + nbv
+                  acc = acc - fs * aimag(wb(j) * tb(j, ia, gg, 1, il, c)) / pi
+                end do; end do; end do
+                res%epi_wbelow = max(res%epi_wbelow, abs(acc))
+              end do
+              do s = 2, n2
+                t%ues(c, s) = wr(ip) * (db(mdl%spc(c, kp)) - db(mdl%spc(1, kp))) * (db(mdl%spc(s, k2)) - db(mdl%spc(1, k2)))
+              end do
+            end do
+            if (inp%epi_sym .and. kp == k2) call epi_mirror(t%uband)
+            if (vb) then
+              print '(a,i0,a,i0,a,i0,a,3i3,a,f8.4,a,i0,a,i0,a,i0,a,i0,a,es9.2)', '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, &
+                '  vector (a/2)', t%vec, '  R=', t%dist, ' Bohr  sites ', t%mult, '  group order ', t%nop, '  nodes ', t%nodes, &
+                '  energies per block ', max(1, min(nbe, nq)), '  X1 mismatch ', t%tail
+              do c = 2, n1
+                print '(a,i0,a,*(f10.4))', '    U(', c, ', s) band (mRy), s = 2..:', 1.0e3_dp * t%uband(c, 2:n2)
+                print '(a,i0,a,*(f10.4))', '    U(', c, ', s) screened Coulomb (mRy):', 1.0e3_dp * t%ues(c, 2:n2)
+              end do
+            end if
+          end associate
+          deallocate (tz, tb); call augcls_free(pop)              ! the node tables are pointers (asr_augcls)
+        end do
+        deallocate (rvs, gr, wr)
+      end do
+      res%epi = tab(1:ntab)
+      if (vb .or. res%epi_wbelow >= wbelow_tol) print '(a,es10.2,a)', &
+        '  effective pair interactions: largest weight of a path site below the contour bottom:', res%epi_wbelow, ' electrons (must vanish)'
+      if (res%epi_wbelow >= wbelow_tol) print '(a)', '  WARNING: a path species has states below the contour bottom: the pair tables miss them'
+    end subroutine epi_run
+
+    !> one thread's share of the chains of one pair type (called inside the parallel region; locals are private).  Tasks:
+    !> (path species c = 2..n1) x (path point) x (partner species 1..ns2) x spin x (start vector) x (energy zs, or block of nbe
+    !> energies; nbe = 0: one energy per chain, real kernels).  tz gets the integrand of asr_epi, or with g0 the block X0 alone
+    !> (weight below the contour bottom).  tl: largest X1 mismatch.
+    subroutine epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zs, xl, ns2, g0, nbe, tz, tl)
+      type(augcls_op), intent(in) :: pop
+      type(class_alloy_t), intent(in) :: mp
+      type(epi_par_t), intent(in) :: par(:, :)
+      integer, intent(in) :: kp, k2, jsite, lo(9), ns2, nbe
+      real(dp), intent(in) :: vec(9, 9), chi(:, :), xl(:)
+      complex(dp), intent(in) :: zs(:)
+      logical, intent(in) :: g0
+      complex(dp), intent(inout) :: tz(:, :, :, :, :, :)
+      real(dp), intent(inout) :: tl
+      type(augcls_op) :: lop
+      type(epi_work_t) :: wk
+      type(blk_work_t) :: bw
+      type(class_alloy_t) :: ml
+      type(edn_t) :: edl
+      type(epi_path_t) :: pt
+      complex(dp) :: xb(0:3, max(nbe, 1))
+      real(dp) :: tloc
+      integer :: cur(4), cura, t, r, j, jb, j1, j2, ia, gg, s, il, c, nz, nl, n1, rk, nr, ntg
+      nz = size(zs); nl = size(xl); n1 = inp%nsc(kp)
+      ntg = nz; if (nbe > 0) ntg = (nz + nbe - 1) / nbe          ! tasks per (start vector, spin, partner, path point, path species)
+      rk = par_rank(); nr = par_size()
+      lop = pop
+      nullify (lop%wk); allocate (lop%wk(size(pop%wk, 1), size(pop%wk, 2)))
+      call epi_work_init(wk, lop%dim())
+      if (nbe > 0) call blk_work_init(bw, nbe, lop%dim())
+      cur = -1; cura = -1; tloc = 0.0_dp
+      !$omp do schedule(dynamic)
+      do t = 1, ntg * 9 * nsp * ns2 * nl * (n1 - 1)
+        if (mod(t - 1 + (t - 1) / ntg, nr) /= rk) cycle
+        jb = mod(t - 1, ntg) + 1; r = (t - 1) / ntg
+        ia = mod(r, 9) + 1; r = r / 9
+        gg = mod(r, nsp) + 1; r = r / nsp
+        s = mod(r, ns2) + 1; r = r / ns2
+        il = mod(r, nl) + 1; c = r / nl + 2
+        if (.not. g0 .and. epi_skip(inp%epi_sym, kp == k2, c, s)) cycle
+        if (any(cur /= [c, il, s, gg])) then
+          pt = epi_path(par(mp%spc(1, kp), gg), par(mp%spc(c, kp), gg), xl(il))
+          ml = mp
+          call epi_setup(ml, par(:, gg), pt, edl)
+          call augcls_set_params(lop, ml)
+          call augcls_freeze_any(lop, 1, ncomp + 1); call augcls_freeze_any(lop, jsite, mp%spc(s, k2))
+          cur = [c, il, s, gg]; cura = -1
+        end if
+        if (cura /= ia) then
+          call augcls_set_chi(lop, chi(1:lop%nop, ia))
+          call epi_start(lop, wk, vec(:, ia)); cura = ia
+        end if
+        if (nbe == 0) then
+          j1 = jb; j2 = jb
+          call epi_blocks(lop, wk, edl, zs(j1), nlev, xb(:, 1))
+        else
+          j1 = (jb - 1) * nbe + 1; j2 = min(nz, jb * nbe)
+          call epi_blocks_blk(lop, wk, bw, edl, zs(j1:j2), nlev, xb(:, 1:j2 - j1 + 1))
+        end if
+        do j = j1, j2
+          if (g0) then
+            tz(j, ia, gg, s, il, c) = xb(0, j - j1 + 1)
+          else
+            tz(j, ia, gg, s, il, c) = epi_integrand(pt, lo(ia), zs(j), xb(:, j - j1 + 1))
+            tloc = max(tloc, abs(xb(3, j - j1 + 1)) / max(abs(xb(1, j - j1 + 1)), tiny(1.0_dp)))
+          end if
+        end do
+      end do
+      !$omp end do
+      !$omp critical (epi_tail)
+      tl = max(tl, tloc)
+      !$omp end critical (epi_tail)
+      deallocate (lop%wk)
+    end subroutine epi_worker
 
     subroutine contour(efv, zq, wq, nq)
       real(dp), intent(in) :: efv

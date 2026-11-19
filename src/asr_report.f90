@@ -20,7 +20,8 @@ module asr_report
   implicit none
   private
 
-  public :: rep_run_t, rep_component_t, rep_sublattice_t, rep_sro_t, rep_site_t, rep_spectral_t, rep_label_rows, rep_spectral
+  public :: rep_run_t, rep_component_t, rep_sublattice_t, rep_sro_t, rep_site_t, rep_spectral_t, rep_label_rows, rep_spectral, &
+            rep_epi_t, rep_epi_pair_t, rep_epi
   public :: rep_write_report, rep_write_json, rep_write_dos_header, rep_wall, fnv1a64_file
   public :: rep_banner, rep_echo_input, rep_input, rep_method, rep_structure, rep_sro, rep_scf_history
   public :: rep_energy, rep_components, rep_fermi, rep_checks, rep_timing, rep_warnings, rep_files, rep_close
@@ -111,6 +112,26 @@ module asr_report
     character(len=8), allocatable :: clabel(:)  !! path corners: label, path distance, k (2 pi / a)
     real(dp), allocatable :: cdist(:), ck(:, :)
   end type rep_spectral_t
+
+  !> one pair type of the effective pair interactions (asr_epi, [epi]): U(c, s) of species c on the origin (sublattice sub1)
+  !> and s on the partner (sublattice sub2), mixed second difference against the first species of each sublattice
+  type :: rep_epi_pair_t
+    character(len=8) :: sub1 = '', sub2 = ''
+    integer :: shell = 0, mult = 0, nop = 0, nodes = 0, vec(3) = 0   !! vec: partner - origin, units of alat / 2
+    real(dp) :: dist = 0.0_dp, wr = 0.0_dp, tail = 0.0_dp            !! Bohr; W(R) Ry/e^2; X1 mismatch of the two chains
+    character(len=8), allocatable :: spec1(:), spec2(:)
+    real(dp), allocatable :: uband(:, :), ues(:, :)                  !! Ry
+  end type rep_epi_pair_t
+
+  !> effective pair interactions after the SCF (asr_epi, [epi])
+  type :: rep_epi_t
+    logical :: on = .false.
+    character(len=256) :: file = ''
+    integer :: nlam = 0, eblock = 0
+    logical :: sym = .false., below_ok = .true.
+    real(dp) :: wbelow = 0.0_dp                  !! largest weight of a path site below the contour bottom (e)
+    type(rep_epi_pair_t), allocatable :: pair(:)
+  end type rep_epi_t
 
   type :: rep_run_t
     ! Provenance and execution metadata
@@ -241,6 +262,9 @@ module asr_report
 
     ! Bloch spectral function
     type(rep_spectral_t) :: spec
+
+    ! Effective pair interactions
+    type(rep_epi_t) :: epi
 
     ! Timing
     type(run_timer_t) :: timer
@@ -1092,6 +1116,11 @@ contains
         call wline(u, line)
       end if
     end if
+    if (r%epi%on) then
+      fn = trim(r%epi%file)
+      write (line, '(1x,a28,2x,a)') fn, 'effective pair interactions (tools/sro_alpha)'
+      call wline(u, line)
+    end if
     if (len_trim(r%pot_file) > 0) then
       fn = trim(r%pot_file)
       write (line, '(1x,a28,2x,a)') fn, 'restart potentials (last iteration)'
@@ -1154,6 +1183,7 @@ contains
     call rep_components(u, r)
     call rep_fermi(u, r)
     if (r%spec%on) call rep_spectral(u, r)
+    if (r%epi%on) call rep_epi(u, r)
     call rep_checks(u, r)
     call rep_timing(u, r)
     call rep_warnings(u, r)
@@ -1323,6 +1353,7 @@ contains
       write (u, '(a,i0,a,es24.16)') '    "n_negative_a": ', r%spec%nneg, ', "min_over_max_a": ', r%spec%amin
       write (u, '(a)') '  },'
     end if
+    if (r%epi%on) call json_epi(u, r%epi)
     write (u, '(a)') '  "timing_s": {'
     write (u, '(a,f12.2,a)') '    "total_wall": ', r%timer%wall_total, ','
     write (u, '(a,f12.2,a)') '    "total_cpu": ', r%timer%cpu_total, ','
@@ -1449,6 +1480,8 @@ contains
     if (r%nnoncausal > 0) call add('[health checks] Green function not causal at ' // trim(itoa(r%nnoncausal)) // ' of ' // &
                                    trim(itoa(r%nnode)) // ' contour node values')
     if (.not. r%below_ok) call add('[health checks] valence weight below the contour bottom (the charges miss it)')
+    if (r%epi%on .and. .not. r%epi%below_ok) &
+      call add('[epi] a path species has states below the contour bottom: the pair tables miss them')
     if (abs(r%qcell) > 1.0e-3_dp) call add('[health checks] cell charge residual above 1.0E-03 e per site')
     if (trim(r%method) == 'kspace' .and. abs(r%eband - r%sumev) > 1.0e-5_dp) &
       call add('[health checks] band energy from the moments differs from the eigenvalue sum')
@@ -1618,6 +1651,156 @@ contains
   end subroutine rep_label_rows
 
   !> Bloch spectral function: path, mesh, chains and the built-in checks of asr_spectral
+  !> Section: effective pair interactions (asr_epi).  Per pair type the table U(c, s) (band, screened Coulomb, total) and,
+  !> on one sublattice, the exchange interactions V(p, q) with the asymmetry of the band U as the error measure.
+  subroutine rep_epi(u, r)
+    integer, intent(in) :: u
+    type(rep_run_t), intent(in) :: r
+    character(len=256) :: line
+    real(dp), allocatable :: ut(:, :)
+    integer :: i, c, s, n1, n2
+    call rep_section(u, 'effective pair interactions')
+    if (.not. allocated(r%epi%pair)) return
+    if (size(r%epi%pair) == 0) then
+      call wline(u, ' none: every sublattice of the requested shells holds one species'); return
+    end if
+    call write_wrapped(u, '', 'U(c, s) = Omega(c, s) - Omega(c0, s) - Omega(c, s0) + Omega(c0, s0): species c on the ' // &
+      'origin, s on the partner, c0 and s0 the first species of the two sublattices; every other site is averaged ' // &
+      '(uncorrelated medium).', '')
+    call write_wrapped(u, '', 'band: frozen potentials, thermodynamic integration over the species of the origin.  ' // &
+      'screened Coulomb: W(R) db_c db_s of the charge-excess model, db the drive deviations.', '')
+    call write_wrapped(u, '', 'One sublattice: V(p, q) = U(p,p) + U(q,q) - U(p,q) - U(q,p); V > 0 favours unlike ' // &
+      'neighbours (ordering).  SRO energy per site: sum over shells of (z / 2) sum_{p<q} x_p x_q V(p, q) alpha(p, q).', '')
+    call kv(u, 'path points', trim(itoa(r%epi%nlam)) // merge(' (midpoint rule: a survey; check with 2)', &
+                                                              '                                        ', r%epi%nlam == 1))
+    call kv(u, 'weight below bottom', trim(esf(r%epi%wbelow, 2)) // ' e (largest over the path; must vanish)')
+    if (r%epi%eblock > 0) call kv(u, 'energy_block', trim(itoa(r%epi%eblock)) // ' (pair chains in blocks of energies)')
+    if (r%epi%sym) call kv(u, 'symmetric', 'true: U(c, s) for s >= c only, U(s, c) = U(c, s) (no error measure)')
+    if (.not. r%epi%below_ok) call wline(u, ' WARNING: a path species has states below the contour bottom')
+    do i = 1, size(r%epi%pair)
+      associate (t => r%epi%pair(i))
+        n1 = size(t%uband, 1); n2 = size(t%uband, 2)
+        ut = t%uband + t%ues
+        call wline(u, '')
+        write (line, '(a,a,a,a,a,i0,a,3i3,a,f9.5,a)') ' pair ', trim(t%sub1), ' - ', trim(t%sub2), '   shell ', t%shell, &
+          '   vector (a/2)', t%vec, '   R = ', t%dist, ' Bohr'
+        call wline(u, line)
+        write (line, '(a,i0,a,i0,a,i0,a,a,a,a,a)') '   sites ', t%mult, '   group order ', t%nop, '   nodes ', t%nodes, &
+          '   X1 mismatch ', trim(esf(t%tail, 1)), '   W(R) ', trim(ftoa(t%wr, 5)), ' Ry/e^2'
+        call wline(u, line)
+        line = '   ' // lj('U (mRy)', 17) // lj('o \ p', 6)
+        do s = 1, n2; line = line(1:len_trim(line)) // rj(t%spec2(s), 10); end do
+        call wline(u, line)
+        call urows('band', t%uband)
+        call urows('screened Coulomb', t%ues)
+        call urows('total', ut)
+        if (trim(t%sub1) == trim(t%sub2) .and. n1 == n2) then
+          call wline(u, '   V(p, q) (mRy)          band   screened      total  |U(p,q)-U(q,p)| band')
+          do c = 1, n1
+            do s = c + 1, n1
+              write (line, '(5x,a4,a,a4,3f11.4)') t%spec1(c), ' - ', t%spec1(s), 1.0e3_dp * vx(t%uband, c, s), &
+                1.0e3_dp * vx(t%ues, c, s), 1.0e3_dp * vx(ut, c, s)
+              if (c > 1 .and. .not. r%epi%sym) line = line(1:len_trim(line)) // '   ' // &
+                trim(esf(1.0e3_dp * abs(t%uband(c, s) - t%uband(s, c)), 2))
+              call wline(u, line)
+            end do
+          end do
+        end if
+      end associate
+    end do
+    call wline(u, '')
+    call write_wrapped(u, '', 'U(p, q) and U(q, p) come from different chains (path site and frozen site interchanged).  ' // &
+      'Their difference measures the error of the chains and of the path quadrature.  It exists for pairs of two species ' // &
+      'other than the reference species only (three or more species on the sublattice).', '')
+  contains
+    subroutine urows(tag, a)
+      character(len=*), intent(in) :: tag
+      real(dp), intent(in) :: a(:, :)
+      integer :: k, j
+      character(len=256) :: ln
+      do k = 1, size(a, 1)
+        ln = '   ' // lj(tag, 17) // lj(r%epi%pair(i)%spec1(k), 6)
+        do j = 1, size(a, 2)
+          write (ln(len_trim(ln) + 1:), '(f10.4)') nz(1.0e3_dp * a(k, j), 4)
+        end do
+        call wline(u, ln)
+      end do
+    end subroutine urows
+    pure real(dp) function vx(a, p, q)
+      real(dp), intent(in) :: a(:, :)
+      integer, intent(in) :: p, q
+      vx = a(p, p) + a(q, q) - a(p, q) - a(q, p)
+    end function vx
+  end subroutine rep_epi
+
+  !> JSON block "epi": the pair tables in Ry, as written to the [epi] file
+  subroutine json_epi(u, e)
+    integer, intent(in) :: u
+    type(rep_epi_t), intent(in) :: e
+    integer :: i, n
+    write (u, '(a)') '  "epi": {'
+    write (u, '(a,a,a)') '    "file": "', trim(json_escape(e%file)), '",'
+    write (u, '(a,i0,a,a,a,i0,a)') '    "lambda_points": ', e%nlam, ', "symmetric": ', trim(merge('true ', 'false', e%sym)), &
+      ', "energy_block": ', e%eblock, ','
+    write (u, '(a,es24.16,a)') '    "wbelow_e": ', e%wbelow, ','
+    n = 0
+    if (allocated(e%pair)) n = size(e%pair)
+    if (n == 0) then
+      write (u, '(a)') '    "pairs": []'
+    else
+      write (u, '(a)') '    "pairs": ['
+      do i = 1, n
+        associate (t => e%pair(i))
+          write (u, '(a)') '      {'
+          write (u, '(a,a,a,a,a)') '        "sublattices": ["', trim(json_escape(t%sub1)), '", "', trim(json_escape(t%sub2)), '"],'
+          write (u, '(a,i0,a,i0,a,i0,a,i0,a)') '        "shell": ', t%shell, ', "vector_half_alat": [', t%vec(1), ', ', &
+            t%vec(2), ', ', t%vec(3), '],'
+          write (u, '(a,es24.16,a,i0,a)') '        "distance_bohr": ', t%dist, ', "multiplicity": ', t%mult, ','
+          write (u, '(a,i0,a,i0,a)') '        "group_order": ', t%nop, ', "nodes": ', t%nodes, ','
+          write (u, '(a,es24.16,a,es24.16,a)') '        "x1_mismatch": ', t%tail, ', "kernel_ry": ', t%wr, ','
+          write (u, '(a,a,a)') '        "species_origin": [', slist(t%spec1), '],'
+          write (u, '(a,a,a)') '        "species_partner": [', slist(t%spec2), '],'
+          call mat('u_band_ry', t%uband, ',')
+          call mat('u_es_ry', t%ues, '')
+          write (u, '(a,a)') '      }', trim(merge(',', ' ', i < n))
+        end associate
+      end do
+      write (u, '(a)') '    ]'
+    end if
+    write (u, '(a)') '  },'
+  contains
+    function slist(v) result(o)
+      character(len=*), intent(in) :: v(:)
+      character(len=:), allocatable :: o
+      integer :: k
+      o = ''
+      do k = 1, size(v)
+        o = o // '"' // trim(json_escape(v(k))) // '"'
+        if (k < size(v)) o = o // ', '
+      end do
+    end function slist
+    subroutine mat(key, a, tail)
+      character(len=*), intent(in) :: key, tail
+      real(dp), intent(in) :: a(:, :)
+      character(len=24) :: x
+      character(len=:), allocatable :: ln
+      integer :: k, j
+      write (u, '(a,a,a)') '        "', key, '": ['
+      do k = 1, size(a, 1)
+        ln = '          ['
+        do j = 1, size(a, 2)
+          write (x, '(es24.16)') a(k, j)
+          ln = ln // trim(adjustl(x))
+          if (j < size(a, 2)) ln = ln // ', '
+        end do
+        ln = ln // ']'
+        if (k < size(a, 1)) ln = ln // ','
+        write (u, '(a)') ln
+      end do
+      write (u, '(a,a)') '        ]', tail
+    end subroutine mat
+  end subroutine json_epi
+
   subroutine rep_spectral(u, r)
     integer, intent(in) :: u
     type(rep_run_t), intent(in) :: r

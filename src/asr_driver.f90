@@ -30,9 +30,15 @@
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
 !>                  energy_block (contour energies per chain block, capped by memory; default 0 = one energy per chain with the
 !>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; the 1e-4 block difference in B2 ed3 is
-!>                  rounding scatter inside the length error of the chain, docs/REVIEW_fable.md 3.8), ef_linear_max (Ry; E_F
+!>                  rounding scatter inside the length error of the chain, docs/REVIEW_fable.md 3.8; the chains of [epi] use
+!>                  the same blocks), ef_linear_max (Ry; E_F
 !>                  steps up to this size are taken to first order without a new contour, exact at self-consistency;
 !>                  default 0 = off)
+!>   [epi]          (method = "asr", route "edc") effective pair interactions after the SCF (asr_epi): shells (coordination shells
+!>                  per sublattice; default 0 = off), lambda_points (Gauss-Legendre nodes of the species path; default 4; 2 are
+!>                  enough for neighbours in a transition series; 1 = midpoint rule, a survey only), symmetric (default false; true: on one sublattice only
+!>                  U(c, s) with s >= c is computed and U(s, c) = U(c, s): fewer chains, no error measure),
+!>                  file (default "epi.toml": the pair tables for tools/sro_alpha)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
@@ -72,6 +78,7 @@ module asr_driver
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
     character(len=16), allocatable :: subname(:)
+    character(len=:), allocatable :: epi_file          !! [epi] file
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, eta = 0.02_dp
     integer :: npoints = 801
   end type run_input_t
@@ -102,7 +109,7 @@ contains
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
     call check_keys(table, ['calculation', 'structure  ', 'species    ', 'sublattice ', 'site       ', 'scf        ', 'asr        ', &
-                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'spectral   '], 'top level', msg)
+                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'spectral   ', 'epi        '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -345,6 +352,19 @@ contains
     if (inp%ci%eblock < 0) then; msg = '[asr] energy_block must be >= 0'; return; end if
     call get_value(child, 'ef_linear_max', inp%ci%ef_linear_max, 0.0_dp)
     if (inp%ci%ef_linear_max < 0.0_dp) then; msg = '[asr] ef_linear_max must be >= 0'; return; end if
+
+    if (kspace .and. table%has_key('epi')) then; msg = '[epi] is read with method = "asr" only'; return; end if
+    call section(table, 'epi', child)
+    call check_keys(child, ['shells       ', 'lambda_points', 'file         ', 'symmetric    '], '[epi]', msg); if (len(msg) > 0) return
+    call get_value(child, 'symmetric', inp%ci%epi_sym, .false.)
+    call get_value(child, 'shells', inp%ci%epi_shells, 0)
+    call get_value(child, 'lambda_points', inp%ci%epi_nlam, 4)
+    call get_value(child, 'file', inp%epi_file, 'epi.toml')
+    if (inp%ci%epi_shells < 0 .or. inp%ci%epi_shells > 20) then; msg = '[epi] shells must be 0 (off) .. 20'; return; end if
+    if (inp%ci%epi_nlam < 1 .or. inp%ci%epi_nlam > 32) then; msg = '[epi] lambda_points must be 1 .. 32'; return; end if
+    if (inp%ci%epi_shells > 0 .and. trim(inp%ci%route) /= 'edc') then
+      msg = '[epi] needs [asr] route = "edc" (the pair interactions of the ed3 route are not implemented)'; return
+    end if
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &
@@ -602,16 +622,17 @@ contains
     end function invariant
   end subroutine kspace_cell
 
-  subroutine run_input(inp, ok)
+  subroutine run_input(inp, ok, res_out)
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
+    type(class_scf_result_t), intent(out), optional :: res_out     !! method = "asr": the result of the class SCF (tests)
     if (inp%method == 'kspace') then
       ! k space has no MPI split: rank 0 runs it, the other ranks wait at the end
       ok = .true.
       if (par_size() > 1) print '(a,i0,a)', '  kspace: no MPI split, rank 0 of ', par_size(), ' runs the calculation'
       if (par_root()) call run_lmto(inp%li, ok)
     else
-      call run_asr(inp, ok)
+      call run_asr(inp, ok, res_out)
     end if
   end subroutine run_input
 
@@ -630,9 +651,10 @@ contains
     end do
   end subroutine class_species
 
-  subroutine run_asr(inp, ok)
+  subroutine run_asr(inp, ok, res_out)
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
+    type(class_scf_result_t), intent(out), optional :: res_out
     type(class_scf_result_t) :: res
     type(rep_run_t) :: rep
     character(len=10) :: start_d, start_t
@@ -658,6 +680,7 @@ contains
     t_scf = rep_wall()
     call class_scf(inp%ci, res, verbose=.true.)
     t_scf = rep_wall() - t_scf
+    if (present(res_out)) res_out = res
     ncomp = res%ncomp
     allocate (labels(ncomp), tsp(res%nspin))
     avw = avg_ws(trim(inp%ci%lattice)) * inp%ci%alat
@@ -703,6 +726,12 @@ contains
     end do
     close (u)
     print '(a,a)', '  wrote ', dfile
+    if (allocated(res%epi)) then
+      if (size(res%epi) > 0) then
+        call write_epi(inp, res, inp%workdir//inp%epi_file)
+        print '(a,a)', '  wrote ', inp%workdir//inp%epi_file
+      end if
+    end if
     if (allocated(res%spec_a)) call write_spectral()
 
     call rep_write_report(rep, inp%workdir//inp%out_file)
@@ -818,6 +847,73 @@ contains
       write (t, '(i0)') i
     end function itoa_
   end subroutine run_asr
+
+  !> The pair tables as a TOML file for tools/sro_alpha: one [[pair]] per pair type, energies in Ry.
+  subroutine write_epi(inp, res, fname)
+    type(run_input_t), intent(in) :: inp
+    type(class_scf_result_t), intent(in) :: res
+    character(len=*), intent(in) :: fname
+    integer :: u, i, c, s, n1, n2, kap, k, ns
+    open (newunit=u, file=fname, status='replace', action='write')
+    write (u, '(a)') '# effective pair interactions from asr (asr_epi), Ry.  u_band + u_es = U(c, s): species c of the first sublattice on'
+    write (u, '(a)') '# the origin, s of the second on the partner; mixed second difference against the first species of each sublattice.'
+    write (u, '(a)') '# Pair model: E = sum over pairs (i < j) of U(s_i, s_j).  vector in units of alat / 2, distance and alat in Bohr.'
+    write (u, '(a)') '# vectors: partner - origin for every site of the pair type.  sites: the sites of the sublattice in the decoration'
+    write (u, '(a)') '# cell (edge 2 period, units of alat / 2).'
+    write (u, '(a,a,a)') 'name = "', inp%name, '"'
+    write (u, '(a,a,a)') 'lattice = "', trim(inp%ci%lattice), '"'
+    write (u, '(a,es22.14)') 'alat = ', inp%ci%alat
+    write (u, '(a,i0)') 'period = ', inp%ci%dec%period
+    write (u, '(a,es22.14)') 'fermi_energy = ', res%ef
+    write (u, '(a,a)') 'converged = ', trim(merge('true ', 'false', res%converged))
+    write (u, '(a,i0)') 'lambda_points = ', inp%ci%epi_nlam
+    write (u, '(a,a)') 'symmetric = ', trim(merge('true ', 'false', inp%ci%epi_sym))
+    do kap = 1, inp%ci%dec%ncls
+      write (u, '(/,a)') '[[sublattice]]'
+      write (u, '(a,a,a)') 'name = "', trim(inp%subname(kap)), '"'
+      write (u, '(a,es22.14)') 'site_fraction = ', inp%ci%dec%frac(kap)
+      write (u, '(a,*(a))') 'species = [', ('"'//trim(inp%species(inp%ci%spc(c, kap))%symbol)//'"'//merge(', ', '  ', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap)), ']'
+      write (u, '(a,*(es22.14,a))') 'concentrations = [', (inp%ci%conc(c, kap), merge(', ', ' ]', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap))
+      ns = count(inp%ci%dec%pcls == kap); k = 0
+      write (u, '(a)', advance='no') 'sites = ['
+      do i = 1, size(inp%ci%dec%pcls)
+        if (inp%ci%dec%pcls(i) /= kap) cycle
+        k = k + 1
+        write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', inp%ci%dec%pts(1, i), ', ', inp%ci%dec%pts(2, i), ', ', inp%ci%dec%pts(3, i), ']', &
+          trim(merge(', ', '  ', k < ns))
+      end do
+      write (u, '(a)') ']'
+    end do
+    do i = 1, size(res%epi)
+      associate (t => res%epi(i))
+        n1 = size(t%uband, 1); n2 = size(t%uband, 2)
+        write (u, '(/,a)') '[[pair]]'
+        write (u, '(a,a,a,a,a)') 'sublattices = ["', trim(inp%subname(t%kap)), '", "', trim(inp%subname(t%kap2)), '"]'
+        write (u, '(a,i0)') 'shell = ', t%shell
+        write (u, '(a,i0,a,i0,a,i0,a)') 'vector = [', t%vec(1), ', ', t%vec(2), ', ', t%vec(3), ']'
+        write (u, '(a,es22.14)') 'distance = ', t%dist
+        write (u, '(a,i0)') 'multiplicity = ', t%mult
+        write (u, '(a,es22.14)') 'kernel = ', t%wr
+        write (u, '(a)', advance='no') 'vectors = ['
+        do k = 1, size(t%orbit, 2)
+          write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', t%orbit(1, k), ', ', t%orbit(2, k), ', ', t%orbit(3, k), ']', &
+            trim(merge(', ', '  ', k < size(t%orbit, 2)))
+        end do
+        write (u, '(a)') ']'
+        write (u, '(a)') 'u_band = ['
+        do c = 1, n1
+          write (u, '(a,*(es22.14,a))') '  [', (t%uband(c, s), merge(', ', '],', s < n2), s=1, n2)
+        end do
+        write (u, '(a)') ']'
+        write (u, '(a)') 'u_es = ['
+        do c = 1, n1
+          write (u, '(a,*(es22.14,a))') '  [', (t%ues(c, s), merge(', ', '],', s < n2), s=1, n2)
+        end do
+        write (u, '(a)') ']'
+      end associate
+    end do
+    close (u)
+  end subroutine write_epi
 
   !> Fill rep_run_t from recursion class_scf_result_t
   subroutine rep_from_class_scf(inp, res, rep, t0, nthr, start_d, start_t)
@@ -1096,6 +1192,27 @@ contains
       rep%spec%clabel = inp%ci%spectral%labels
       rep%spec%cdist = res%spec_dist(res%spec_icorner)
       rep%spec%ck = inp%ci%spectral%kpts
+    end if
+
+    ! Effective pair interactions
+    if (allocated(res%epi)) then
+      rep%epi%on = .true.
+      rep%epi%file = ''
+      if (size(res%epi) > 0) rep%epi%file = inp%epi_file
+      rep%epi%nlam = inp%ci%epi_nlam; rep%epi%eblock = inp%ci%eblock; rep%epi%sym = inp%ci%epi_sym
+      rep%epi%wbelow = res%epi_wbelow; rep%epi%below_ok = res%epi_wbelow < wbelow_tol
+      allocate (rep%epi%pair(size(res%epi)))
+      do i = 1, size(res%epi)
+        associate (t => res%epi(i), q => rep%epi%pair(i))
+          q%sub1 = inp%subname(t%kap); q%sub2 = inp%subname(t%kap2)
+          q%shell = t%shell; q%mult = t%mult; q%nop = t%nop; q%nodes = t%nodes; q%vec = t%vec
+          q%dist = t%dist; q%wr = t%wr; q%tail = t%tail
+          q%uband = t%uband; q%ues = t%ues
+          allocate (q%spec1(size(t%uband, 1)), q%spec2(size(t%uband, 2)))
+          do j = 1, size(q%spec1); q%spec1(j) = inp%species(inp%ci%spc(j, t%kap))%symbol; end do
+          do j = 1, size(q%spec2); q%spec2(j) = inp%species(inp%ci%spc(j, t%kap2))%symbol; end do
+        end associate
+      end do
     end if
 
     ! Timing: the parts from the SCF; the total is the whole run so far (input, SCF, DOS), as the end-of-run line
