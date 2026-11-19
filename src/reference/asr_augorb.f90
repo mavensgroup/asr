@@ -14,18 +14,11 @@ module asr_augorb
   use asr_kinds, only: dp
   use asr_operator, only: linop
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state, toggled, is_down
+  use asr_lmto_alloy, only: orb_alloy_t      ! the model type lives with its builder; re-exported
   implicit none
   private
   public :: orb_alloy_t, augorb_op, build_augorb_operator, augorb_set_params, augorb_hph, augorb_freeze_site
 
-  type :: orb_alloy_t
-    integer :: nl = 1
-    real(dp) :: x = 0.5_dp
-    real(dp), allocatable :: c0(:), c1(:), d0(:), d1(:), o0(:), o1(:), e0(:), e1(:)   !! (nl); E_nu = e0 + e1 n
-    real(dp), allocatable :: p0(:), p1(:)          !! p^gamma (third-order Hamiltonian only)
-    real(dp), allocatable :: block(:, :, :)        !! block(L,L',slot): S_{R,R'} for R' = nbr(R,slot)
-    real(dp), allocatable :: block0(:, :)          !! on-site block S_{R,R} (optional; zero if not allocated)
-  end type orb_alloy_t
 
   type, extends(linop) :: augorb_op
     integer :: nn = 0                                  !! nodes

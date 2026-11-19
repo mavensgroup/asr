@@ -1,0 +1,63 @@
+# Random bcc Cu0.5Zn0.5 (A2): the Bloch spectral function A(k, E) along G-H-N-G-P after the SCF ([spectral], route edc).
+# Same alloy and settings as cuzn_alloy.toml.  A(k, E) is per graph site and per spin, unfolded on the bcc Brillouin zone.
+[calculation]
+name = "CuZn bcc alloy, spectral function"
+
+[structure]
+lattice = "bcc"
+alat = 2.85              # Angstrom
+centering = "I"
+
+[[sublattice]]
+name = "bcc"
+positions = [[0.0, 0.0, 0.0]]
+species = ["Cu", "Zn"]
+concentrations = [0.5, 0.5]
+
+[[species]]
+symbol = "Cu"
+z = 29
+nval = 11
+konfig = [4, 4, 3, 4]
+occupations = [1.0, 10.0]
+
+[[species]]
+symbol = "Zn"
+z = 30
+nval = 12
+konfig = [4, 4, 3, 4]
+occupations = [2.0, 10.0]
+
+[scf]
+spin = 1
+xc = "vbh"
+sim_beta = 1.0
+mixing = 0.3
+max_iterations = 60
+
+[asr]
+levels = 4
+recursion_steps = 24
+rank = 1
+supercell = 8
+contour_points = 32
+
+[spectral]
+kpath = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]
+labels = ["G", "H", "N", "G", "P"]
+nk = 20
+emin = -0.9
+emax = 0.5
+npoints = 141
+eta = 0.01
+rmax = 2.0
+steps = 48               # off-site elements converge later than the on-site one (first order in the chain residual)
+
+[dos]
+emin = -0.9
+emax = 0.7
+npoints = 401
+eta = 0.02
+
+[output]
+dos_file = "cuzn_alloy_spectral_dos.dat"

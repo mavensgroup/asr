@@ -24,6 +24,16 @@ FAM1, FAM0 = ("101", "011", "001", "111"), ("110", "100", "010")  # paper figure
 RUNS = ["t110", "t101", "t011", "t100", "t010", "t001", "t111"]
 
 
+def dos_ef(path):
+    """E_F (Ry) from a DOS file header: '# E_F = x' (old) or '# E_F        : x Ry' (new)."""
+    for line in open(path):
+        if not line.startswith("#"):
+            break
+        if line[1:].strip().startswith("E_F"):
+            return float(line.replace("=", ":").split(":", 1)[1].split()[0])
+    raise ValueError(f"no E_F line in the header of {path}")
+
+
 def ours(lab, perm):
     """Our run name for the paper's label (alpha_AB, alpha_AC, alpha_BC) when (A, B, C) = perm."""
     a = dict(zip([frozenset(perm[:2]), frozenset((perm[0], perm[2])), frozenset(perm[1:])], lab))
@@ -67,7 +77,7 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     blue, orange, aqua, gray = "#2a78d6", "#eb6834", "#1baf7a", "#8a8a85"
-    ef = float(open(f"{arg.dir}/rand/dos.dat").readlines()[1].split()[-1])
+    ef = dos_ef(f"{arg.dir}/rand/dos.dat")
     perm = tuple(arg.perm)
     inv = {ours(l, perm): l for l in ("".join(t) for t in itertools.product("01", repeat=3)) if l != "000"}
     fig = plt.figure(figsize=(13, 10))

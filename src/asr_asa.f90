@@ -16,6 +16,7 @@ module asr_asa
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_tetra, only: tetra_weights, tetra_fermi
   use asr_strconst, only: standard_alpha
+  use asr_runstats
   implicit none
   private
   public :: asa_class_t, asa_input_t, asa_class_result_t, asa_result_t, asa_scf, core_shells_for, asa_dos, atomic_start, bands_moments
@@ -49,7 +50,8 @@ module asr_asa
     integer :: mix_history = 8              !! Anderson mixing history
     real(dp) :: dvmax = 0.15_dp             !! safety clamp: max change of the potential per iteration, per point (Ry)
     real(dp) :: denumax = 0.08_dp           !! safety clamp: max change of E_nu per iteration (Ry)
-    logical :: second_order = .false.       !! diagnostic: orthogonal H = E_nu + h - h o h (the recursion Hamiltonian) instead of the generalised problem
+    logical :: second_order = .false.       !! diagnostic: orthogonal H = E_nu + h - h o h instead of the generalised problem; it depends on
+                                            !! alpha, so it is the recursion Hamiltonian only with std_alpha
     logical :: trace = .false.              !! print per iteration, class and spin: E_nu, C, sqrt(Delta)_d, q0, V(S), Madelung shift
   end type asa_input_t
 
@@ -79,6 +81,12 @@ module asr_asa
     integer :: nclamp = 0, nclamp_run = 0
     !! SCF history, rows 1:iter (dV in Ry; moment in mu_B and qnet in electrons per class; total energy per atom in Ry)
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
+    !> report data, last iteration.  eterm(n_et): the terms of etot per atom (asr_runstats et_*; their sum is etot to rounding;
+    !> et_sim is 0: no alloy); ecomp(n_et, class): the same per atom of the class (eterm = sum_c natc_c ecomp(:, c) / nat).
+    real(dp) :: eterm(n_et) = 0.0_dp
+    real(dp), allocatable :: ecomp(:, :)
+    real(dp), allocatable :: hist_wall(:)   !! wall seconds per iteration
+    type(run_timer_t) :: timer              !! wall / CPU time per part of the run (asr_runstats)
   end type asa_result_t
 
 contains
@@ -120,7 +128,11 @@ contains
     integer :: ncl, nsp, it, ic, s, l, is, k, n, ia, nod
     logical :: vb, core_ok
     type(asa_class_result_t), allocatable :: cr(:)
+    real(dp) :: tw0, tc0, tw_it
+    real(dp), allocatable :: ecl(:, :)
 
+    tw0 = wall_seconds(); tc0 = cpu_seconds()
+    call timer_start(res%timer, tb_setup)
     vb = .false.; if (present(verbose)) vb = verbose
     ncl = size(inp%cls); nsp = inp%nspin
     c = c_nonrel; if (inp%relativistic) c = c_ry
@@ -134,6 +146,7 @@ contains
     allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncl), res%hist_qnet(inp%maxit, ncl), &
               res%hist_etot(inp%maxit), esum(ncl))
     res%hist_dv = 0.0_dp; res%hist_ef = 0.0_dp; res%hist_moment = 0.0_dp; res%hist_qnet = 0.0_dp; res%hist_etot = 0.0_dp
+    allocate (res%hist_wall(inp%maxit), ecl(n_et, ncl)); res%hist_wall = 0.0_dp; ecl = 0.0_dp
     vmad = 0.0_dp
     allocate (phimad(cell%nat, cell%nat), qatom(cell%nat), vmad_at(cell%nat))
     call madelung_phi(cell%avec, cell%tau, inp%alat, phimad)
@@ -162,8 +175,10 @@ contains
       call atomic_start(inp, ic, cr(ic)%mesh, c, xf, nsp, cr(ic)%v, enu(:, :, ic))
       deallocate (rho, exc, vxc)
     end do
+    call timer_stop(res%timer, tb_setup)
 
     do it = 1, inp%maxit
+      tw_it = wall_seconds()
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         do s = 1, nsp
@@ -173,6 +188,7 @@ contains
         end do
       end do
       ! (1) potential parameters at E_nu, per class / spin / l
+      call timer_start(res%timer, tb_params)
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         if (.not. allocated(y)) allocate (y(2, 0:2, maxval(cr(:)%mesh%n), 0:2, 2 * ncl))
@@ -186,10 +202,14 @@ contains
           end do
         end do
       end do
+      call timer_stop(res%timer, tb_params)
       ! (2) bands, common Fermi level, moments per atom -> per class
+      call timer_start(res%timer, tb_bands)
       if (allocated(qat)) deallocate (qat)
       allocate (qat(0:2, 0:2, cell%nat, nsp))
       call bands_moments(cell, cls, pps, alpha_sp, inp%nk, nsp, nelec, inp%smear, inp%bz, ef, qat, inp%second_order, sumev)
+      call timer_stop(res%timer, tb_bands)
+      call timer_start(res%timer, tb_density)
       do ic = 1, ncl
         cr(ic)%q = 0.0_dp
         do ia = 1, cell%nat
@@ -202,7 +222,7 @@ contains
       do ic = 1, ncl
         n = cr(ic)%mesh%n
         allocate (nval(n, nsp, 1), ncore(n, nsp, 1), tmp(n), cum(n), yc(2, 0:0, n))
-        nval = 0.0_dp; ncore = 0.0_dp; esum(ic) = 0.0_dp
+        nval = 0.0_dp; ncore = 0.0_dp; esum(ic) = 0.0_dp; ecl(:, ic) = 0.0_dp
         if (ic == 1) eband = 0.0_dp
         do s = 1, nsp
           do l = 0, 2
@@ -211,7 +231,7 @@ contains
             ! times the sphere charge.  second_order: the q_k are energy moments and the sphere charge is q0.
             e = cr(ic)%q(1, l, s) + enu(l, s, ic) * cr(ic)%q(0, l, s)
             if (.not. inp%second_order) e = e + enu(l, s, ic) * cr(ic)%pp(l, s)%p * cr(ic)%q(2, l, s)
-            esum(ic) = esum(ic) + e; eband = eband + natc(ic) * e
+            esum(ic) = esum(ic) + e; eband = eband + natc(ic) * e; ecl(et_band, ic) = ecl(et_band, ic) + e
             nval(:, s, 1) = nval(:, s, 1) &
               + cr(ic)%q(0, l, s) * (y(1, 0, 1:n, l, k)**2 + y(2, 0, 1:n, l, k)**2 / c**2) &
               + 2.0_dp * cr(ic)%q(1, l, s) * (y(1, 0, 1:n, l, k) * y(1, 1, 1:n, l, k) + y(2, 0, 1:n, l, k) * y(2, 1, 1:n, l, k) / c**2) &
@@ -227,13 +247,14 @@ contains
             if (.not. core_ok .and. vb) print '(a,i0,a,i0)', '    warning: core state not bracketed (n,l)=', inp%cls(ic)%core(is)%n, ',', inp%cls(ic)%core(is)%l
             ncore(:, s, 1) = ncore(:, s, 1) + inp%cls(ic)%core(is)%occ / real(nsp, dp) * (yc(1, 0, :)**2 + yc(2, 0, :)**2 / c**2)
             esum(ic) = esum(ic) + inp%cls(ic)%core(is)%occ / real(nsp, dp) * e
+            ecl(et_core, ic) = ecl(et_core, ic) + inp%cls(ic)%core(is)%occ / real(nsp, dp) * e
           end do
         end do
         cr(ic)%nrad = nval(:, :, 1) + ncore(:, :, 1)
         do s = 1, nsp
           tmp(1) = 0.0_dp
           tmp(2:n) = cr(ic)%nrad(2:n, s) * (cr(ic)%v(2:n, s) + 2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n))
-          call cumint(cr(ic)%mesh, tmp, cum); esum(ic) = esum(ic) - cum(n)
+          call cumint(cr(ic)%mesh, tmp, cum); esum(ic) = esum(ic) - cum(n); ecl(et_dc, ic) = ecl(et_dc, ic) - cum(n)
         end do
         tmp = sum(cr(ic)%nrad, dim=2); call cumint(cr(ic)%mesh, tmp, cum)
         cr(ic)%qnet = cum(n) - inp%cls(ic)%z
@@ -269,6 +290,11 @@ contains
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(ic)%mesh, tmp, cum)
         etot = etot + natc(ic) * (esum(ic) + cum(n))
+        tmp = 0.5_dp * ntot * vh; tmp(1) = 0.0_dp
+        call cumint(cr(ic)%mesh, tmp, cum); ecl(et_hartree, ic) = cum(n)
+        tmp = ntot * exc; tmp(1) = 0.0_dp
+        call cumint(cr(ic)%mesh, tmp, cum); ecl(et_xc, ic) = cum(n)
+        ecl(et_mad, ic) = 0.5_dp * cr(ic)%qnet * vmad(ic)      ! sum_c natc_c of this = 1/2 sum_i q_i V_i
         deallocate (tmp, cum)
         do s = 1, nsp
           vnew(2:n, s) = -2.0_dp * inp%cls(ic)%z / cr(ic)%mesh%r(2:n) + vh(2:n) + vxc(2:n, s) + vmad(ic)
@@ -295,7 +321,9 @@ contains
           end do
         end do
       end if
+      call timer_stop(res%timer, tb_density)
       ! (6) Anderson step on the full state (potentials and E_nu), with safety clamps
+      call timer_start(res%timer, tb_mix)
       ! Anderson metric = the dV measure (r/(1+r))^2 on the potentials, 1 on E_nu: unweighted, the log mesh's many points near the
       ! nucleus dominated the fit and the step near S went against its residual (bcc Fe: E_F to +1.5 Ry in the first iterations)
       if (.not. allocated(wmix)) then
@@ -328,7 +356,10 @@ contains
           end do
         end do
       end do
+      call timer_stop(res%timer, tb_mix)
       etot = etot / real(cell%nat, dp)
+      res%ecomp = ecl; res%eterm = matmul(ecl, real(natc, dp)) / real(cell%nat, dp)
+      res%hist_wall(it) = wall_seconds() - tw_it
       res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot; res%eband = eband; res%sumev = sumev
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       do ic = 1, ncl; res%hist_moment(it, ic) = cr(ic)%moment; res%hist_qnet(it, ic) = cr(ic)%qnet; end do
@@ -358,6 +389,7 @@ contains
     res%cls = cr
     res%moment_cell = 0.0_dp
     do ia = 1, cell%nat; res%moment_cell = res%moment_cell + cr(cell%isp(ia))%moment; end do
+    res%timer%wall_total = wall_seconds() - tw0; res%timer%cpu_total = cpu_seconds() - tc0
   end subroutine asa_scf
 
   !> Free-atom (all electrons) potential interpolated onto the class sphere mesh; spin-split with zeta0;

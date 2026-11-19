@@ -177,3 +177,8 @@ main = "test_scf_guards.f90"
 name = "test_epi_scf"
 source-dir = "test_slow"
 main = "test_epi_scf.f90"
+
+[[example]]
+name = "test_spectral_scf"
+source-dir = "test_slow"
+main = "test_spectral_scf.f90"

@@ -17,13 +17,15 @@ module asr_input_lmto
 
   type :: lmto_input_t
     character(len=:), allocatable :: name, lattice, xc, bz, dos_file, params_file, out_file, workdir, infile
+    character(len=:), allocatable :: resolved          !! resolved input text for the report (asr_driver)
     real(dp) :: alat_angstrom = 0.0_dp, ratio = 1.0_dp
     type(lmto_species_t), allocatable :: species(:)
     integer :: spin = 1, nk = 12, maxit = 100
     real(dp) :: smear = 0.01_dp, mixing = 0.3_dp, tolerance = 1.0e-6_dp, zeta0 = 0.4_dp, sigma = 0.7_dp
     logical :: relativistic = .true.
     logical :: trace = .false.
-    logical :: second_order = .false.   !! diagnostic: orthogonal H^(2) = E_nu + h - h o h with the recursion's density form
+    logical :: second_order = .false.   !! diagnostic: orthogonal H^(2) = E_nu + h - h o h with the recursion's density form;
+                                        !! H^(2) depends on alpha: the recursion's H^(2) needs std_alpha as well
     real(dp) :: alpha_scale = 1.0_dp    !! diagnostic: screening constants times this factor
     logical :: std_alpha = .false.      !! diagnostic: the recursion's standard_alpha() instead of the alpha of sigma
     real(dp) :: emin = -1.0_dp, emax = 1.0_dp, dos_smear = 0.01_dp

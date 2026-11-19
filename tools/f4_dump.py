@@ -18,8 +18,19 @@ reports, per scan energy and in total:
 
 Usage: f4_dump.py chains.dat [--verbose]
 """
+import re
 import sys
 import numpy as np
+
+_EXP3 = re.compile(r'(\d)([+-]\d{3})$')
+
+
+def fl(x):
+    """float of a Fortran field; a three-digit exponent is written without the letter E (1.66-140)."""
+    try:
+        return float(x)
+    except ValueError:
+        return float(_EXP3.sub(r'\1E\2', x))
 
 
 def read_dump(path):
@@ -37,22 +48,22 @@ def read_dump(path):
         tag = ln[:2]
         f = ln[2:].split()
         if tag == 'H ':
-            hdr = dict(nelec=float(f[0]), fs=float(f[1]), ncomp=int(f[2]), nsp=int(f[3]), nlev=int(f[4]))
+            hdr = dict(nelec=fl(f[0]), fs=fl(f[1]), ncomp=int(f[2]), nsp=int(f[3]), nlev=int(f[4]))
         elif tag == 'W ':
-            hdr['w'] = np.array([float(x) for x in f])
+            hdr['w'] = np.array([fl(x) for x in f])
         elif tag == 'O ':
-            hdr['worb'] = np.array([float(x) for x in f])
+            hdr['worb'] = np.array([fl(x) for x in f])
         elif tag == 'E ':
-            cur = dict(js=int(f[0]), ev=float(f[1]), nq=int(f[2]), z={}, w={}, chains={})
+            cur = dict(js=int(f[0]), ev=fl(f[1]), nq=int(f[2]), z={}, w={}, chains={})
             scans.append(cur)
         elif tag == 'Z ':
             j = int(f[0])
-            cur['z'][j] = complex(float(f[1]), float(f[2]))
-            cur['w'][j] = complex(float(f[3]), float(f[4]))
+            cur['z'][j] = complex(fl(f[1]), fl(f[2]))
+            cur['w'][j] = complex(fl(f[3]), fl(f[4]))
         elif tag == 'C ':
             j, o, p, g = (int(x) for x in f)
             m = int(lines[i + 1])
-            ab = np.array([[float(x) for x in lines[i + 2 + k].split()] for k in range(m)]).reshape(m, 4)
+            ab = np.array([[fl(x) for x in lines[i + 2 + k].split()] for k in range(m)]).reshape(m, 4)
             cur['chains'][(j, o, p, g)] = (ab[:, 0] + 1j * ab[:, 1], ab[:, 2] + 1j * ab[:, 3])
             i += 1 + m
         i += 1

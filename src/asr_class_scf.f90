@@ -35,6 +35,7 @@
 !> -Im / pi is the DOS of the sphere charge, so dos_final and ef_scan need no other change.
 module asr_class_scf
   use asr_kinds, only: dp, pi
+  use asr_lapack, only: zheev
   use asr_radial
   use asr_xc
   use asr_atom, only: cumint, poisson_hartree
@@ -42,21 +43,25 @@ module asr_class_scf
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start
   use asr_strconst, only: avg_ws_radius, standard_alpha
+  use asr_kinds, only: i8
+  use asr_runstats
   use asr_augspace, only: graph_t, graph_distances
-  use asr_augorb, only: orb_alloy_t
   use asr_augcls
   use asr_edc
   use asr_ed3
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
-  use asr_endep, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail
+  use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams, chain_vec_par
+  !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads, omp_get_max_active_levels, omp_set_max_active_levels
   use asr_symmetry, only: class_ops, orbital_rep
-  use asr_lmto_alloy, only: build_lmto_alloy
+  use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count, gauss_legendre
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
   use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f, screen_shells
   use asr_epi
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
+  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, &
+                          spectral_window
   implicit none
   private
   public :: class_scf_input_t, class_scf_result_t, class_scf
@@ -79,7 +84,7 @@ module asr_class_scf
     logical :: relativistic = .true.
     real(dp) :: ed_eta = 0.01_dp, fermi_kt = 0.001_dp, depth_tol = 1.0e-5_dp
     integer :: fermi_poles = 0
-    character(len=8) :: ed_tail = 'hull'                !! asr_endep%ed_tail; 'bp' is not safe on complex chains
+    character(len=8) :: ed_tail = 'hull'                !! asr_chain%ed_tail; 'bp' is not safe on complex chains
     character(len=8) :: route = 'edc'                   !! 'edc' (H^(2), asr_edc) or 'ed3' (full generalised ASA problem, asr_ed3)
     real(dp) :: alpha_scale = 1.0_dp                    !! diagnostic: screening constants = alpha_scale * standard_alpha()
     integer :: eblock = 0                               !! contour energies per chain block (asr_augblk); 0 (default): one energy per chain, real kernels
@@ -94,6 +99,7 @@ module asr_class_scf
     integer :: epi_shells = 0                          !! effective pair interactions (asr_epi) on this many shells after the SCF; 0: off
     integer :: epi_nlam = 4                            !! Gauss-Legendre nodes of the species path
     logical :: epi_sym = .false.                       !! one sublattice: compute U(c, s) for s >= c only, U(s, c) = U(c, s)
+    type(spectral_input_t) :: spectral                 !! Bloch spectral function after the SCF (asr_spectral; route edc)
   end type class_scf_input_t
 
   type :: class_scf_result_t
@@ -105,6 +111,24 @@ module asr_class_scf
     logical :: converged = .false.
     real(dp), allocatable :: hist_dv(:), hist_ef(:), hist_moment(:, :), hist_qnet(:, :), hist_etot(:)
     real(dp), allocatable :: edos_e(:), edos(:, :, :, :)   !! DOS(e, l, component, spin) per atom
+    !> report data, from the last iteration.  eterm(n_et): the terms of etot per site (asr_runstats et_*; their sum is etot to
+    !> rounding); ecomp(n_et, component): the same per atom of the component (eterm = sum_p w_p ecomp(:, p)).
+    real(dp) :: eterm(n_et) = 0.0_dp
+    real(dp), allocatable :: ecomp(:, :)
+    !> dosef(component, spin, 0:2): DOS at E_F + i ed_eta per atom and per spin channel, s p d (states/Ry; nspin = 1 holds one
+    !> channel, so the total is twice the sum); ed3: the DOS of the channel charge q0 + p q2.  qcell: the cell charge
+    !> sum_p w_p qnet_p (e per site) that the Madelung sum removes (the residual of the E_F search; 0 = neutral).
+    real(dp), allocatable :: dosef(:, :, :)
+    real(dp) :: qcell = 0.0_dp
+    !> per iteration, rows 1:iter: E_F passes (contour evaluations), wall seconds, largest change of E_nu before mixing (Ry)
+    integer, allocatable :: hist_npass(:)
+    real(dp), allocatable :: hist_wall(:), hist_denu(:)
+    !> last iteration: mean recursion depth used per chain (edc) and bp tail fallbacks; Anderson restarts in the run, history used
+    real(dp) :: depth_mean = 0.0_dp
+    integer :: nfall = 0, mix_nrestart = 0, mix_nh = 0
+    type(run_timer_t) :: timer                            !! wall / CPU time per part of the run (asr_runstats)
+    real(dp), allocatable :: chain_rank_wall(:)           !! wall time of each rank's own chains, summed over the run (s)
+    integer :: chain_split(2) = [0, 1]                    !! thread split of the last chain pass: teams (nout), threads per team
     type(screen_t) :: screen                               !! screened fluctuation electrostatics (asr_screening)
     real(dp), allocatable :: fscr(:, :)                    !! F(p, p'): potential of component p per unit deviation of p' (Ry/e);
                                                            !! huge if an SRO mode has Gamma = 0 (F infinite)
@@ -128,9 +152,25 @@ module asr_class_scf
     !> (electrons) in the 3 Ry below the contour bottom over all path points (must vanish, as wbelow)
     type(epi_table_t), allocatable :: epi(:)
     real(dp) :: epi_wbelow = 0.0_dp
+    !> Bloch spectral function (asr_spectral), per graph site and per spin channel: spec_a(energy, k, l, spin) summed over the
+    !> origin classes with their site fractions, spec_ac(energy, k, class, spin) the part of each origin class (sum = total).
+    real(dp), allocatable :: spec_k(:, :), spec_dist(:), spec_e(:), spec_a(:, :, :, :), spec_ac(:, :, :, :)
+    integer, allocatable :: spec_icorner(:)
+    !> diagnostics: shell radii (alat) and the largest |Im G| of each shell relative to the on-site one; the largest difference
+    !> of G_{0L,RL} and G_{0L,-R L} from the two origins (relative); the change of G when the chains are cut 4 steps earlier
+    !> (relative; off-site and on-site); the number of (E, k, spin) points with A < 0 and the most negative A relative to the largest;
+    !> the energy integral of A at the first and the last k point (per spin; 9 for a window that holds every band)
+    real(dp), allocatable :: spec_rsh(:), spec_decay(:), spec_sum(:, :)
+    !> one sublattice with one species: the eigenvalues of H^(2)(k) at the path points (9, k, spin), from the same structure
+    !> constant blocks and parameters as the recursion (exact bands of the operator; internal check of A)
+    real(dp), allocatable :: spec_bands(:, :, :)
+    real(dp) :: spec_rdef = 0.0_dp, spec_spread = 0.0_dp, spec_spread0 = 0.0_dp, spec_amin = 0.0_dp
+    integer :: spec_nneg = 0, spec_nt = 0, spec_maxhop = 0, spec_hoplim = 0, spec_nsteps = 0
+    integer, allocatable :: spec_nodes(:)
   end type class_scf_result_t
 
   integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
+  integer, parameter :: lorb9(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
   real(dp), parameter, public :: wbelow_tol = 1.0e-3_dp     !! electrons per site
   real(dp), parameter :: worb(4) = [1.0_dp, 3.0_dp, 3.0_dp, 2.0_dp]
 
@@ -171,11 +211,14 @@ contains
     real(dp), allocatable :: ahat(:, :)
     real(dp), allocatable :: dqv(:), ucur(:), uout(:), vfl(:)
     logical :: uload
+    real(dp) :: tw0, tc0, tw_it
+    real(dp), allocatable :: ecp(:, :)
     integer :: offu
     character(len=:), allocatable :: smsg
     integer :: p2
-    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc, r2min
+    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc
     logical :: vb, cubic, hlo, hhi, core_ok, ed3
+    integer :: teams_said(2)                    !! the last thread split of chain_greens that was printed (nout, nin)
     real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
     real(dp) :: phi2, asym_max, psd_max
     integer :: npsd, nnode
@@ -185,6 +228,7 @@ contains
     if (ed3 .and. inp%epi_shells > 0) error stop 'class_scf: effective pair interactions need route = edc'
     phi2 = merge(0.0_dp, 1.0_dp, ed3)                  ! weight of phi phiddot in the density
     vb = .false.; if (present(verbose)) vb = verbose
+    teams_said = 0
     npsd = 0; nnode = 0
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
@@ -196,6 +240,8 @@ contains
     if (len(smsg) > 0) error stop smsg
     ngen = inp%nlevels
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec
+    tw0 = wall_seconds(); tc0 = cpu_seconds()
+    call timer_start(res%timer, tb_setup)
     ! ---- components
     ncomp = sum(inp%nsc)
     allocate (pcl(ncomp), psp(ncomp), pk(ncomp), w(ncomp), xp(ncomp))
@@ -247,7 +293,9 @@ contains
     ef_in = huge(1.0_dp)
     if (len_trim(inp%pot_in) > 0) call read_potentials()
     allocate (y(2, 0:2, nmax, 0:2, ncomp, 2)); y = 0.0_dp
+    call timer_stop(res%timer, tb_setup)
     call all_params()
+    call timer_start(res%timer, tb_setup)
     ! ---- graph, S blocks, one class operator per sublattice (origin on it)
     call build_lmto_alloy(trim(inp%lattice), inp%lsuper, inp%rcl, 0.7_dp, pps(1, 1), pps(1, 1), 0.5_dp, g, coord, m0, &
                           max(inp%rcl, inp%rinv), alpha)
@@ -260,12 +308,8 @@ contains
     allocate (cop(ncls), res%nodes(ncls), zsh(ncls, ncls)); zsh = 0
     do kap = 1, ncls
       call decoration_classes(inp%dec, coord, mg, kap, cls)
-      if (inp%sro) then                                ! first shell of the origin (site 1 at coord 0; minimum image)
-        r2min = huge(1)
-        do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2)); end do
-        do i = 2, g%n
-          if (sum((modulo(coord(:, i) + mg / 2, mg) - mg / 2)**2) == r2min) cls(i) = ncls + cls(i)
-        end do
+      if (inp%sro) then
+        call shell_classes(cls)
         do k = 1, ncls; zsh(kap, k) = count(cls == ncls + k); end do
         do k = 1, ncls                                 ! SRO with a sublattice that is not in the first shell: input error
           if (.not. any(cls == ncls + k)) then
@@ -333,10 +377,15 @@ contains
     if (ef_in < huge(1.0_dp)) ef = ef_in                 ! E_F of the start potential's run
     allocate (res%hist_dv(inp%maxit), res%hist_ef(inp%maxit), res%hist_moment(inp%maxit, ncomp), res%hist_qnet(inp%maxit, ncomp), &
               res%hist_etot(inp%maxit), esum(ncomp))
+    allocate (res%hist_npass(inp%maxit), res%hist_wall(inp%maxit), res%hist_denu(inp%maxit), ecp(n_et, ncomp), &
+              res%dosef(ncomp, nsp, 0:2))
+    res%hist_npass = 0; res%hist_wall = 0.0_dp; res%hist_denu = 0.0_dp; ecp = 0.0_dp; res%dosef = 0.0_dp
     br = inp%beta; if (inp%beta_restart > 0.0_dp) br = inp%beta_restart
+    call timer_stop(res%timer, tb_setup)
 
     do it = 1, inp%maxit
       ed_nchain = 0; ed_nlev = 0; ed_nfall = 0; res%nclamp = 0
+      tw_it = wall_seconds()
       do p = 1, ncomp
         n = cr(p)%mesh%n
         do sg = 1, nsp
@@ -434,16 +483,18 @@ contains
         ef = ef + e; efshift = e; efmode = 2
       end if
       ! densities, core, charges; esum = band + core eigenvalue sums - int n v~_in (kinetic energy + int n 2Z/r)
+      call timer_start(res%timer, tb_density)
       dv = 0.0_dp; pdv = 0; sgdv = 0; kdv = 0; denu = 0.0_dp
       do p = 1, ncomp
         n = cr(p)%mesh%n
         allocate (nval(n, nsp), ncore(n, nsp), ntot(n), tmp(n), cum(n), yc(2, 0:0, n))
-        nval = 0.0_dp; ncore = 0.0_dp; esum(p) = 0.0_dp
+        nval = 0.0_dp; ncore = 0.0_dp; esum(p) = 0.0_dp; ecp(:, p) = 0.0_dp
         do sg = 1, nsp
           do l = 0, 2
             ! band energy of the channel: E_nu times the sphere charge (edc: M0; ed3: q0 + p^gamma q2, since
             ! e z^T O z = z^T H z = sum_RL [q1 + E_nu (q0 + p^gamma q2)]; test_band_energy) plus the first moment
             esum(p) = esum(p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * qch(p, sg, l))
+            ecp(et_band, p) = ecp(et_band, p) + fs * (mom(p, sg, 1, l) + enu(l, sg, p) * qch(p, sg, l))
             nval(:, sg) = nval(:, sg) + fs * ( &
                 mom(p, sg, 0, l) * (y(1, 0, 1:n, l, p, sg)**2 + y(2, 0, 1:n, l, p, sg)**2 / c**2) &
               + 2.0_dp * mom(p, sg, 1, l) * (y(1, 0, 1:n, l, p, sg) * y(1, 1, 1:n, l, p, sg) + y(2, 0, 1:n, l, p, sg) * y(2, 1, 1:n, l, p, sg) / c**2) &
@@ -456,13 +507,14 @@ contains
                              -1.6_dp * inp%spec(psp(p))%z**2 - 20.0_dp, cr(p)%v(n, sg) - 1.0e-6_dp, e, yc, core_ok)
             ncore(:, sg) = ncore(:, sg) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * (yc(1, 0, :)**2 + yc(2, 0, :)**2 / c**2)
             esum(p) = esum(p) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * e
+            ecp(et_core, p) = ecp(et_core, p) + inp%spec(psp(p))%core(is)%occ / real(nsp, dp) * e
           end do
         end do
         cr(p)%nrad = nval + ncore
         do sg = 1, nsp
           tmp(1) = 0.0_dp
           tmp(2:n) = cr(p)%nrad(2:n, sg) * (cr(p)%v(2:n, sg) + 2.0_dp * inp%spec(psp(p))%z / cr(p)%mesh%r(2:n))
-          call cumint(cr(p)%mesh, tmp, cum); esum(p) = esum(p) - cum(n)
+          call cumint(cr(p)%mesh, tmp, cum); esum(p) = esum(p) - cum(n); ecp(et_dc, p) = ecp(et_dc, p) - cum(n)
         end do
         ntot = sum(cr(p)%nrad, dim=2)
         tmp = ntot; call cumint(cr(p)%mesh, tmp, cum)
@@ -507,11 +559,17 @@ contains
         else
           do p2 = 1, ncomp; vm = vm + res%fscr(p, p2) * (cr(p2)%qnet - qbar(pcl(p2))); end do
         end if
+        ecp(et_mad, p) = 0.5_dp * cr(p)%qnet * dot_product(phimad(pcl(p), :), qbar - qcell)
+        ecp(et_sim, p) = 0.5_dp * cr(p)%qnet * vm - ecp(et_mad, p)
         allocate (tmp(n), cum(n))
         tmp = ntot * (0.5_dp * vh + exc); tmp(1) = 0.0_dp
         call cumint(cr(p)%mesh, tmp, cum)
         ep = esum(p) + cum(n) + 0.5_dp * cr(p)%qnet * vm
         etot = etot + w(p) * ep
+        tmp = 0.5_dp * ntot * vh; tmp(1) = 0.0_dp
+        call cumint(cr(p)%mesh, tmp, cum); ecp(et_hartree, p) = cum(n)
+        tmp = ntot * exc; tmp(1) = 0.0_dp
+        call cumint(cr(p)%mesh, tmp, cum); ecp(et_xc, p) = cum(n)
         deallocate (tmp, cum)
         do sg = 1, nsp
           i = offx(p) + (sg - 1) * (n + 3)
@@ -528,6 +586,8 @@ contains
         end do
         deallocate (ntot, vh, vxc, rho, exc)
       end do
+      call timer_stop(res%timer, tb_density)
+      call timer_start(res%timer, tb_mix)
       if (.not. allocated(wmix)) then           ! Anderson metric = the dV measure (r/(1+r))^2 on the potentials, 1 on E_nu
         allocate (wmix(nx)); wmix = 1.0_dp
         do p = 1, ncomp
@@ -570,10 +630,17 @@ contains
         end do
         call screen_project(xp, pcl, ucur)
       end if
+      call timer_stop(res%timer, tb_mix)
       res%iter = it; res%dv = dv; res%ef = ef; res%etot = etot
       res%nnode = nnode; res%nnoncausal = npsd
       res%hist_dv(it) = dv; res%hist_ef(it) = ef; res%hist_etot(it) = etot
       res%hist_moment(it, :) = cr(:)%moment; res%hist_qnet(it, :) = cr(:)%qnet
+      res%hist_npass(it) = npass; res%hist_denu(it) = denu
+      res%ecomp = ecp; res%eterm = matmul(ecp, w)
+      res%dosef = dosef(:, 1:nsp, :); res%qcell = qcell
+      res%mix_nrestart = mixer%nrestart; res%mix_nh = mixer%nh
+      res%depth_mean = 0.0_dp; if (ed_nchain > 0) res%depth_mean = real(ed_nlev, dp) / real(ed_nchain, dp)
+      res%nfall = int(ed_nfall)
       if (vb) then
         print '(a,i3,a,es10.3,a,f10.6,a,*(f8.4))', 'it', it, '  dV=', dv, '  EF=', ef, '  qnet=', cr(:)%qnet
         if (nsp == 2) print '(a,*(f8.4))', '                                      m   =', cr(:)%moment
@@ -595,7 +662,10 @@ contains
           trim(merge('bracket', 'dos    ', efmode == 1)), ' shift ', efshift, '  |r|_2=', r2n, '  max dV: comp ', pdv, ' spin ', sgdv, &
           ' r=', cr(max(pdv, 1))%mesh%r(max(kdv, 1)), '  max dE_nu=', denu
       end if
-      if (len_trim(inp%pot_out) > 0) call write_potentials()       ! every iteration: a stopped run restarts from here
+      if (len_trim(inp%pot_out) > 0) then                          ! every iteration: a stopped run restarts from here
+        call timer_start(res%timer, tb_io); call write_potentials(); call timer_stop(res%timer, tb_io)
+      end if
+      res%hist_wall(it) = wall_seconds() - tw_it
       ! dV below the tolerance with E_nu held at its window is not a fixed point (the result would depend on the window margin)
       if (dv < inp%tol .and. it > 3) then; res%converged = (res%nclamp == 0); exit; end if
     end do
@@ -622,17 +692,27 @@ contains
       end do
     end do
     if (inp%ndos > 0) call dos_final()
-    if (inp%epi_shells > 0) call epi_run()
+    if (inp%spectral%on) then
+      call timer_start(res%timer, tb_spectral); call spectral_final(); call timer_stop(res%timer, tb_spectral)
+    end if
+    if (inp%epi_shells > 0) then
+      call timer_start(res%timer, tb_epi); call epi_run(); call timer_stop(res%timer, tb_epi)
+    end if
     res%ncomp = ncomp; res%nspin = nsp
     res%comp_cls = pcl; res%comp_spec = psp; res%comp_w = w; res%comp_x = xp
     res%comp = cr
     res%moment_site = sum(w * cr(:)%moment)
     res%qch = qch
+    res%timer%wall_total = wall_seconds() - tw0; res%timer%cpu_total = cpu_seconds() - tc0
+    do kap = 1, size(cop)
+      call augcls_free(cop(kap)%op)                      ! the node tables are pointers (asr_augcls): release them here
+    end do
 
   contains
 
     subroutine all_params()
       integer :: pp_, gg, ll
+      call timer_start(res%timer, tb_params)
       do pp_ = 1, ncomp
         do gg = 1, nsp
           do ll = 0, 2
@@ -645,6 +725,7 @@ contains
         end do
         if (nsp == 1) pps(pp_, 2) = pps(pp_, 1)
       end do
+      call timer_stop(res%timer, tb_params)
     end subroutine all_params
 
     !> occupied moments mo(component, spin, k, l) on the contour to efv, the DOS at E_F (node nq + 1), the channel charges qc
@@ -813,15 +894,20 @@ contains
     !> G + 2 o hG + p hGh, and gb(.., 0:3) gets the blocks of ed3_blocks.  With MPI each rank computes its share of the chain
     !> tasks (chain_worker) and holds zeros elsewhere; one sum over the ranks then gives every rank the full arrays.  Each entry
     !> has one non-zero term, so the sum is exact and the same on every rank in any reduction order.
-    subroutine chain_greens(zs, gz, gb)
+    subroutine chain_greens(zs, gz, gb, tbk)
       complex(dp), intent(in) :: zs(:)
       complex(dp), intent(out) :: gz(:, :, :, :)
       complex(dp), intent(out), optional :: gb(:, :, :, :, 0:)
+      integer, intent(in), optional :: tbk           !! timer bucket (asr_runstats); default tb_chains
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
       type(ed3_t), allocatable :: e3(:, :)
-      integer :: gg, pp_, nbe, kp
+      integer :: gg, pp_, nbe, kp, ib, nth, nout, nin, nmy, ntg_, t_, lvl
+      real(dp) :: tw0
+      complex(dp), allocatable :: trk(:)
       integer(8) :: cnt0(3), cnt(3)
+      ib = tb_chains; if (present(tbk)) ib = tbk
+      call timer_start(res%timer, ib)
       allocate (ms(ncomp, nsp), es(ncomp, nsp), e3(ncomp, nsp))
       do gg = 1, nsp
         do pp_ = 1, ncomp
@@ -847,9 +933,43 @@ contains
         if (present(gb)) gb = (0.0_dp, 0.0_dp)
         cnt0 = [ed_nchain, ed_nlev, ed_nfall]
       end if
-      !$omp parallel
+      ! threads: when this rank holds fewer chains than threads, teams of nin threads share the matrix-vector products of one
+      ! chain (asr_chain::chain_teams; nested OpenMP, the inner loops of asr_augcls).  Otherwise one thread per chain, as before.
+      ! The inner loops write disjoint parts of the vectors, so the results do not depend on the split.
+      ntg_ = size(zs); if (nbe > 0) ntg_ = (size(zs) + nbe - 1) / nbe
+      nmy = 0
+      do t_ = 1, ntg_ * 4 * ncomp * nsp
+        if (mod(t_ - 1 + (t_ - 1) / ntg_, par_size()) == par_rank()) nmy = nmy + 1
+      end do
+      nth = 1
+      !$ nth = omp_get_max_threads()
+      call chain_teams(nmy, nth, nout, nin)
+      call forced_teams(nout, nin)                           ! diagnostic: ASR_CHAIN_TEAMS=nout,nin
+      lvl = 1
+      !$ lvl = omp_get_max_active_levels()
+      !$ if (nin > 1) call omp_set_max_active_levels(max(lvl, 2))
+      if (vb .and. (teams_said(1) /= nout .or. teams_said(2) /= nin)) then
+        if (nin > 1) then
+          print '(a,i0,a,i0,a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: ', nout, ' teams of ', nin, ' threads'
+        else if (teams_said(1) /= 0) then
+          print '(a,i0,a,i0,a)', '  chains: ', nmy, ' per rank on ', nth, ' threads: one thread per chain'
+        end if
+        teams_said = [nout, nin]
+      end if
+      tw0 = wall_seconds()
+      chain_vec_par = nin > 1                                 ! the element-wise chain loops: parallel only inside a team
+      !$omp parallel num_threads(nout)
+      !$ if (nin > 1) call omp_set_num_threads(nin)
       call chain_worker(zs, ms, es, e3, nbe, gz, gb)
       !$omp end parallel
+      chain_vec_par = .true.
+      !$ if (nin > 1) call omp_set_max_active_levels(lvl)
+      ! each rank's own chain time (before the sum over ranks waits for the slowest): the load balance between ranks
+      allocate (trk(par_size())); trk = (0.0_dp, 0.0_dp); trk(par_rank() + 1) = cmplx(wall_seconds() - tw0, 0.0_dp, dp)
+      if (par_size() > 1) call par_sum_z(trk, size(trk))
+      if (.not. allocated(res%chain_rank_wall)) then; allocate (res%chain_rank_wall(par_size())); res%chain_rank_wall = 0.0_dp; end if
+      res%chain_rank_wall = res%chain_rank_wall + real(trk)
+      res%chain_split = [nout, nin]
       if (par_size() > 1) then
         call par_sum_z(gz, size(gz))
         if (present(gb)) call par_sum_z(gb, size(gb))
@@ -860,7 +980,21 @@ contains
         call par_sum_i8(cnt, 3)
         ed_nchain = cnt0(1) + cnt(1); ed_nlev = cnt0(2) + cnt(2); ed_nfall = cnt0(3) + cnt(3)
       end if
+      call timer_stop(res%timer, ib, int(size(zs), i8) * int(4 * ncomp * nsp, i8))
     end subroutine chain_greens
+
+    !> Diagnostic: the environment variable ASR_CHAIN_TEAMS = "nout,nin" forces the thread split of chain_greens (timing of the
+    !> nested teams on one machine, where the contour always has more chains than threads).  The results do not depend on it.
+    subroutine forced_teams(nout, nin)
+      integer, intent(inout) :: nout, nin
+      character(len=32) :: v
+      integer :: ln, st_, ios, a, b
+      call get_environment_variable('ASR_CHAIN_TEAMS', v, ln, st_)
+      if (st_ /= 0 .or. ln == 0) return
+      read (v(1:ln), *, iostat=ios) a, b
+      if (ios /= 0 .or. a < 1 .or. b < 1) error stop 'ASR_CHAIN_TEAMS must be "nout,nin" with two positive integers'
+      nout = a; nin = b
+    end subroutine forced_teams
 
     !> one thread's share of the chains (called inside the parallel region; locals are private): a private copy of the class
     !> operator per sublattice with its own work space, re-parametrised / re-frozen / re-started only when the chain needs it
@@ -1072,7 +1206,7 @@ contains
               end do
             end if
           end associate
-          deallocate (tz, tb, pop%wk)
+          deallocate (tz, tb); call augcls_free(pop)              ! the node tables are pointers (asr_augcls)
         end do
         deallocate (rvs, gr, wr)
       end do
@@ -1131,7 +1265,7 @@ contains
           cur = [c, il, s, gg]; cura = -1
         end if
         if (cura /= ia) then
-          lop%chi = chi(1:lop%nop, ia)
+          call augcls_set_chi(lop, chi(1:lop%nop, ia))
           call epi_start(lop, wk, vec(:, ia)); cura = ia
         end if
         if (nbe == 0) then
@@ -1191,12 +1325,299 @@ contains
       ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
       call contour_nodes_closed(ebot - 3.0_dp, ebot, 0.05_dp, na, nv, zq, wq)
       allocate (gz(na + nv, 4, ncomp, nsp))
-      call chain_greens(zq, gz)
+      call chain_greens(zq, gz, tbk=tb_below)
       wb = 0.0_dp
       do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, na + nv
         wb = wb - fs * w(pp_) * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
       end do; end do; end do; end do
     end subroutine weight_below
+
+    !> SRO: the first shell of the origin (site 1 at coord 0; minimum image) goes to the classes ncls + kappa'
+    subroutine shell_classes(cl)
+      integer, intent(inout) :: cl(:)
+      integer :: i_, r2m
+      r2m = huge(1)
+      do i_ = 2, g%n; r2m = min(r2m, sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2)); end do
+      do i_ = 2, g%n
+        if (sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2) == r2m) cl(i_) = ncls + cl(i_)
+      end do
+    end subroutine shell_classes
+
+    !> Bloch spectral function A(k, E) at the final potential (asr_spectral, route edc).  Per origin class: the operator reduced
+    !> with D2h, the target sites within rmax and their nodes; per spin, component, start orbital and energy one projected chain
+    !> (edc_green_proj).  The diagonal elements <G_{0L, RL}> are averaged over the centre species, symmetrised between the two
+    !> origins of each pair, and summed over R with the Bloch phases of the graph lattice.
+    subroutine spectral_final()
+      type(class_op_t), allocatable :: sop(:)
+      type(class_alloy_t), allocatable :: ms(:, :)
+      type(edn_t), allocatable :: es(:, :)
+      integer, allocatable :: clsb(:), clsr(:), perm_(:, :), mats_(:, :, :), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
+      integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:), kop(:)
+      real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:), wwin(:)
+      complex(dp), allocatable :: zs(:), gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
+      real(dp) :: rmax2, gmax, gmax0, a_, de, amax
+      integer :: ne, nst, nt, nsm, ks, cl_, t_, kp, pp_, gg, i, j, l_, ik, nkp, nsh, t0, nopd, it_
+      integer :: hd(3)
+      if (ed3) error stop 'class_scf: the spectral function needs route = edc'
+      if (.not. spectral_translations_ok(inp%dec)) error stop &
+        'class_scf: spectral function: a sublattice holds sites that no translation relates (for example L1_2); not supported'
+      nst = inp%spectral%nsteps; if (nst <= 0) nst = nlev
+      ne = inp%spectral%ne; nsm = maxval(inp%nsc)
+      if (2.0_dp * inp%spectral%rmax >= real(inp%lsuper, dp)) error stop 'class_scf: spectral rmax must be below supercell / 2'
+      call all_params()
+      ! ---- targets: graph sites within rmax of the origin (the same set for every origin class), their mirror images
+      rmax2 = 4.0_dp * inp%spectral%rmax**2                ! half-lattice units
+      allocate (keep(g%n)); nt = 0
+      do i = 1, g%n
+        hd = modulo(coord(:, i) + mg / 2, mg) - mg / 2
+        if (real(sum(hd**2), dp) <= rmax2 + 1.0e-9_dp) then; nt = nt + 1; keep(nt) = i; end if
+      end do
+      tsite = keep(1:nt)
+      allocate (tdisp(3, nt), tmir(nt))
+      do t_ = 1, nt; tdisp(:, t_) = 0.5_dp * real(modulo(coord(:, tsite(t_)) + mg / 2, mg) - mg / 2, dp); end do
+      t0 = 0
+      do t_ = 1, nt
+        if (tsite(t_) == 1) t0 = t_
+        tmir(t_) = 0
+        do j = 1, nt
+          if (all(abs(tdisp(:, j) + tdisp(:, t_)) < 1.0e-9_dp)) then; tmir(t_) = j; exit; end if
+        end do
+        if (tmir(t_) == 0) error stop 'class_scf: spectral targets are not symmetric under inversion'
+      end do
+      if (t0 == 0) error stop 'class_scf: the origin is not a spectral target'
+      res%spec_nt = nt; res%spec_maxhop = maxval(dist(tsite)); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
+      ! ---- per origin class: D2h-reduced operator with the target nodes
+      allocate (sop(ncls), tnode(nsm, nt, ncls), tgop(nsm, nt, ncls), tbase(nt, ncls), tcls(nt, ncls), res%spec_nodes(ncls))
+      do kp = 1, ncls
+        call decoration_classes(inp%dec, coord, mg, kp, clsb)
+        clsr = clsb; if (inp%sro) call shell_classes(clsr)
+        call class_ops(coord, mg, clsr, perm_, mats_)
+        if (allocated(kop)) deallocate (kop)
+        allocate (kop(size(perm_, 2))); nopd = 0              ! D2h: the operations with a diagonal matrix (identity first)
+        do j = 1, size(perm_, 2)
+          if (count(mats_(:, :, j) /= 0) == 3 .and. all([(mats_(i, i, j) /= 0, i=1, 3)])) then; nopd = nopd + 1; kop(nopd) = j; end if
+        end do
+        call orbital_rep(mats_(:, :, kop(1:nopd)), sop(kp)%d)
+        call build_augcls_operator(g, mdl, clsr, perm_(:, kop(1:nopd)), sop(kp)%d, 1, ngen, sop(kp)%op, inp%maxrank, flippable, &
+                                   tsite=tsite, tnode=tn_, tgop=tg_)
+        if (any(tn_(1, :) == 0)) error stop 'class_scf: a spectral target lies outside the node set (lower rmax or raise levels)'
+        tnode(:, :, kp) = tn_; tgop(:, :, kp) = tg_; tbase(:, kp) = clsb(tsite); tcls(:, kp) = clsr(tsite)
+        res%spec_nodes(kp) = sop(kp)%op%nn
+        if (vb) print '(a,i0,a,i0,a,i0,a,i0)', '  spectral: origin class ', kp, ', D2h operations ', nopd, ', nodes ', &
+          sop(kp)%op%nn, ', target sites ', nt
+      end do
+      if (vb .and. res%spec_maxhop > res%spec_hoplim) print '(a,i0,a,i0,a)', '  WARNING: spectral targets reach ', &
+        res%spec_maxhop, ' graph hops; the interior of the node set ends at ', res%spec_hoplim, ' (lower rmax or raise levels)'
+      ! ---- species parameters per (component, spin) and the dressing weights of every target
+      allocate (ms(ncomp, nsp), es(ncomp, nsp), tw(9, nsm, nt, ncomp, nsp)); tw = 0.0_dp
+      do gg = 1, nsp
+        do pp_ = 1, ncomp
+          call edc_setup(mdl, pps(:, gg), alpha, pp_, es(pp_, gg)); ms(pp_, gg) = mdl
+          kp = pcl(pp_)
+          do t_ = 1, nt
+            cl_ = tcls(t_, kp)
+            if (cl_ <= ncls) then
+              call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(cl_), cl_), &
+                                     inp%conc(1:inp%nsc(cl_), cl_), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+            else
+              ks = cl_ - ncls
+              call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(ks), cl_), &
+                                     inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+            end if
+          end do
+        end do
+      end do
+      ! ---- energies, chains
+      allocate (ee(ne), zs(ne))
+      do j = 1, ne
+        ee(j) = inp%spectral%emin + (inp%spectral%emax - inp%spectral%emin) * real(j - 1, dp) / real(max(ne - 1, 1), dp)
+      end do
+      zs = cmplx(ee, inp%spectral%eta, dp)
+      allocate (gdg(9, nt, ne, nsp, ncls), gdg4(9, nt, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
+      chain_vec_par = .false.                                 ! one thread per chain (asr_chain::chain_vec_par)
+      !$omp parallel
+      call spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
+      !$omp end parallel
+      chain_vec_par = .true.
+      if (par_size() > 1) then
+        call par_sum_z(gdg, size(gdg)); call par_sum_z(gdg4, size(gdg4))
+      end if
+      ! ---- diagnostics on the averaged elements
+      gmax = maxval(abs(gdg)); gmax0 = maxval(abs(gdg(:, t0, :, :, :)))
+      res%spec_rdef = 0.0_dp
+      do kp = 1, ncls
+        do t_ = 1, nt
+          res%spec_rdef = max(res%spec_rdef, maxval(abs(gdg(:, t_, :, :, kp) - gdg(:, tmir(t_), :, :, tbase(t_, kp)))))
+        end do
+      end do
+      res%spec_rdef = res%spec_rdef / max(gmax, tiny(1.0_dp))
+      res%spec_spread0 = maxval(abs(gdg(:, t0, :, :, :) - gdg4(:, t0, :, :, :))) / max(gmax0, tiny(1.0_dp))
+      res%spec_spread = 0.0_dp
+      do t_ = 1, nt
+        if (t_ /= t0) res%spec_spread = max(res%spec_spread, maxval(abs(gdg(:, t_, :, :, :) - gdg4(:, t_, :, :, :))))
+      end do
+      res%spec_spread = res%spec_spread / max(gmax, tiny(1.0_dp))
+      ! ---- symmetrise: G(kappa; L, R) <- (G(kappa; L, R) + G(kappa'; L, -R)) / 2, kappa' the class of the target
+      gdg4 = gdg
+      do kp = 1, ncls
+        do t_ = 1, nt
+          gdg(:, t_, :, :, kp) = 0.5_dp * (gdg4(:, t_, :, :, kp) + gdg4(:, tmir(t_), :, :, tbase(t_, kp)))
+        end do
+      end do
+      ! shell decay of Im G relative to the on-site element
+      allocate (r2sh(nt), shell(nt)); nsh = 0
+      do t_ = 1, nt
+        a_ = sum(tdisp(:, t_)**2); shell(t_) = 0
+        do j = 1, nsh
+          if (abs(r2sh(j) - a_) < 1.0e-9_dp) then; shell(t_) = j; exit; end if
+        end do
+        if (shell(t_) == 0) then; nsh = nsh + 1; r2sh(nsh) = a_; shell(t_) = nsh; end if
+      end do
+      allocate (res%spec_rsh(nsh), res%spec_decay(nsh)); res%spec_rsh = sqrt(r2sh(1:nsh)); res%spec_decay = 0.0_dp
+      gmax0 = maxval(abs(aimag(gdg(:, t0, :, :, :))))
+      do t_ = 1, nt
+        res%spec_decay(shell(t_)) = max(res%spec_decay(shell(t_)), maxval(abs(aimag(gdg(:, t_, :, :, :)))) / max(gmax0, tiny(1.0_dp)))
+      end do
+      ! ---- Bloch sums along the path
+      call spectral_kpath(inp%spectral%kpts, inp%spectral%nk, res%spec_k, res%spec_dist, res%spec_icorner)
+      nkp = size(res%spec_dist)
+      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(nt), wwin(nt))
+      do t_ = 1, nt; wwin(t_) = spectral_window(inp%spectral%window, norm2(tdisp(:, t_)), inp%spectral%rmax); end do
+      res%spec_e = ee; res%spec_a = 0.0_dp; res%spec_ac = 0.0_dp
+      do gg = 1, nsp
+        do kp = 1, ncls
+          do j = 1, ne
+            do l_ = 0, 2
+              v = 0.0_dp
+              do it_ = 1, 9
+                if (lorb9(it_) == l_) v = v - aimag(gdg(it_, :, j, gg, kp)) / pi
+              end do
+              v = v * wwin
+              do ik = 1, nkp
+                a_ = inp%dec%frac(kp) * spectral_unfold(tdisp, v, res%spec_k(:, ik))
+                res%spec_a(j, ik, l_, gg) = res%spec_a(j, ik, l_, gg) + a_
+                res%spec_ac(j, ik, kp, gg) = res%spec_ac(j, ik, kp, gg) + a_
+              end do
+            end do
+          end do
+        end do
+      end do
+      if (ncls == 1 .and. inp%nsc(1) == 1) call ordered_bands(ms, es)
+      amax = maxval(sum(res%spec_a, dim=3))
+      res%spec_nneg = count(sum(res%spec_a, dim=3) < -1.0e-9_dp * amax)
+      res%spec_amin = minval(sum(res%spec_a, dim=3)) / max(amax, tiny(1.0_dp))
+      allocate (res%spec_sum(2, nsp)); res%spec_sum = 0.0_dp
+      de = (inp%spectral%emax - inp%spectral%emin) / real(max(ne - 1, 1), dp)
+      do gg = 1, nsp
+        do j = 1, ne
+          a_ = merge(0.5_dp, 1.0_dp, j == 1 .or. j == ne) * de
+          res%spec_sum(1, gg) = res%spec_sum(1, gg) + a_ * sum(res%spec_a(j, 1, :, gg))
+          res%spec_sum(2, gg) = res%spec_sum(2, gg) + a_ * sum(res%spec_a(j, nkp, :, gg))
+        end do
+      end do
+      if (vb) then
+        print '(a,i0,a,f7.4,a,i0,a,i0,a,i0,a)', '  spectral: ', ne, ' energies, eta ', inp%spectral%eta, ' Ry, ', nst, &
+          ' steps, ', nkp, ' k points, ', nt, ' target sites'
+        print '(a,es9.2,a,es9.2,a,es9.2)', '  spectral: reciprocity defect ', res%spec_rdef, ', step spread (4 steps) off-site ', &
+          res%spec_spread, ' on-site ', res%spec_spread0
+        print '(a,a,a,i0,a,es9.2)', '  spectral: window ', trim(inp%spectral%window), ';  points with A < 0: ', res%spec_nneg, &
+          ', min A / max A ', res%spec_amin
+        print '(a,*(f7.3))', '  spectral: shell radius (alat)        ', res%spec_rsh
+        print '(a,*(f7.3))', '  spectral: max |Im G| / on-site value ', res%spec_decay
+        print '(a,*(f8.3))', '  spectral: energy integral of A at the first and last k (per spin; the number of bands inside the window, at most 9) ', res%spec_sum
+      end if
+      do kp = 1, ncls
+        call augcls_free(sop(kp)%op)                     ! shared node tables of the spectral operators (asr_augcls)
+      end do
+    end subroutine spectral_final
+
+    !> eigenvalues of H^(2)(k) = E_nu + h - h o h, h = c + d S(k) d, S(k) = block0 + sum_slot block(slot) exp(2 pi i k . d_slot),
+    !> d_slot the displacement of the slot-th graph neighbour of the origin (the slots of asr_augcls::apply_h)
+    subroutine ordered_bands(ms, es)
+      type(class_alloy_t), intent(in) :: ms(:, :)
+      type(edn_t), intent(in) :: es(:, :)
+      complex(dp) :: sk(9, 9), hk(9, 9), cw(36)
+      real(dp) :: rw(27), ev(9), dsl(3)
+      integer :: ks_, ns_, info_, m_, n_, gg, ik, nkp
+      nkp = size(res%spec_dist)
+      ns_ = g%nbr_ptr(2) - g%nbr_ptr(1)
+      allocate (res%spec_bands(9, nkp, nsp))
+      do gg = 1, nsp
+        do ik = 1, nkp
+          sk = ms(1, gg)%block0
+          do ks_ = 1, ns_
+            dsl = 0.5_dp * real(modulo(coord(:, g%nbr(g%nbr_ptr(1) + ks_ - 1)) + mg / 2, mg) - mg / 2, dp)
+            sk = sk + ms(1, gg)%block(:, :, ks_) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
+          end do
+          sk = 0.5_dp * (sk + conjg(transpose(sk)))
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = ms(1, gg)%d(m_, 1) * sk(m_, n_) * ms(1, gg)%d(n_, 1); end do
+            hk(n_, n_) = hk(n_, n_) + ms(1, gg)%c(n_, 1)
+          end do
+          sk = hk
+          do n_ = 1, 9
+            do m_ = 1, 9; hk(m_, n_) = sk(m_, n_) - sum(sk(m_, :) * ms(1, gg)%o(:, 1) * sk(:, n_)); end do
+            hk(n_, n_) = hk(n_, n_) + es(1, gg)%enu(n_, 1)
+          end do
+          hk = 0.5_dp * (hk + conjg(transpose(hk)))
+          call zheev('N', 'U', 9, hk, 9, ev, cw, 36, rw, info_)
+          if (info_ /= 0) error stop 'class_scf: zheev failed (spectral bands)'
+          res%spec_bands(:, ik, gg) = ev
+        end do
+      end do
+    end subroutine ordered_bands
+
+    !> one thread's share of the spectral chains (inside the parallel region of spectral_final): tasks (energy, start orbital,
+    !> component, spin), a private copy of the origin-class operator per thread
+    subroutine spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
+      type(class_op_t), intent(in) :: sop(:)
+      type(class_alloy_t), intent(in) :: ms(:, :)
+      type(edn_t), intent(in) :: es(:, :)
+      complex(dp), intent(in) :: zs(:)
+      integer, intent(in) :: nst, tnode(:, :, :), tgop(:, :, :)
+      real(dp), intent(in) :: tw(:, :, :, :, :)
+      complex(dp), intent(inout) :: gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
+      type(augcls_op), allocatable :: lop(:)
+      type(edn_work_t), allocatable :: lwk(:)
+      complex(dp), allocatable :: gp(:, :), gp4(:, :)
+      complex(dp) :: gc
+      integer :: cur(3, ncls), tk, j_, o_, p_, s_, k_, q_, rk, nr, ne
+      rk = par_rank(); nr = par_size(); ne = size(zs)
+      allocate (lop(ncls), lwk(ncls), gp(9, size(tnode, 2)), gp4(9, size(tnode, 2))); cur = -1
+      !$omp do schedule(dynamic)
+      do tk = 1, ne * 9 * ncomp * nsp
+        if (mod(tk - 1 + (tk - 1) / ne, nr) /= rk) cycle
+        j_ = mod(tk - 1, ne) + 1; o_ = mod((tk - 1) / ne, 9) + 1
+        p_ = mod((tk - 1) / (9 * ne), ncomp) + 1; s_ = (tk - 1) / (9 * ne * ncomp) + 1
+        k_ = pcl(p_)
+        if (cur(1, k_) < 0) then
+          lop(k_) = sop(k_)%op
+          nullify (lop(k_)%wk); allocate (lop(k_)%wk(size(sop(k_)%op%wk, 1), size(sop(k_)%op%wk, 2)))
+          call edn_work_init(lwk(k_), lop(k_)%dim())
+          cur(:, k_) = 0
+        end if
+        if (cur(1, k_) /= p_ .or. cur(2, k_) /= s_) then
+          call augcls_set_params(lop(k_), ms(p_, s_)); call augcls_freeze_site(lop(k_), 1, p_)
+          if (inp%sro) then
+            do q_ = 1, ncls
+              call augcls_set_class_conc(lop(k_), ncls + q_, inp%sro_cond(pk(p_), 1:inp%nsc(q_), k_, q_))
+            end do
+          end if
+          cur(1, k_) = p_; cur(2, k_) = s_; cur(3, k_) = -1
+        end if
+        if (cur(3, k_) /= o_) then; call augcls_set_start(lop(k_), o_, sop(k_)%d); cur(3, k_) = o_; end if
+        call edc_green_proj(lop(k_), lwk(k_), es(p_, s_), zs(j_), o_, nst, tnode(:, :, k_), tgop(:, :, k_), &
+                            tw(:, :, :, p_, s_), gc, gp, gp4)
+        !$omp critical (spectral_acc)
+        gdg(o_, :, j_, s_, k_) = gdg(o_, :, j_, s_, k_) + xp(p_) * gp(o_, :)
+        gdg4(o_, :, j_, s_, k_) = gdg4(o_, :, j_, s_, k_) + xp(p_) * gp4(o_, :)
+        !$omp end critical (spectral_acc)
+      end do
+      !$omp end do
+      do k_ = 1, ncls
+        if (cur(1, k_) >= 0) deallocate (lop(k_)%wk)
+      end do
+    end subroutine spectral_worker
 
     subroutine dos_final()
       complex(dp), allocatable :: zs(:), gz(:, :, :, :)
@@ -1208,7 +1629,7 @@ contains
       call all_params()
       zs = cmplx(res%edos_e, inp%dos_eta, dp)
       allocate (gz(inp%ndos, 4, ncomp, nsp))
-      call chain_greens(zs, gz)
+      call chain_greens(zs, gz, tbk=tb_dos)
       do gg = 1, nsp
         do pp_ = 1, ncomp
           do o = 1, 4

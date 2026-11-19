@@ -218,7 +218,7 @@ contains
     tr = (0.0_dp, 0.0_dp)
     if (present(tailmax)) tailmax = 0.0_dp
     do ia = 1, 9
-      op%chi = chi(1:op%nop, ia)
+      call augcls_set_chi(op, chi(1:op%nop, ia))
       call epi_start(op, wk, vec(:, ia))
       call epi_blocks(op, wk, ed, z, nlev, x)
       tr = tr + epi_integrand(pt, lo(ia), z, x)
@@ -302,7 +302,7 @@ contains
     call blk_work_init(bw5, nz, op%dim()); call blk_work_init(bw8, 8, op%dim())
     e5 = 0.0_dp; e8 = 0.0_dp; ec = 0.0_dp
     do ia = 1, 9
-      op%chi = chi(1:op%nop, ia)
+      call augcls_set_chi(op, chi(1:op%nop, ia))
       call epi_start(op, wk, vec(:, ia))
       call epi_blocks_blk(op, wk, bw5, ed, zs, 12, xb)
       call epi_blocks_blk(op, wk, bw8, ed, zs, 12, xp)

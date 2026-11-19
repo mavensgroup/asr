@@ -44,7 +44,8 @@
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
 !>                  second_order (diagnostic, default false: the orthogonal second-order
 !>                  H^(2) = E_nu + h - h o h of the recursion route, no h p h overlap, density M0 phi^2 + 2 M1 phi phidot +
-!>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion)
+!>                  M2 (phidot^2 + phi phiddot), so the sphere charge is M0 as in the recursion.  H^(2) depends on the
+!>                  screening constants at third order: it is the recursion's H^(2) only with std_alpha = true)
 !>   [dos]          emin, emax, npoints, eta (recursion: imaginary part; k-space: smearing)
 !>   [output]       dos_file, out_file, params_file (method = "kspace")
 !> Examples: pure bcc Fe = lattice "bcc", centering "I", one sublattice [[0,0,0]] with species ["Fe"]; B2 FeCo = "bcc", period 1,
@@ -52,7 +53,8 @@
 !> Al (0,0,0); Fe/Cr (1/2,1/2,1/2); Co (1/4,1/4,1/4) and (3/4,3/4,3/4).  Unknown sections/keys are errors.
 module asr_driver
   use asr_kinds, only: dp
-  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, len
+  use tomlf, only: toml_table, toml_array, toml_error, toml_load, get_value, set_value, len
+  use asr_inputdump, only: resolved_input
   use asr_tomlutil, only: section, check_keys
   use asr_input_lmto, only: lmto_species_t, lmto_input_t
   use asr_asa, only: core_shells_for, asa_class_result_t
@@ -61,16 +63,17 @@ module asr_driver
   use asr_sro, only: sro_conditional
   use asr_screening, only: screen_t, screen_lattice, mode_f
   use asr_class_scf
-  use asr_epi, only: epi_exchange
   use asr_report
   use asr_mpi, only: par_root, par_size
   !$ use omp_lib, only: omp_get_max_threads
   implicit none
   private
-  public :: run_input_t, read_run_input, run_input, kspace_cell, class_species
+  public :: run_input_t, read_run_input, run_input, kspace_cell, class_species, rep_from_class_scf
 
   type :: run_input_t
     character(len=:), allocatable :: name, method, dos_file, out_file, workdir, infile
+    character(len=:), allocatable :: spec_file          !! [spectral] file (method = "asr")
+    character(len=:), allocatable :: resolved           !! every input key with the value used (asr_inputdump); for the report
     type(class_scf_input_t) :: ci                      !! method = "asr"
     type(lmto_input_t) :: li                           !! method = "kspace"
     type(lmto_species_t), allocatable :: species(:)
@@ -106,7 +109,7 @@ contains
     slash = index(filename, '/', back=.true.)
     if (slash > 0) then; inp%workdir = filename(1:slash); else; inp%workdir = ''; end if
     call check_keys(table, ['calculation', 'structure  ', 'species    ', 'sublattice ', 'site       ', 'scf        ', 'asr        ', &
-                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'epi        '], 'top level', msg)
+                            'kspace     ', 'dos        ', 'output     ', 'sro        ', 'spectral   ', 'epi        '], 'top level', msg)
     if (len(msg) > 0) return
 
     call section(table, 'calculation', child)
@@ -181,6 +184,8 @@ contains
       if (associated(ka)) then
         if (len(ka) /= 4) then; msg = '[[species]] konfig needs 4 integers (s,p,d,f)'; return; end if
         do j = 1, 4; call get_value(ka, j, inp%species(i)%konfig(j - 1)); end do
+      else                                             ! the default, written into the table for the resolved input
+        call get_value(sp, 'konfig', ka); call set_value(ka, inp%species(i)%konfig)
       end if
       nullify (ka)
       call get_value(sp, 'occupations', ka, requested=.false.)
@@ -188,6 +193,8 @@ contains
         if (len(ka) /= 2) then; msg = '[[species]] occupations needs 2 numbers (s,d)'; return; end if
         call get_value(ka, 1, x); inp%species(i)%occ_s = x
         call get_value(ka, 2, x); inp%species(i)%occ_d = x
+      else
+        call get_value(sp, 'occupations', ka); call set_value(ka, [inp%species(i)%occ_s, inp%species(i)%occ_d])
       end if
       if (inp%species(i)%z <= 0.0_dp .or. inp%species(i)%nval <= 0) then; msg = '[[species]] needs z and nval'; return; end if
       do j = 1, i - 1
@@ -265,6 +272,7 @@ contains
         else
           if (nsc /= 1) then; msg = '[[sublattice]] with several species needs concentrations'; return; end if
           inp%ci%conc(1, i) = 1.0_dp
+          call get_value(sp, 'concentrations', ka); call set_value(ka, [1.0_dp])
         end if
         if (any(inp%ci%conc(1:nsc, i) <= 0.0_dp) .or. abs(sum(inp%ci%conc(1:nsc, i)) - 1.0_dp) > 1.0e-8_dp) then
           msg = '[[sublattice]] concentrations must be > 0 and sum to 1'; return
@@ -388,6 +396,52 @@ contains
     call get_value(child, 'out_file', inp%out_file, 'asr.out')
     call get_value(child, 'params_file', inp%li%params_file, 'params.dat')
 
+    if (table%has_key('spectral')) then                ! Bloch spectral function after the SCF (asr_spectral)
+      if (kspace) then; msg = '[spectral] is read with method = "asr" only'; return; end if
+      call section(table, 'spectral', child)
+      call check_keys(child, ['kpath  ', 'labels ', 'nk     ', 'emin   ', 'emax   ', 'npoints', 'eta    ', 'rmax   ', 'steps  ', &
+                              'file   ', 'window '], '[spectral]', msg)
+      if (len(msg) > 0) return
+      if (trim(inp%ci%route) /= 'edc') then; msg = '[spectral] needs route = "edc"'; return; end if
+      nullify (arr); call get_value(child, 'kpath', arr, requested=.false.)
+      if (.not. associated(arr)) then; msg = '[spectral] needs kpath = [[kx, ky, kz], ...] (Cartesian, units 2 pi / a)'; return; end if
+      if (len(arr) < 2) then; msg = '[spectral] kpath needs at least two points'; return; end if
+      allocate (inp%ci%spectral%kpts(3, len(arr)), inp%ci%spectral%labels(len(arr))); inp%ci%spectral%labels = ''
+      do i = 1, len(arr)
+        nullify (ka); call get_value(arr, i, ka)
+        if (.not. associated(ka)) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        if (len(ka) /= 3) then; msg = '[spectral] kpath: each point is an array of 3 numbers'; return; end if
+        do j = 1, 3; call get_value(ka, j, x); inp%ci%spectral%kpts(j, i) = x; end do
+      end do
+      nullify (arr); call get_value(child, 'labels', arr, requested=.false.)
+      if (associated(arr)) then
+        if (len(arr) /= size(inp%ci%spectral%kpts, 2)) then; msg = '[spectral] labels needs one label per kpath point'; return; end if
+        do i = 1, len(arr); call get_value(arr, i, str); inp%ci%spectral%labels(i) = str; end do
+      end if
+      call get_value(child, 'nk', inp%ci%spectral%nk, 30)
+      call get_value(child, 'emin', inp%ci%spectral%emin, inp%emin)
+      call get_value(child, 'emax', inp%ci%spectral%emax, inp%emax)
+      call get_value(child, 'npoints', inp%ci%spectral%ne, 201)
+      call get_value(child, 'eta', inp%ci%spectral%eta, 0.01_dp)
+      call get_value(child, 'rmax', inp%ci%spectral%rmax, 2.0_dp)
+      call get_value(child, 'window', str, 'ball')
+      if (str /= 'ball' .and. str /= 'sharp') then; msg = '[spectral] window must be "ball" or "sharp"'; return; end if
+      inp%ci%spectral%window = str
+      call get_value(child, 'steps', inp%ci%spectral%nsteps, 0)
+      call get_value(child, 'file', inp%spec_file, 'spectral.dat')
+      if (inp%ci%spectral%nk < 1) then; msg = '[spectral] nk must be >= 1'; return; end if
+      if (inp%ci%spectral%ne < 2) then; msg = '[spectral] npoints must be >= 2'; return; end if
+      if (inp%ci%spectral%eta <= 0.0_dp) then; msg = '[spectral] eta must be > 0'; return; end if
+      if (inp%ci%spectral%rmax <= 0.0_dp) then; msg = '[spectral] rmax must be > 0'; return; end if
+      if (inp%ci%spectral%emax <= inp%ci%spectral%emin) then; msg = '[spectral] emax must be above emin'; return; end if
+      if (inp%ci%spectral%nsteps < 0) then; msg = '[spectral] steps must be >= 0'; return; end if
+      inp%ci%spectral%on = .true.
+      ! the same bound as class_scf (spectral_final), checked here so that the run fails before the SCF, not after it
+      if (2.0_dp * inp%ci%spectral%rmax >= real(inp%ci%lsuper, dp)) then
+        msg = '[spectral] rmax must be below [asr] supercell / 2'; return
+      end if
+    end if
+
     ! ---- validation
     if (inp%ci%nspin /= 1 .and. inp%ci%nspin /= 2) msg = '[scf] spin must be 1 or 2'
     if (inp%ci%nlevels < 2) msg = '[asr] levels must be >= 2'
@@ -401,9 +455,11 @@ contains
     if (ratio <= 0.0_dp) msg = '[kspace] sphere_ratio must be > 0'
     if (inp%emax <= inp%emin) msg = '[dos] emax must exceed emin'
     if (len(msg) > 0) return
+    call resolved_input(table, filename, inp%method, inp%resolved)
 
     if (kspace) then
       ! the k-space input of the same structure
+      inp%li%resolved = inp%resolved
       inp%li%name = inp%name; inp%li%infile = inp%infile; inp%li%workdir = inp%workdir
       inp%li%dos_file = inp%dos_file; inp%li%out_file = inp%out_file
       inp%li%alat_angstrom = alat; inp%li%xc = trim(inp%ci%xc); inp%li%spin = inp%ci%nspin
@@ -600,23 +656,25 @@ contains
     logical, intent(out) :: ok
     type(class_scf_result_t), intent(out), optional :: res_out
     type(class_scf_result_t) :: res
-    integer :: i, ie, l, p, sg, u, nsp, ncomp, ru, nthr, kap, k
+    type(rep_run_t) :: rep
+    character(len=10) :: start_d, start_t
+    integer :: ie, l, p, sg, u, nsp, ncomp, nthr
     character(len=:), allocatable :: dfile
-    character(len=8), allocatable :: labels(:)
-    real(dp), allocatable :: zc(:), swsc(:), tsp(:)
-    integer, allocatable :: nvc(:), natc(:)
+    character(len=16), allocatable :: labels(:)
+    real(dp), allocatable :: tsp(:)
     real(dp) :: t0, t_scf, avw, tot, qcell, mcell, fsp
 
     ok = .false.
+    call date_and_time(start_d, start_t)
     t0 = rep_wall()
     nsp = size(inp%species)
     call class_species(inp)
     print '(a,a)', 'asr (augmented-space recursion)  ', inp%name
     print '(a,a,a,f9.5,a,i0,a,i0,a,i0)', '  graph lattice ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, '  period=', inp%ci%dec%period, &
       '  sites per decoration cell=', inp%ci%dec%nsite, '  spin=', inp%ci%nspin
-    do kap = 1, inp%ci%dec%ncls
-      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(kap), '  site fraction=', inp%ci%dec%frac(kap), '  species: ', &
-        (trim(inp%species(inp%ci%spc(i, kap))%symbol)//' ', i=1, inp%ci%nsc(kap))
+    do p = 1, inp%ci%dec%ncls
+      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(p), '  site fraction=', inp%ci%dec%frac(p), '  species: ', &
+        (trim(inp%species(inp%ci%spc(ie, p))%symbol)//' ', ie=1, inp%ci%nsc(p))
     end do
     inp%ci%ndos = inp%npoints; inp%ci%dos_emin = inp%emin; inp%ci%dos_emax = inp%emax; inp%ci%dos_eta = inp%eta
     t_scf = rep_wall()
@@ -624,12 +682,11 @@ contains
     t_scf = rep_wall() - t_scf
     if (present(res_out)) res_out = res
     ncomp = res%ncomp
-    allocate (labels(ncomp), zc(ncomp), swsc(ncomp), nvc(ncomp), natc(ncomp), tsp(res%nspin))
+    allocate (labels(ncomp), tsp(res%nspin))
     avw = avg_ws(trim(inp%ci%lattice)) * inp%ci%alat
     qcell = 0.0_dp; mcell = 0.0_dp
     do p = 1, ncomp
       labels(p) = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
-      zc(p) = inp%species(res%comp_spec(p))%z; nvc(p) = inp%species(res%comp_spec(p))%nval; swsc(p) = avw; natc(p) = 1
       qcell = qcell + res%comp_w(p) * res%comp(p)%qnet * inp%ci%dec%nsite
       mcell = mcell + res%comp_w(p) * res%comp(p)%moment * inp%ci%dec%nsite
     end do
@@ -637,7 +694,7 @@ contains
     print '(a,f18.8,a)', '  total energy =', res%etot, ' Ry per site'
     if (.not. res%converged) print '(a)', '  WARNING: SCF did not converge'
     do p = 1, ncomp
-      print '(a,a12,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
+      print '(a,a16,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
     end do
     print '(a,i0,a,f9.5,a,es10.2)', '  per decoration cell (', inp%ci%dec%nsite, ' sites): moment=', mcell, '  net charge=', qcell
 
@@ -645,16 +702,14 @@ contains
     if (.not. par_root()) then
       ok = res%converged; return
     end if
+
+    nthr = 1
+    !$ nthr = omp_get_max_threads()
+    call rep_from_class_scf(inp, res, rep, t0, nthr, start_d, start_t)
+
     dfile = inp%workdir//inp%dos_file
     open (newunit=u, file=dfile, status='replace', action='write')
-    write (u, '(a)') '# '//inp%name//'   states/Ry per atom of each component, summed over spin; total = per site (weighted)'
-    write (u, '(a,f12.8)') '# E_F = ', res%ef
-    if (res%nspin == 2) then                           ! spin-resolved columns per component follow (per atom, per spin)
-      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2', &
-        ('  '//trim(labels(p))//'_up_s _p _d _dn_s _p _d', p=1, ncomp)
-    else
-      write (u, '(a,*(a))') '# E(Ry)  total  ', ('  '//trim(labels(p))//'_s _p _d', p=1, ncomp), '  total_spin1 total_spin2'
-    end if
+    call rep_write_dos_header(u, rep, inp%npoints, inp%emin, inp%emax)
     fsp = 2.0_dp / real(res%nspin, dp)                 ! res%edos is per spin channel; spin = 1 holds both spins in one
     do ie = 1, inp%npoints
       tsp = 0.0_dp
@@ -666,7 +721,7 @@ contains
         write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp, &
           (((res%edos(ie, l, p, sg), l=0, 2), sg=1, 2), p=1, ncomp)
       else
-        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp), tsp
+        write (u, '(f12.6,*(es14.6))') res%edos_e(ie), tot, ((fsp * sum(res%edos(ie, l, p, :)), l=0, 2), p=1, ncomp)
       end if
     end do
     close (u)
@@ -677,183 +732,121 @@ contains
         print '(a,a)', '  wrote ', inp%workdir//inp%epi_file
       end if
     end if
+    if (allocated(res%spec_a)) call write_spectral()
 
-    nthr = 1
-    !$ nthr = omp_get_max_threads()
-    call rep_open(ru, inp%workdir//inp%out_file, 'Sublattice alloy, augmented-space recursion + TB-LMTO-ASA: '//inp%name, inp%infile, nthr)
-    if (par_size() > 1) write (ru, '(a,i0,a)') ' MPI ranks: ', par_size(), ' (the recursion chains of each energy pass are split over the ranks)'
-    call rep_echo_input(ru, inp%infile)
-    call rep_section(ru, 'method')
-    if (trim(inp%ci%route) == 'ed3') then
-      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, full generalised ASA problem (route ed3, two chains per energy), one potential per (sublattice, species) component')
-    else
-      call rep_line(ru, 'Hamiltonian   TB-LMTO-ASA, energy-dependent ASR (asr_ed form), one potential per (sublattice, species) component')
-    end if
-    if (inp%ci%alpha_scale /= 1.0_dp) write (ru, '(a,f7.4)') '  screening constants scaled by ', inp%ci%alpha_scale
-    write (ru, '(a,i0,a,i0,a,i0,a,i0)') '  levels=', inp%ci%nlevels, '  recursion steps=', merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0), &
-      '  max rank=', inp%ci%maxrank, '  supercell=', inp%ci%lsuper
-    write (ru, '(a,*(i0,1x))') '  augmented-space nodes per sublattice: ', res%nodes
-    write (ru, '(a,f6.3,a,f6.3,a,f7.4,a)') '  SIM beta=', inp%ci%sim_beta, '   mixing=', inp%ci%beta, '   fermi_kt=', inp%ci%fermi_kt, ' Ry'
-    if (res%screen%unscreened) then
-      write (ru, '(a)') '  screening: none (sim_beta = 0; fluctuations interact as bare point charges)'
-    else
-      write (ru, '(a,f8.4,a,f7.4,a,f8.4,a,f8.4,a,f7.4,a,f7.4)') '  screening (charge-excess model of the graph lattice): hardness a=', &
-        res%screen%a, ' Ry/e  G00=', res%screen%g00, '  G1=', res%screen%g1, '  W00/G00=', res%screen%w00 / res%screen%g00, &
-        '  first-shell weight lambda=', res%screen%lambda, '  beta max=', res%screen%beta_max
-    end if
-    if (inp%ci%sro .and. allocated(res%mode_lam)) then
-      write (ru, '(a)') '  SRO modes (closure of the first-shell SRO, asr_screening): eigenvalue of Ahat, Gamma = dq/db, first-shell'// &
-        ' form G00 + G1 lambda, F (Ry/e)'
-      do i = 1, size(res%mode_lam)
-        if (res%mode_gam(i) > 1.0e-9_dp * res%screen%g00) then
-          write (ru, '(4x,f9.4,2f11.5,f12.4)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
-            mode_f(res%screen, res%mode_lam(i), res%mode_gam(i))
-        else
-          write (ru, '(4x,f9.4,2f11.5,a)') res%mode_lam(i), res%mode_gam(i), res%screen%g00 + res%screen%g1 * res%mode_lam(i), &
-            '    infinite (full clustering: this charge deviation vanishes)'
-        end if
-      end do
-      if (res%uform) write (ru, '(a)') '  SRO potential iterated in the drive u = db: V = a (1 - Gamma) u, u_out = dq + (1 - Gamma) u_in'
-    end if
-    call rep_line(ru, 'electrostatics  Madelung of the sublattice-average charges (Ewald, decoration cell) + screened deviations (SIM; with SRO'// &
-                  ' the conditional first shell, asr_screening)')
-    call rep_section(ru, 'structure')
-    write (ru, '(a,a,a,f12.6,a,f10.6,a)') ' graph lattice ', trim(inp%ci%lattice), '  a = ', inp%ci%alat, ' Bohr = ', inp%ci%alat * 0.529177210903_dp, ' Angstrom'
-    write (ru, '(a,i0,a,i0,a,f9.5,a)') ' decoration cell ', inp%ci%dec%period, '^3 conventional cubes, ', inp%ci%dec%nsite, ' sites;  S_ws = ', avw, ' Bohr (equal spheres)'
-    do kap = 1, inp%ci%dec%ncls
-      write (ru, '(a,a8,a,f7.4,a,*(a))') ' sublattice ', inp%subname(kap), '  site fraction ', inp%ci%dec%frac(kap), '   ', &
-        (trim(inp%species(inp%ci%spc(i, kap))%symbol)//' ', i=1, inp%ci%nsc(kap))
-      write (ru, '(a,*(f8.4))') '      concentrations ', inp%ci%conc(1:inp%ci%nsc(kap), kap)
-    end do
-    if (inp%ci%sro) then
-      write (ru, '(a)') ' first-shell short-range order (Warren-Cowley): P(neighbour species | centre species); shell sites'// &
-        ' independent given the centre, uncorrelated beyond the first shell; electrostatics: screened conditional shell (asr_screening)'
-      do kap = 1, inp%ci%dec%ncls
-        do k = 1, inp%ci%dec%ncls
-          if (all(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
-                      spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) < 1.0e-12_dp)) cycle
-          do i = 1, inp%ci%nsc(kap)
-            write (ru, '(a,a8,a,a8,a,a4,a,*(f8.4))') '   centre on ', inp%subname(kap), ' neighbour on ', inp%subname(k), &
-              ' centre ', trim(inp%species(inp%ci%spc(i, kap))%symbol), ': ', inp%ci%sro_cond(i, 1:inp%ci%nsc(k), kap, k)
-          end do
-        end do
-      end do
-    end if
-    call rep_scf_history(ru, labels, res%iter, res%hist_dv, res%hist_ef, res%hist_moment, res%hist_qnet, inp%ci%tol, res%converged)
-    if (res%nclamp > 0) then
-      write (ru, '(a,i0,a)') ' WARNING: E_nu was held at its band window in the last iteration (', res%nclamp, ' channels).  This is not a'
-      write (ru, '(a)') '          fixed point: the result depends on the window margin.  Reported as not converged.'
-    end if
-    write (ru, '(a,i0)') ' E_nu band-window clamp, events in the whole run (path only when 0 in the last iteration): ', res%nclamp_run
-    write (ru, '(a,2es10.2,a)') ' valence weight within 3 Ry below the contour bottom, first / final potential:', res%wbelow1, res%wbelow, &
-      ' electrons per site'
-    if (.not. res%below_ok) write (ru, '(a)') ' WARNING: states below the contour bottom: the charges and the energy miss them'
-    write (ru, '(a,i0,a,i0)') ' contour node values with a non-causal Green function (-Im G <= 0) in the last iteration: ', res%nnoncausal, &
-      ' of ', res%nnode
-    if (res%nnoncausal > 0) write (ru, '(a)') ' WARNING: the truncated energy-dependent chain is not causal at these nodes; the charges carry the chain error there'
-    write (ru, '(a)') ' total energy per site (Ry; Kohn-Sham form, output density in the input potential), by iteration:'
-    write (ru, '(i6,f20.8)') (i, res%hist_etot(i), i=1, res%iter)
-    write (ru, '(a,f20.8,a)') ' total energy =', res%etot, ' Ry per site'
-    block
-      type(asa_class_result_t), allocatable :: rc(:)
-      rc = res%comp
-      if (res%nspin == 1) then
-        do p = 1, ncomp; rc(p)%q = 2.0_dp * rc(p)%q; end do
-      end if
-      call rep_classes(ru, labels, zc, nvc, swsc, natc, rc, res%nspin, res%ef, mcell, ' (per component atom; cell = decoration cell)', &
-                       natw=res%comp_w * inp%ci%dec%nsite)
-    end block
-    if (trim(inp%ci%route) == 'ed3') then
-      write (ru, '(a)') ' route ed3: sphere charge per channel, s p d, per spin channel (q0 + p q2; the table above lists q0 alone)'
-      do p = 1, ncomp
-        write (ru, '(3x,a12,*(3f10.5,2x))') labels(p), (2.0_dp / res%nspin * res%qch(p, sg, :), sg=1, res%nspin)
-      end do
-    end if
-    write (ru, '(a)') ' components are (species@sublattice); qnet/moments per atom of that component; cell moment per decoration cell'
-    if (allocated(res%epi)) call report_epi(ru, inp, res)
-    call rep_dos_at_ef(ru, labels, res%edos_e, res%edos, res%ef, inp%eta, res%nspin, 'per-component LDOS from the recursion (eta broadening)')
-    call rep_section(ru, 'timing')
-    write (ru, '(a,f10.2,a)') ' SCF + DOS  ', t_scf, ' s'
-    write (ru, '(a)') ' files written:'
-    write (ru, '(a)') '   '//dfile
-    if (allocated(res%epi)) then
-      if (size(res%epi) > 0) write (ru, '(a)') '   '//inp%workdir//inp%epi_file
-    end if
-    call rep_close(ru, res%converged, rep_wall() - t0)
+    call rep_write_report(rep, inp%workdir//inp%out_file)
     print '(a,a)', '  wrote ', inp%workdir//inp%out_file
+
+    call rep_write_json(rep, inp%workdir//rep%json_file)
+    print '(a,a)', '  wrote ', inp%workdir//rep%json_file
+
     ok = res%converged
   contains
     real(dp) function avg_ws(kind)
-      use asr_strconst, only: avg_ws_radius
+      use asr_strconst, only: avg_ws_radius, standard_alpha
       character(len=*), intent(in) :: kind
       avg_ws = avg_ws_radius(kind)
     end function avg_ws
-  end subroutine run_asr
 
-  !> Section of asr.out on the effective pair interactions (asr_epi): per pair type the table U(c, s) (band, screened Coulomb,
-  !> total) and, on one sublattice, the exchange interactions V(p, q) with the asymmetry of U as the error measure.
-  subroutine report_epi(ru, inp, res)
-    integer, intent(in) :: ru
-    type(run_input_t), intent(in) :: inp
-    type(class_scf_result_t), intent(in) :: res
-    real(dp), allocatable :: ut(:, :), v(:, :), vb(:, :), ve(:, :)
-    integer :: i, c, s, n1, n2
-    call rep_section(ru, 'effective pair interactions')
-    if (size(res%epi) == 0) then
-      write (ru, '(a)') ' none: every sublattice of the requested shells holds one species'; return
-    end if
-    write (ru, '(a)') ' U(c, s) = Omega(c, s) - Omega(c0, s) - Omega(c, s0) + Omega(c0, s0): species c on the origin, s on the partner,'
-    write (ru, '(a)') ' c0 / s0 the first species of the two sublattices; every other site averaged (uncorrelated medium).'
-    write (ru, '(a)') ' band: frozen potentials, thermodynamic integration over the species of the origin (asr_epi).'
-    write (ru, '(a)') ' screened Coulomb: W(R) db_c db_s of the charge-excess model (asr_screening), db = drive deviations.'
-    write (ru, '(a)') ' One sublattice: V(p, q) = U(p,p) + U(q,q) - U(p,q) - U(q,p); V > 0 favours unlike neighbours (ordering).'
-    write (ru, '(a)') ' SRO energy per site: sum over shells of (z / 2) sum_{p<q} x_p x_q V(p, q) alpha(p, q).'
-    write (ru, '(a,i0,a,es9.2,a)') ' path points: ', inp%ci%epi_nlam, ';  weight of a path site below the contour bottom: ', res%epi_wbelow, &
-      ' electrons (must vanish)'
-    if (inp%ci%epi_nlam == 1) write (ru, '(a)') ' 1 path point (midpoint rule): a survey. The error can reach the size of a small table entry; check with 2 points.'
-    if (inp%ci%eblock > 0) write (ru, '(a,i0,a)') ' energy_block = ', inp%ci%eblock, ': the pair chains ran in blocks of contour energies (capped by memory).'
-    if (inp%ci%epi_sym) write (ru, '(a)') ' symmetric = true: on one sublattice U(c, s) is computed for s >= c and U(s, c) = U(c, s) is copied (no error measure).'
-    if (res%epi_wbelow >= wbelow_tol) write (ru, '(a)') ' WARNING: a path species has states below the contour bottom: the pair tables miss them'
-    do i = 1, size(res%epi)
-      associate (t => res%epi(i))
-        n1 = size(t%uband, 1); n2 = size(t%uband, 2)
-        ut = t%uband + t%ues
-        write (ru, '(/,a,a,a,a,a,i0,a,3i3,a,f9.5,a,i0)') ' pair ', trim(inp%subname(t%kap)), ' - ', trim(inp%subname(t%kap2)), '   shell ', t%shell, &
-          '   vector (a/2)', t%vec, '   R = ', t%dist, ' Bohr   sites in the shell: ', t%mult
-        write (ru, '(a,i0,a,i0,a,es9.2,a,f9.5,a)') '   pair group order ', t%nop, '   augmented-space nodes ', t%nodes, &
-          '   X1 mismatch of the two chains ', t%tail, '   W(R) = ', t%wr, ' Ry/e^2'
-        write (ru, '(a,*(a10))') '   U (mRy)        origin \ partner', (trim(inp%species(inp%ci%spc(s, t%kap2))%symbol), s=1, n2)
-        do c = 1, n1
-          write (ru, '(a,a4,a,*(f10.4))') '     band              ', trim(inp%species(inp%ci%spc(c, t%kap))%symbol), '     ', 1.0e3_dp * t%uband(c, :)
+    !> [spectral] file: one block per k point (blank line between blocks), columns path distance, k (2 pi / a), E (Ry), A summed
+    !> over spin, A_s A_p A_d, per spin channel (spin 2), per origin sublattice (states/Ry per graph site)
+    subroutine write_spectral()
+      character(len=:), allocatable :: sfile
+      integer :: us, ik, je, kp, nkp, gs, ns, nl, i0, ie
+      real(dp) :: fs_
+      character(len=13), allocatable :: lab(:)
+      integer, allocatable :: wid(:)
+      sfile = inp%workdir//inp%spec_file
+      fs_ = 2.0_dp / real(res%nspin, dp)
+      nkp = size(res%spec_dist)
+      open (newunit=us, file=sfile, status='replace', action='write')
+      call spectral_header(us, 'Bloch spectral function A(k, E)', .false.)
+      write (us, '(a)') '# blocks     : one block of energies per k point, blocks separated by one blank line (gnuplot index)'
+      write (us, '(a)') '# columns    : A summed over spins and over s p d unless the label says;  A <sublattice>: part of each'
+      write (us, '(a)') '#              origin sublattice (the parts add up to A)'
+      ns = size(res%spec_ac, 3)
+      nl = 9 + ns + merge(2, 0, res%nspin == 2)
+      allocate (lab(nl), wid(nl))
+      lab(1:9) = [character(len=13) :: 'dist', 'kx', 'ky', 'kz', 'E [Ry]', 'A', 'A s', 'A p', 'A d']
+      wid(1:9) = [10, 9, 9, 9, 11, 13, 13, 13, 13]
+      i0 = 9
+      if (res%nspin == 2) then
+        lab(10:11) = [character(len=13) :: 'A up', 'A down']; wid(10:11) = 13; i0 = 11
+      end if
+      do kp = 1, ns
+        lab(i0 + kp) = 'A ' // trim(inp%subname(kp)); wid(i0 + kp) = 13
+      end do
+      call rep_label_rows(us, lab, wid)
+      do ik = 1, nkp
+        do je = 1, size(res%spec_e)
+          if (res%nspin == 2) then
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (sum(res%spec_a(je, ik, :, gs)), gs=1, 2), (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          else
+            write (us, '(f10.5,3f9.5,f11.6,*(es13.5))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_e(je), &
+              fs_ * sum(res%spec_a(je, ik, :, :)), (fs_ * sum(res%spec_a(je, ik, kp, :)), kp=0, 2), &
+              (fs_ * sum(res%spec_ac(je, ik, kp, :)), kp=1, size(res%spec_ac, 3))
+          end if
         end do
-        do c = 1, n1
-          write (ru, '(a,a4,a,*(f10.4))') '     screened Coulomb  ', trim(inp%species(inp%ci%spc(c, t%kap))%symbol), '     ', 1.0e3_dp * t%ues(c, :)
-        end do
-        do c = 1, n1
-          write (ru, '(a,a4,a,*(f10.4))') '     total             ', trim(inp%species(inp%ci%spc(c, t%kap))%symbol), '     ', 1.0e3_dp * ut(c, :)
-        end do
-        if (t%kap == t%kap2) then
-          v = epi_exchange(ut); vb = epi_exchange(t%uband); ve = epi_exchange(t%ues)
-          write (ru, '(a)') '   exchange interactions V(p, q) (mRy): band, screened Coulomb, total;  |U(p,q) - U(q,p)| of the band part'
-          do c = 1, n1
-            do s = c + 1, n1
-              if (c > 1 .and. .not. inp%ci%epi_sym) then   ! pairs with the reference species have U(p,q) = U(q,p) = 0
-                write (ru, '(5x,a4,a,a4,3f11.4,es12.2)') trim(inp%species(inp%ci%spc(c, t%kap))%symbol), ' - ', &
-                  trim(inp%species(inp%ci%spc(s, t%kap))%symbol), 1.0e3_dp * vb(c, s), 1.0e3_dp * ve(c, s), 1.0e3_dp * v(c, s), &
-                  1.0e3_dp * abs(t%uband(c, s) - t%uband(s, c))
-              else
-                write (ru, '(5x,a4,a,a4,3f11.4)') trim(inp%species(inp%ci%spc(c, t%kap))%symbol), ' - ', &
-                  trim(inp%species(inp%ci%spc(s, t%kap))%symbol), 1.0e3_dp * vb(c, s), 1.0e3_dp * ve(c, s), 1.0e3_dp * v(c, s)
-              end if
-            end do
+        write (us, '(a)') ''
+      end do
+      close (us)
+      print '(a,a)', '  wrote ', sfile
+      if (allocated(res%spec_bands)) then              ! ordered, one species: the exact bands of the same H^(2)
+        open (newunit=us, file=sfile//'.bands', status='replace', action='write')
+        call spectral_header(us, 'eigenvalues of H^(2)(k), from the structure constant blocks and parameters of the recursion', .true.)
+        write (us, '(a)') '# columns    : 9 eigenvalues per spin channel, ascending (Ry)'
+        nl = 4 + 9 * size(res%spec_bands, 3)
+        deallocate (lab, wid); allocate (lab(nl), wid(nl))
+        lab(1:4) = [character(len=13) :: 'dist', 'kx', 'ky', 'kz']; wid(1:4) = [10, 9, 9, 9]
+        do gs = 1, size(res%spec_bands, 3)
+          do ie = 1, 9
+            lab(4 + (gs - 1) * 9 + ie) = 'e' // trim(adjustl(itoa_(ie)))
+            if (size(res%spec_bands, 3) == 2) lab(4 + (gs - 1) * 9 + ie) = trim(lab(4 + (gs - 1) * 9 + ie)) // merge(' up  ', ' down', gs == 1)
+            wid(4 + (gs - 1) * 9 + ie) = 11
           end do
-        end if
-      end associate
-    end do
-    write (ru, '(/,a)') ' U(p, q) and U(q, p) come from different chains (the path site and the frozen site are interchanged).  Their'
-    write (ru, '(a)') ' difference measures the error of the chains and of the path quadrature.  It exists for pairs of two species other'
-    write (ru, '(a)') ' than the reference species only (three or more species on the sublattice).'
-  end subroutine report_epi
+        end do
+        call rep_label_rows(us, lab, wid)
+        do ik = 1, nkp
+          write (us, '(f10.5,3f9.5,*(f11.6))') res%spec_dist(ik), res%spec_k(:, ik), res%spec_bands(:, ik, :)
+        end do
+        close (us)
+        print '(a,a)', '  wrote ', sfile//'.bands'
+      end if
+    end subroutine write_spectral
+
+    !> common header of the spectral files: run, route, E_F, path corners, units
+    subroutine spectral_header(us, what, bands)
+      integer, intent(in) :: us
+      character(len=*), intent(in) :: what
+      logical, intent(in) :: bands                    !! the .bands file: no energy mesh, no A
+      integer :: ic
+      write (us, '(a)') '# ASR ' // what
+      write (us, '(a)') '# run        : ' // trim(rep%title) // '   (' // trim(rep%infile) // ', git ' // trim(rep%git_rev) // ')'
+      write (us, '(a,i0,a,f8.5,a,i0,a,f6.3,a)') '# route      : recursion edc, levels ', inp%ci%nlevels, ';  eta ', inp%ci%spectral%eta, &
+        ' Ry;  chain steps ', res%spec_nsteps, ';  rmax ', inp%ci%spectral%rmax, ' alat;  window ' // trim(inp%ci%spectral%window)
+      write (us, '(a,f12.8,a)') '# E_F        : ', res%ef, ' Ry'
+      if (bands) then
+        write (us, '(a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points'
+        write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; eigenvalues in Ry'
+      else
+        write (us, '(a,i0,a,i0,a)') '# mesh       : ', size(res%spec_dist), ' k points x ', size(res%spec_e), ' energies'
+        write (us, '(a)') '# units      : k Cartesian in 2 pi / a; dist along the path in 2 pi / a; E in Ry; A in states/Ry per graph site'
+      end if
+      write (us, '(a)') '# corners    :  label   block   dist        kx       ky       kz'
+      do ic = 1, size(res%spec_icorner)
+        write (us, '(a,a8,i6,f10.5,3f9.5)') '#              ', inp%ci%spectral%labels(ic), res%spec_icorner(ic), &
+          res%spec_dist(res%spec_icorner(ic)), inp%ci%spectral%kpts(:, ic)
+      end do
+    end subroutine spectral_header
+
+    function itoa_(i) result(t)
+      integer, intent(in) :: i
+      character(len=12) :: t
+      write (t, '(i0)') i
+    end function itoa_
+  end subroutine run_asr
 
   !> The pair tables as a TOML file for tools/sro_alpha: one [[pair]] per pair type, energies in Ry.
   subroutine write_epi(inp, res, fname)
@@ -921,4 +914,312 @@ contains
     end do
     close (u)
   end subroutine write_epi
+
+  !> Fill rep_run_t from recursion class_scf_result_t
+  subroutine rep_from_class_scf(inp, res, rep, t0, nthr, start_d, start_t)
+    use iso_fortran_env, only: compiler_version, compiler_options
+    use asr_build_info, only: git_rev, git_dirty
+    use asr_kinds, only: dp, pi
+    use asr_mpi, only: par_size
+    use asr_strconst, only: avg_ws_radius, standard_alpha
+    use asr_contour, only: fermi_npole, fermi_nodes_count
+    use asr_runstats, only: cpu_seconds
+    type(run_input_t), intent(in) :: inp
+    type(class_scf_result_t), intent(in) :: res
+    type(rep_run_t), intent(out) :: rep
+    real(dp), intent(in) :: t0
+    integer, intent(in) :: nthr
+    character(len=10), intent(in) :: start_d, start_t
+    real(dp) :: fsp, avw
+    integer :: p, sg, l, kap, k, i, j, n1, n2, nmax, dot
+
+    rep%prog_name = 'asr'
+    rep%prog_version = '0.1.0'
+    rep%git_rev = git_rev
+    rep%git_dirty = git_dirty
+    rep%compiler_ver = compiler_version()
+    rep%compiler_opts = compiler_options()
+    rep%host = get_host()
+    rep%pid = get_pid()
+    rep%start_date = start_d
+    rep%start_time = start_t
+    call date_and_time(rep%finish_date, rep%finish_time)
+    rep%wall_total = rep_wall() - t0
+    rep%mpi_ranks = par_size()
+    rep%omp_threads = nthr
+    rep%infile = inp%infile
+    rep%fingerprint = fnv1a64_file(inp%infile)
+    rep%workdir = inp%workdir
+    rep%out_file = inp%out_file
+    dot = index(inp%out_file, '.', back=.true.)
+    if (dot > 0) then
+      rep%json_file = inp%out_file(1:dot - 1)//'.json'
+    else
+      rep%json_file = trim(inp%out_file)//'.json'
+    end if
+    rep%dos_file = inp%dos_file
+    if (len_trim(inp%ci%pot_out) > 0) rep%pot_file = inp%ci%pot_out
+    rep%title = inp%name
+    if (allocated(inp%resolved)) rep%resolved = inp%resolved
+
+    ! Method
+    rep%method = 'asr'
+    rep%route = trim(inp%ci%route)
+    rep%xc = trim(inp%ci%xc)
+    rep%relativistic = inp%ci%relativistic
+    rep%nspin = inp%ci%nspin
+    rep%ncomp = res%ncomp
+    rep%nlevels = inp%ci%nlevels
+    rep%nrec = merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0)
+    rep%maxrank = inp%ci%maxrank
+    rep%lsuper = inp%ci%lsuper
+    if (allocated(res%nodes)) rep%nodes = res%nodes
+    allocate (rep%subname(inp%ci%dec%ncls))
+    rep%subname = inp%subname
+    rep%s_range = inp%ci%rcl
+    rep%inv_radius = max(inp%ci%rcl, inp%ci%rinv)            ! rinv = 0: the inversion cluster is the kept range
+    rep%alpha = standard_alpha() * inp%ci%alpha_scale
+    rep%alpha_scale = inp%ci%alpha_scale
+    rep%terminator = inp%ci%ed_tail
+    rep%depth_tol = inp%ci%depth_tol
+    ! occupation contour as asr_class_scf builds it (contour): Fermi function with poles, or a closed contour without smearing
+    rep%contour_main = inp%ci%ncont
+    if (inp%ci%fermi_kt > 0.0_dp) then
+      rep%contour_poles = fermi_npole(inp%ci%fermi_kt)
+      if (inp%ci%fermi_poles > 0) rep%contour_poles = inp%ci%fermi_poles
+      rep%contour_nodes = fermi_nodes_count(rep%contour_poles, inp%ci%ncont, 16)
+    else
+      rep%contour_poles = 0
+      rep%contour_nodes = inp%ci%ncont + 8
+    end if
+    rep%fermi_kt = inp%ci%fermi_kt
+    rep%fermi_poles = inp%ci%fermi_poles
+    rep%ebot_offset = inp%ci%ebot_offset
+    rep%eta = inp%eta
+    rep%ed_eta = inp%ci%ed_eta
+    rep%sim_beta = inp%ci%sim_beta
+    rep%has_screen = .true.
+    rep%unscreened = res%screen%unscreened
+    if (.not. res%screen%unscreened) then
+      rep%screen_a = res%screen%a
+      rep%screen_g00 = res%screen%g00
+      rep%screen_g1 = res%screen%g1
+      rep%screen_w00_g00 = res%screen%w00 / res%screen%g00
+      rep%screen_lambda = res%screen%lambda
+      rep%screen_beta_max = res%screen%beta_max
+    end if
+
+    ! SRO
+    rep%sro%has_sro = inp%ci%sro
+    if (inp%ci%sro) then
+      if (inp%ci%dec%ncls == 1) then
+        rep%sro%sub_centre = inp%subname(1)
+        rep%sro%sub_neigh = inp%subname(1)
+        rep%sro%coord_num = res%screen%z
+        nmax = inp%ci%nsc(1)
+        rep%sro%nspec = nmax
+        allocate (rep%sro%species(nmax), rep%sro%cond_p(nmax, nmax), rep%sro%alpha(nmax, nmax))
+        do i = 1, nmax
+          rep%sro%species(i) = inp%species(inp%ci%spc(i, 1))%symbol
+          do j = 1, nmax
+            rep%sro%cond_p(i, j) = inp%ci%sro_cond(i, j, 1, 1)
+            rep%sro%alpha(i, j) = 1.0_dp - inp%ci%sro_cond(i, j, 1, 1) / max(1.0e-12_dp, inp%ci%conc(j, 1))
+          end do
+        end do
+      else
+        find_pair: do kap = 1, inp%ci%dec%ncls
+          do k = 1, inp%ci%dec%ncls
+            if (any(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
+                        spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) > 1.0e-12_dp)) then
+              rep%sro%sub_centre = inp%subname(kap)
+              rep%sro%sub_neigh = inp%subname(k)
+              rep%sro%coord_num = res%screen%z
+              n1 = inp%ci%nsc(kap); n2 = inp%ci%nsc(k)
+              rep%sro%nspec = n1
+              allocate (rep%sro%species(n1), rep%sro%cond_p(n1, n2), rep%sro%alpha(n1, n2))
+              do i = 1, n1
+                rep%sro%species(i) = inp%species(inp%ci%spc(i, kap))%symbol
+                do j = 1, n2
+                  rep%sro%cond_p(i, j) = inp%ci%sro_cond(i, j, kap, k)
+                  rep%sro%alpha(i, j) = 1.0_dp - inp%ci%sro_cond(i, j, kap, k) / max(1.0e-12_dp, inp%ci%conc(j, k))
+                end do
+              end do
+              exit find_pair
+            end if
+          end do
+        end do find_pair
+      end if
+      if (allocated(res%mode_lam)) then
+        rep%sro%nmodes = size(res%mode_lam)
+        allocate (rep%sro%mode_lam(rep%sro%nmodes), rep%sro%mode_gam(rep%sro%nmodes), &
+                  rep%sro%mode_gform(rep%sro%nmodes), rep%sro%mode_f(rep%sro%nmodes), &
+                  rep%sro%mode_inf(rep%sro%nmodes))
+        rep%sro%mode_lam = res%mode_lam
+        rep%sro%mode_gam = res%mode_gam
+        rep%sro%mode_gform = res%screen%g00 + res%screen%g1 * res%mode_lam
+        do i = 1, rep%sro%nmodes
+          rep%sro%mode_inf(i) = (res%mode_gam(i) <= 1.0e-9_dp * res%screen%g00)
+          if (.not. rep%sro%mode_inf(i)) then
+            rep%sro%mode_f(i) = mode_f(res%screen, res%mode_lam(i), res%mode_gam(i))
+          else
+            rep%sro%mode_f(i) = 0.0_dp
+          end if
+        end do
+      end if
+      rep%sro%uform = res%uform
+      if (allocated(res%udrive)) rep%sro%udrive = res%udrive
+    end if
+
+    ! Mixing
+    rep%mix_type = 'Anderson'
+    rep%mix_beta = inp%ci%beta
+    rep%mix_history = inp%ci%mix_history
+    rep%mix_restart = inp%ci%beta_restart
+    rep%dvmax = 0.15_dp
+    rep%denumax = 0.08_dp
+    rep%tol = inp%ci%tol
+
+    ! Structure
+    rep%lattice = trim(inp%ci%lattice)
+    rep%alat = inp%ci%alat
+    rep%period = inp%ci%dec%period
+    rep%nsite = inp%ci%dec%nsite
+    avw = avg_ws_radius(trim(inp%ci%lattice)) * inp%ci%alat
+    rep%sws_avg = avw
+    rep%cell_vol = (4.0_dp * pi / 3.0_dp) * avw**3 * inp%ci%dec%nsite
+    rep%nsub = inp%ci%dec%ncls
+    allocate (rep%sub(rep%nsub))
+    do kap = 1, rep%nsub
+      rep%sub(kap)%name = inp%subname(kap)
+      rep%sub(kap)%frac = inp%ci%dec%frac(kap)
+      rep%sub(kap)%nspec = inp%ci%nsc(kap)
+      allocate (rep%sub(kap)%species(rep%sub(kap)%nspec), rep%sub(kap)%conc(rep%sub(kap)%nspec))
+      do i = 1, rep%sub(kap)%nspec
+        rep%sub(kap)%species(i) = inp%species(inp%ci%spc(i, kap))%symbol
+        rep%sub(kap)%conc(i) = inp%ci%conc(i, kap)
+      end do
+    end do
+
+    ! Components
+    allocate (rep%comp(res%ncomp))
+    fsp = 2.0_dp / real(res%nspin, dp)
+    do p = 1, res%ncomp
+      rep%comp(p)%label = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
+      rep%comp(p)%species = inp%species(res%comp_spec(p))%symbol
+      rep%comp(p)%subname = inp%subname(res%comp_cls(p))
+      rep%comp(p)%z = inp%species(res%comp_spec(p))%z
+      rep%comp(p)%valence = inp%species(res%comp_spec(p))%nval
+      rep%comp(p)%concentration = res%comp_x(p)
+      rep%comp(p)%weight_per_site = res%comp_w(p)
+      rep%comp(p)%sws = avw
+      rep%comp(p)%qnet = res%comp(p)%qnet
+      rep%comp(p)%moment = res%comp(p)%moment
+      rep%comp(p)%enu = res%comp(p)%enu
+      do sg = 1, res%nspin
+        do l = 0, 2
+          rep%comp(p)%c(l, sg) = res%comp(p)%pp(l, sg)%c
+          rep%comp(p)%sqrdel(l, sg) = res%comp(p)%pp(l, sg)%sqrdel
+          rep%comp(p)%p(l, sg) = res%comp(p)%pp(l, sg)%p
+          rep%comp(p)%gamma(l, sg) = res%comp(p)%pp(l, sg)%gamma
+        end do
+      end do
+      rep%comp(p)%q = fsp * res%comp(p)%q
+      do sg = 1, res%nspin
+        do l = 0, 2
+          if (allocated(res%qch)) then
+            rep%comp(p)%qch(l, sg) = fsp * res%qch(p, sg, l)
+          else
+            rep%comp(p)%qch(l, sg) = rep%comp(p)%q(0, l, sg)
+          end if
+          if (allocated(res%dosef)) then
+            rep%comp(p)%dosef(l, sg) = fsp * res%dosef(p, sg, l)
+          end if
+        end do
+      end do
+      if (allocated(res%ecomp)) then
+        rep%comp(p)%ecomp = res%ecomp(:, p)
+      end if
+    end do
+
+    ! SCF history and observables
+    rep%iter = res%iter
+    rep%converged = res%converged
+    rep%ef = res%ef
+    rep%etot = res%etot
+    rep%eterm = res%eterm
+    if (allocated(res%ecomp)) rep%ecomp = res%ecomp
+    if (allocated(res%hist_etot)) rep%hist_etot = res%hist_etot
+    if (allocated(res%hist_dv)) rep%hist_dv = res%hist_dv
+    if (allocated(res%hist_denu)) rep%hist_denu = res%hist_denu
+    if (allocated(res%hist_ef)) rep%hist_ef = res%hist_ef
+    if (allocated(res%hist_npass)) rep%hist_npass = res%hist_npass
+    if (allocated(res%hist_wall)) rep%hist_wall = res%hist_wall
+    if (allocated(res%hist_moment)) rep%hist_moment = res%hist_moment
+    if (allocated(res%hist_qnet)) rep%hist_qnet = res%hist_qnet
+    rep%qcell = res%qcell
+    rep%moment_site = res%moment_site
+    rep%dosef_site = sum([(res%comp_w(p) * sum(rep%comp(p)%dosef), p=1, res%ncomp)])
+
+    ! Diagnostics
+    rep%nclamp = res%nclamp
+    rep%nclamp_run = res%nclamp_run
+    rep%nnoncausal = res%nnoncausal
+    rep%nnode = res%nnode
+    rep%wbelow1 = res%wbelow1
+    rep%wbelow = res%wbelow
+    rep%below_ok = res%below_ok
+    rep%depth_mean = res%depth_mean
+    rep%nfall = res%nfall
+    rep%mix_nrestart = res%mix_nrestart
+    rep%mix_nh = res%mix_nh
+
+    ! Bloch spectral function
+    if (allocated(res%spec_a)) then
+      rep%spec%on = .true.
+      rep%spec%file = inp%spec_file
+      rep%spec%has_bands = allocated(res%spec_bands)
+      rep%spec%nk = size(res%spec_dist); rep%spec%ne = size(res%spec_e)
+      rep%spec%emin = res%spec_e(1); rep%spec%emax = res%spec_e(size(res%spec_e))
+      rep%spec%eta = inp%ci%spectral%eta; rep%spec%rmax = inp%ci%spectral%rmax; rep%spec%window = inp%ci%spectral%window
+      rep%spec%nsteps = res%spec_nsteps; rep%spec%nt = res%spec_nt
+      rep%spec%maxhop = res%spec_maxhop; rep%spec%hoplim = res%spec_hoplim; rep%spec%nneg = res%spec_nneg
+      rep%spec%rdef = res%spec_rdef; rep%spec%spread = res%spec_spread; rep%spec%spread0 = res%spec_spread0
+      rep%spec%amin = res%spec_amin
+      if (allocated(res%spec_nodes)) rep%spec%nodes = res%spec_nodes
+      if (allocated(res%spec_rsh)) rep%spec%rsh = res%spec_rsh
+      if (allocated(res%spec_decay)) rep%spec%decay = res%spec_decay
+      if (allocated(res%spec_sum)) rep%spec%sumrule = transpose(res%spec_sum)
+      rep%spec%clabel = inp%ci%spectral%labels
+      rep%spec%cdist = res%spec_dist(res%spec_icorner)
+      rep%spec%ck = inp%ci%spectral%kpts
+    end if
+
+    ! Effective pair interactions
+    if (allocated(res%epi)) then
+      rep%epi%on = .true.
+      rep%epi%file = ''
+      if (size(res%epi) > 0) rep%epi%file = inp%epi_file
+      rep%epi%nlam = inp%ci%epi_nlam; rep%epi%eblock = inp%ci%eblock; rep%epi%sym = inp%ci%epi_sym
+      rep%epi%wbelow = res%epi_wbelow; rep%epi%below_ok = res%epi_wbelow < wbelow_tol
+      allocate (rep%epi%pair(size(res%epi)))
+      do i = 1, size(res%epi)
+        associate (t => res%epi(i), q => rep%epi%pair(i))
+          q%sub1 = inp%subname(t%kap); q%sub2 = inp%subname(t%kap2)
+          q%shell = t%shell; q%mult = t%mult; q%nop = t%nop; q%nodes = t%nodes; q%vec = t%vec
+          q%dist = t%dist; q%wr = t%wr; q%tail = t%tail
+          q%uband = t%uband; q%ues = t%ues
+          allocate (q%spec1(size(t%uband, 1)), q%spec2(size(t%uband, 2)))
+          do j = 1, size(q%spec1); q%spec1(j) = inp%species(inp%ci%spc(j, t%kap))%symbol; end do
+          do j = 1, size(q%spec2); q%spec2(j) = inp%species(inp%ci%spc(j, t%kap2))%symbol; end do
+        end associate
+      end do
+    end if
+
+    ! Timing: the parts from the SCF; the total is the whole run so far (input, SCF, DOS), as the end-of-run line
+    rep%timer = res%timer
+    rep%timer%wall_total = rep%wall_total
+    rep%timer%cpu_total = cpu_seconds()
+    if (allocated(res%chain_rank_wall)) rep%chain_rank_wall = res%chain_rank_wall
+    rep%chain_split = res%chain_split
+  end subroutine rep_from_class_scf
 end module asr_driver

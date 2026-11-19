@@ -1592,6 +1592,76 @@ eigenvalue z = 12, and F = a [(G00 + G1 Ahat)^-1 - 1] = +39 Ry/e at sim_beta 1.0
   -0.024; (1,0,1) 0.037 / 0.000 / -0.123; (0,1,1) -0.015 / 0.071 / 0.000; (1,1,1) 0 / 0 / 0.  All within 0.003 e of the
   first-shell form where that converged.  Merged into main (`0af30ad`).
 
+### B3 closure, the start of the drive: why the SRO example diverged from free atoms (2026-11-16; merged `1dfe1bc`)
+Problem: `example/fe66ni14cr20_fcc_sro.toml` (triad (1,1,0), levels 3) did not converge from free atoms (desktop `desk10`: 17
+iterations, dV 5 to 20 Ry; `desk11` with `mixing_restart` 0.0005: the same).  Every converged triad had started from a
+converged potential.
+- Iteration 1 is not the cause.  The free-atom potentials put the Cr $d$ level 0.3 Ry above the Fe $d$ level.  The first
+  charges are Fe +1.51, Ni +0.56, Cr -5.36 e with SRO and +1.31, +0.62, -4.75 e without (random control `desk12/A_rand_fa`).
+  The drive is zero there.  The random run then goes to 0.13 / 0.34 / -0.67 e in one step (dV 2.3, 0.78).
+- Cause: the first drive.  The code set $u = \Gamma^+ dq$ at iteration 1, "so that the first potential is $F\,dq$".  But
+  $u_{out} = dq + (1 - \Gamma) u_{in}$ is the bare charge deviation of the model, $dq + v_{in}/a$, only if the input potential
+  holds the SRO potential $v_{in} = W u_{in}$.  The free-atom potential holds none.  With the first charges, $\Gamma^+ dq$ is
+  (0, +7.65, -5.36) e.  The drive moves by 0.15 / $a$ = 0.095 e per iteration.  So it kept the first charges for tens of
+  iterations.  At iteration 2 the charges are -0.09 / +0.37 / +0.03 e, and the SRO part of the output potential is still
+  (-0.04, +3.85, -2.57) Ry, against (0, +0.39, -0.27) Ry for $F\,dq$ (recomputed from the log: the start file of the run has
+  $u$ = (0.064, 7.525, -5.480), as predicted).  The potentials then move by the step limit towards a potential that belongs to
+  no charge state.
+- In the variables (sphere potential $s = v - W u$, $u$) the map is $s_{out} = \Sigma(q)$, $u_{out} = dq + (1 - \Gamma) u_{in}$.
+  It is the same map as the code's (a linear change of variables).  So the old start is the start from the sphere potential
+  $v_{free} - F\,dq_1$, several Ry off.
+- Fix (`asr_class_scf`): $u$ starts at zero unless `start_potential` holds it.  The map and its fixed point do not change.
+  Without SRO the code path is untouched.  A restart from a file with $u$ is bit for bit as before.  The first SRO potential is
+  $W dq$, at most $a\,|dq|$ per mode, and it follows the charges: $dq = 0$ gives none (`test_screening`, 5 new checks, 70 in all;
+  `fpm test` 38 programs, 374 checks, 0 failed).
+- Test with the old binary (`asr_1dd6058`, levels 2, desktop `desk13`): one iteration from free atoms, then a restart from its
+  `pot.dat`.  With the file as written (`p_uold`) dV stays at 5 to 18 Ry for 12 iterations, as the full run (`p_fa`, 25
+  iterations).  With $u$ set to zero in the file (`p_u0`) the run converges in 34 iterations to 0.000 / +0.0345 / -0.0241 e,
+  $E_F$ -0.07293 Ry (levels 3 from a converged potential, `desk9/t110`: 0.000 / +0.0343 / -0.0240, -0.07278).  The path has one
+  excursion (iteration 14: dV 0.42 to 6.6 Ry, Ni -4.1 e, back at 0.2 Ry two iterations later).
+- With the fix (binary from `0230905`, desktop `desk23`, `desk24`): the shipped example (levels 3) converges from free atoms in
+  40 iterations to 0.000 / +0.0343 / -0.0240 e, $E_F$ -0.072783 Ry (`desk9/t110`: -0.07278).  (1,1,1) converges in 64 iterations
+  to 0 / 0 / 0.  The path still passes through dV of several Ry (example: 7.2 Ry at iteration 20) before it settles.  The other
+  six triads at levels 2 (`desk18`, old binary, u zeroed by hand) all converge, charges equal to `desk9` within 0.003 e.
+- All seven at levels 3 from free atoms (`desk24`, binary `asr_0230905`, 8 threads, 2026-11-17/18): (1,0,0) 38, (0,1,0) 32,
+  (0,0,1) 29, (1,0,1) 36, (0,1,1) 43, (1,1,1) 64 iterations, 2.8 to 5.3 h each.  Energies equal `desk9` (restarts from converged
+  potentials) within 5e-7 Ry per site, charges within 1e-5 e.  So the converged state does not depend on the start.
+
+### B2 CuZn: the 2.2 mRy between recursion and k-space is the screening representation of $H^{(2)}$, not the chain (2026-11-17)
+Problem: ordered B2 \ce{CuZn}, a = 2.85 A, $H^{(2)}$.  Recursion (`edc`, 24 steps, supercell 12, 32 contour points)
+-3446.83638 Ry/atom against k-space (`second_order = true`, nk 24, tetrahedra) -3446.83860: 2.2 mRy, half of the ordering
+energy of 4.2 mRy.  It was read as the error of the truncated chain.
+- The chain is converged (desktop `desk12/B_*`, `desk16`, binary `asr_1dd6058`).  Steps 24 / 48 / 96 and supercell 12 / 24
+  move the energy by at most 0.05 mRy at supercell 24 (-3446.83634, -3446.83638, -3446.83633).  The run used the default
+  levels 4 (215 nodes per sublattice).  Levels 6 / 8 / 12 give -3446.83622 / -3446.83620 / -3446.83622 at 24 steps and
+  -3446.83635 / -3446.83636 at 48 steps (levels 8 / 12): 0.15 mRy in all.  64 contour points: -0.42 mRy.  `cluster_radius`
+  (levels 6, desktop `desk17`) 1.2 / 1.5 / 1.75 / 2.0 / 2.5: -3446.83622 / -3446.83635 / -3446.83615 / -3446.83615 / -3446.83615,
+  within 0.2 mRy.
+- Cause: $H^{(2)} = E_\nu + h - h o h$ drops $h o h o h$ and higher terms.  $h$ and $o$ depend on the screening constants
+  $\alpha$, and only the full series does not.  So $H^{(2)}$ is a different Hamiltonian in every representation, at third
+  order in $o h$.  The recursion uses `standard_alpha()` (0.3485, 0.0530, 0.0107).  The k-space path uses the hard-core
+  values of `sigma` = 0.7 (0.35, 0.0572, 0.0168) unless `std_alpha = true`.  The $d$ constant differs by a factor 1.57.
+- Test (desktop `desk22`, k-space $H^{(2)}$, tetrahedra):
+  | screening constants | nk 24 | nk 32 |
+  |---|---|---|
+  | hard core, `sigma` 0.7 (default) | -3446.83860 | -3446.83910 |
+  | `std_alpha = true` (as the recursion) | -3446.83560 | -3446.83609 |
+  | hard core, `sigma` 0.64 ($\alpha_d$ = 0.0107) | -3446.83464 | |
+  The representation moves the k-space $H^{(2)}$ energy by 3.0 mRy (4.0 mRy over the three sets).
+- In the same representation: recursion -3446.83636 (levels 12, 48 steps, 32 contour points) against k-space -3446.83609
+  (nk 32).  The difference is 0.3 mRy.  Each side still moves by 0.1 to 0.5 mRy with its own parameters (nk 24 to 32:
+  -0.49 mRy; contour points; `cluster_radius`).  So no chain theory is needed for this number.
+- Consequences.  (1) Every internal check of $H^{(2)}$ recursion against k-space needs `std_alpha = true` in `[kspace]`.
+  (2) The ordering energy of 4.2 mRy (ordered minus random, both recursion, one representation) does not carry the 2.2 mRy.
+  (3) The paper sentence after `tab:sro-cuzn` (Sec. 5.7) states the 2.2 mRy as the chain error.  It needs a correction.
+  (4) Full ASA (`ed3` against k-space without `second_order`) has no such term: the full series is independent of $\alpha$.
+- The CuZn per-atom $H^{(2)}$ cells in the recursion representation (desktop `desk25`, `std_alpha = true`, 128-site cells `a0_s1`
+  and `a-0.30_s1`, achieved alpha -0.2656, 81 and 63 iterations): dE -2.343 mRy, dq_Cu +0.0174 e.  With `sigma` 0.7
+  (`desk4/h2cells`): -2.371 mRy, +0.0176 e.  The representation moves the SRO energy by 1 % (0.03 mRy), although it moves the
+  absolute energy by 3 mRy.  The two cells shift together.  So the representation explains none of the `edc` SRO gap.  `edc`
+  (-2.10 mRy, `desk9`) lies 10 % below its own-Hamiltonian cell, and the full-ASA cell (-1.77) differs from the $H^{(2)}$ cell
+  by 32 %.  The `edc` excess over the full-ASA cells is the $H^{(2)}$ Hamiltonian, as stated on 2026-11-16.
+
 ### HEA per-site reference (2026-11-08; desktop `~/asr_ed3/trial/hea_sqs`, `~/asr_ed3/trial/hea_steps`, binary `ab50499`)
 The 40-atom CoCrFeNi SQS of `trial/hea/sqs_cfn_sp`, run again with `site_classes = true`, spin, k-space nk 8, tetrahedra.  Full ASA
 converged in 185 iterations, H^(2) (`second_order = true`) in 180.  Species means over 10 sites each, moments in muB, charges in e:

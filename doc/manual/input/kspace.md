@@ -24,9 +24,9 @@ Diagnostics:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `second_order` | `false` | Use the orthogonal \(H^{(2)}\) that the `edc` route uses, instead of the full generalised ASA problem |
+| `second_order` | `false` | Use the orthogonal \(H^{(2)}=E_\nu+h-h\,o\,h\) instead of the full generalised ASA problem. \(H^{(2)}\) depends on the screening constants at third order, so it is the Hamiltonian of the `edc` route only together with `std_alpha = true` |
 | `alpha_scale` | `1` | Multiply the screening constants by this factor |
-| `std_alpha` | `false` | Use the standard \(\alpha\) set of the recursion instead of the hard-core \(\alpha\) of `sigma` |
+| `std_alpha` | `false` | Use the standard \(\alpha\) set of the recursion instead of the hard-core \(\alpha\) of `sigma`. Set it whenever `second_order` results are compared with the recursion: with the default \(\alpha\) the B2 CuZn energy differs by 3 mRy per atom |
 
 !!! warning "Sharp Fermi-level features"
     When \(E_F\) sits on a sharp d peak, Gaussian smearing biases \(N(E_F)\) upward

@@ -4,7 +4,7 @@
 !>
 !> Site R of class kappa carries an independent random species s_R in {spc(1,kappa) .. spc(nsc(kappa),kappa)} (global species
 !> indices) with probabilities conc(k, kappa).  Its local configuration space has the orthonormal basis phi_0 = 1, phi_1 ..
-!> phi_{nsc-1} (asr_augn::augn_basis on the class concentrations), and a site-diagonal random parameter X_R becomes
+!> phi_{nsc-1} (augn_basis on the class concentrations), and a site-diagonal random parameter X_R becomes
 !>     W_lk = sum_k' X_{spc(k',kappa)} x_k' phi_l(k') phi_k(k')        (local state l -> k);
 !> an ordered class (nsc = 1) never flips and carries X of its species.  A node is (site, flipped sites with their states
 !> 1..nsc-1); a config entry is the integer code  site*nsmax + state.  A site may be non-flippable (average medium, W -> W_00) or
@@ -20,11 +20,13 @@ module asr_augcls
   use asr_kinds, only: dp
   use asr_operator, only: linop
   use asr_augspace, only: graph_t, store_t, store_init, find_or_add, find_state
-  use asr_augn, only: augn_basis
+  !$ use omp_lib, only: omp_get_max_threads
+  use asr_chain, only: chain_vec_par
   implicit none
   private
-  public :: class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, augcls_rand, &
-            augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_freeze_any
+  public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, &
+            augcls_rand, augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_amp_c, augcls_free, &
+            augcls_freeze_any, augcls_set_chi
 
   type :: class_alloy_t
     integer :: nl = 9, nsp = 0, ncls = 0
@@ -40,12 +42,18 @@ module asr_augcls
     real(dp), allocatable :: mt(:, :, :, :)                       !! mt(l+1, k+1, k', class) = x_k' phi_l(k') phi_k(k')
     real(dp), allocatable :: c(:, :), d(:, :), o(:, :), e(:, :), block0(:, :)
     real(dp), allocatable :: btab(:, :, :, :)                     !! btab(l, l2, slot, g): S block times D(g)^T
-    integer, allocatable :: flipr(:, :), flipg(:, :)              !! (nsmax, node): node with the site's own state set to k-1
-    integer, allocatable :: hopr(:, :), hopg(:, :), lst(:), site(:), ncl(:), frozen(:), level(:)
-    real(dp), allocatable :: norb(:), sq(:)
+    !> The node tables below never change after build_augcls_operator.  They are pointers, so that a copy of the operator (one
+    !> per thread in the chain loops of asr_class_scf) shares them instead of duplicating them; only the small parameter arrays,
+    !> frozen and the work space wk are per copy.  augcls_free releases them (on the original, never on a copy).
+    integer, pointer, contiguous :: flipr(:, :) => null(), flipg(:, :) => null()   !! (nsmax, node): node with the site's own state set to k-1
+    integer, pointer, contiguous :: hopr(:, :) => null(), hopg(:, :) => null(), lst(:) => null(), site(:) => null(), &
+                                    ncl(:) => null(), level(:) => null()
+    integer, allocatable :: frozen(:)
+    real(dp), pointer, contiguous :: norb(:) => null(), sq(:) => null()
     integer, allocatable :: pi(:, :)
     real(dp), allocatable :: sg(:, :), chi(:)
-    integer, allocatable :: stab_ptr(:), stab(:)                  !! stabiliser of node i: operations stab(stab_ptr(i):stab_ptr(i+1)-1)
+    real(dp), allocatable :: csg(:, :)                            !! csg(l, g) = chi(g) sg(l, g); set chi with augcls_set_chi only
+    integer, pointer, contiguous :: stab_ptr(:) => null(), stab(:) => null()   !! stabiliser of node i: stab(stab_ptr(i):stab_ptr(i+1)-1)
     real(dp), pointer :: wk(:, :) => null()
   contains
     procedure :: apply => augcls_apply
@@ -53,6 +61,27 @@ module asr_augcls
   end type augcls_op
 
 contains
+
+  !> phi(l, s), l = 0..ns-1 (row l+1), s = 1..ns: orthonormal in <f,g> = sum_s x_s f(s) g(s), phi_0 = 1.
+  subroutine augn_basis(conc, phi)
+    real(dp), intent(in) :: conc(:)
+    real(dp), allocatable, intent(out) :: phi(:, :)
+    integer :: ns, l, m
+    real(dp) :: ip
+    ns = size(conc)
+    allocate (phi(ns, ns)); phi = 0.0_dp
+    phi(1, :) = 1.0_dp
+    do l = 2, ns
+      phi(l, :) = 0.0_dp; phi(l, l - 1) = 1.0_dp                         ! indicator of species l-1
+      do m = 1, l - 1                                                    ! twice: numerical stability
+        ip = sum(conc * phi(m, :) * phi(l, :)); phi(l, :) = phi(l, :) - ip * phi(m, :)
+      end do
+      do m = 1, l - 1
+        ip = sum(conc * phi(m, :) * phi(l, :)); phi(l, :) = phi(l, :) - ip * phi(m, :)
+      end do
+      phi(l, :) = phi(l, :) / sqrt(sum(conc * phi(l, :)**2))
+    end do
+  end subroutine augn_basis
 
   pure integer function augcls_dim(self)
     class(augcls_op), intent(in) :: self
@@ -67,8 +96,9 @@ contains
     integer :: g
     op%start_l = l0
     do g = 1, op%nop
-      op%chi(g) = dmat(l0, l0, g)
-      if (abs(abs(op%chi(g)) - 1.0_dp) > 1.0e-9_dp) error stop 'augcls_set_start: start orbital is not one-dimensional under the group'
+      if (abs(abs(dmat(l0, l0, g)) - 1.0_dp) > 1.0e-9_dp) error stop 'augcls_set_start: start orbital is not one-dimensional under the group'
+      op%chi(g) = sign(1.0_dp, dmat(l0, l0, g))
+      op%csg(:, g) = op%chi(g) * op%sg(:, g)
     end do
   end subroutine augcls_set_start
 
@@ -115,6 +145,19 @@ contains
     if (present(nfound)) nfound = n
   end subroutine augcls_freeze_any
 
+  !> Characters of the start vector under the group (asr_epi: a symmetry-adapted start).  Sets chi and the signed orbital
+  !> table csg = chi sg together; writing op%chi alone leaves csg stale.
+  subroutine augcls_set_chi(op, chi)
+    type(augcls_op), intent(inout) :: op
+    real(dp), intent(in) :: chi(:)
+    integer :: g
+    if (size(chi) /= op%nop) error stop 'augcls_set_chi: one character per group operation'
+    op%chi = chi
+    do g = 1, op%nop
+      op%csg(:, g) = op%chi(g) * op%sg(:, g)
+    end do
+  end subroutine augcls_set_chi
+
   !> New concentrations of class kap (same species list and node set): short-range order sets the first-shell class of the frozen
   !> start site to the conditional concentrations of the central species.  Species of zero weight are allowed (see class_mt).
   subroutine augcls_set_class_conc(op, kap, conc)
@@ -127,7 +170,7 @@ contains
   end subroutine augcls_set_class_conc
 
   !> mt(l+1, k+1, k') = x_k' phi_l(k') phi_k(k') for one class.  The basis phi_0 .. phi_{n'-1} is built on the n' species of
-  !> non-zero weight only (asr_augn::augn_basis is singular otherwise); local states n' .. n-1 then have all mt entries zero, so
+  !> non-zero weight only (augn_basis is singular otherwise); local states n' .. n-1 then have all mt entries zero, so
   !> they are never coupled to the rest of the node set and drop out of every chain.
   subroutine class_mt(conc, mt)
     real(dp), intent(in) :: conc(:)
@@ -185,9 +228,22 @@ contains
     real(dp), intent(out) :: out(9)
     integer :: l
     do l = 1, 9
-      out(l) = op%chi(g) * op%sg(l, g) * v(9 * (r - 1) + op%pi(l, g))
+      out(l) = op%csg(l, g) * v(9 * (r - 1) + op%pi(l, g))
     end do
   end subroutine at_link
+
+  !> Amplitudes (9 orbitals) of the unreduced vector at a node, from the reduced vector v in normalised coordinates.  The node is
+  !> given by its link (r, g): r its representative, g the operation that maps it onto r (build_augcls_operator, tnode / tgop).
+  !> v holds sqrt(orbit size) times the amplitude at r, so psi(node) = chi(g) D(g)^T v(r) / sqrt(orbit size).  r = 0: zero.
+  pure function augcls_amp_c(op, v, r, g) result(amp)
+    class(augcls_op), intent(in) :: op
+    complex(dp), intent(in) :: v(:)
+    integer, intent(in) :: r, g
+    complex(dp) :: amp(9)
+    if (r <= 0) then; amp = (0.0_dp, 0.0_dp); return; end if
+    call at_link_c(op, v, r, g, amp)
+    amp = amp / op%sq(r)
+  end function augcls_amp_c
 
   pure subroutine at_link_c(op, v, r, g, out)
     class(augcls_op), intent(in) :: op
@@ -196,7 +252,7 @@ contains
     complex(dp), intent(out) :: out(9)
     integer :: l
     do l = 1, 9
-      out(l) = op%chi(g) * op%sg(l, g) * v(9 * (r - 1) + op%pi(l, g))
+      out(l) = op%csg(l, g) * v(9 * (r - 1) + op%pi(l, g))
     end do
   end subroutine at_link_c
 
@@ -268,7 +324,7 @@ contains
       do j = self%stab_ptr(i), self%stab_ptr(i + 1) - 1
         g = self%stab(j)
         do l = 1, 9
-          acc(l) = acc(l) + self%chi(g) * self%sg(l, g) * x(9 * (i - 1) + self%pi(l, g))
+          acc(l) = acc(l) + self%csg(l, g) * x(9 * (i - 1) + self%pi(l, g))
         end do
       end do
       x(9 * (i - 1) + 1:9 * i) = acc / real(ns, dp)
@@ -380,22 +436,24 @@ contains
     real(dp), intent(in) :: x(:)
     real(dp), intent(out) :: hx(:), t1(:), t2(:), t3(:)
     integer :: i, k, l, l2, g, r
-    real(dp) :: acc(9)
+    real(dp) :: acc(9), tl
     call apply_rand(self, self%d, x, t1)                               ! t1 = D x
-    !$omp parallel do private(k, l, l2, g, r, acc)
-    do i = 1, self%nn                                                  ! t2 = S t1
+    ! t2 = S t1.  The inner loop runs over the contiguous first index of block0 and btab.  Each acc(l) still sums its terms in
+    ! the order l2, then slot, and chi(g) = +-1 multiplies t1 exactly, so the result has the same bits as the l-outer form.
+    !$omp parallel do private(k, l, l2, g, r, acc, tl)
+    do i = 1, self%nn
       acc = 0.0_dp
-      do l = 1, 9
-        do l2 = 1, 9; acc(l) = acc(l) + self%block0(l, l2) * t1(9 * (i - 1) + l2); end do
+      do l2 = 1, 9
+        tl = t1(9 * (i - 1) + l2)
+        do l = 1, 9; acc(l) = acc(l) + self%block0(l, l2) * tl; end do
       end do
       do k = 1, self%nslot
         r = self%hopr(k, i)
         if (r == 0) cycle
         g = self%hopg(k, i)
-        do l = 1, 9
-          do l2 = 1, 9
-            acc(l) = acc(l) + self%chi(g) * self%btab(l, l2, k, g) * t1(9 * (r - 1) + l2)
-          end do
+        do l2 = 1, 9
+          tl = self%chi(g) * t1(9 * (r - 1) + l2)
+          do l = 1, 9; acc(l) = acc(l) + self%btab(l, l2, k, g) * tl; end do
         end do
       end do
       t2(9 * (i - 1) + 1:9 * i) = acc
@@ -403,7 +461,15 @@ contains
     !$omp end parallel do
     call apply_rand(self, self%d, t2, t3)                              ! t3 = D S D x
     call apply_rand(self, self%c, x, hx)                               ! hx = c x
-    hx = hx + t3
+    if (chain_vec_par) then
+      !$omp parallel do
+      do i = 1, size(hx)
+        hx(i) = hx(i) + t3(i)
+      end do
+      !$omp end parallel do
+    else
+      hx = hx + t3
+    end if
   end subroutine apply_h
 
   ! ------------------------------------------------------------------ canonical nodes
@@ -467,10 +533,49 @@ contains
     allocate (s(n)); s = t(1:n)
   end subroutine uniq3
 
+  !> append the record rec to the buffer d (nrec entries used), growing it as needed
+  pure subroutine cand_push(d, nrec, rec)
+    integer, allocatable, intent(inout) :: d(:)
+    integer, intent(inout) :: nrec
+    integer, intent(in) :: rec(:)
+    integer, allocatable :: t(:)
+    if (nrec + size(rec) > size(d)) then
+      allocate (t(max(2 * size(d), nrec + size(rec))))
+      t(1:nrec) = d(1:nrec)
+      call move_alloc(t, d)
+    end if
+    d(nrec + 1:nrec + size(rec)) = rec
+    nrec = nrec + size(rec)
+  end subroutine cand_push
+
+  !> release the shared node tables and the work space of an operator from build_augcls_operator.  Call it on the original
+  !> only: the copies share the tables (their own wk is released by whoever allocated it).
+  subroutine augcls_free(op)
+    type(augcls_op), intent(inout) :: op
+    if (associated(op%flipr)) deallocate (op%flipr)
+    if (associated(op%flipg)) deallocate (op%flipg)
+    if (associated(op%hopr)) deallocate (op%hopr)
+    if (associated(op%hopg)) deallocate (op%hopg)
+    if (associated(op%lst)) deallocate (op%lst)
+    if (associated(op%site)) deallocate (op%site)
+    if (associated(op%ncl)) deallocate (op%ncl)
+    if (associated(op%level)) deallocate (op%level)
+    if (associated(op%norb)) deallocate (op%norb)
+    if (associated(op%sq)) deallocate (op%sq)
+    if (associated(op%stab_ptr)) deallocate (op%stab_ptr)
+    if (associated(op%stab)) deallocate (op%stab)
+    if (associated(op%wk)) deallocate (op%wk)
+    op%nn = 0
+  end subroutine augcls_free
+
   ! ------------------------------------------------------------------ builder
   !> Node set = closure of the support of H (paths R -> R1 -> R2, every visited site in any of its allowed states), rank-limited,
   !> on canonical representatives.  cls(site) = class of every graph site; perm(:, 1:nop), dmat(9, 9, nop): the group.
-  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable)
+  !> tsite (optional): target graph sites.  For each target and local state k = 0 .. nsc - 1 (the site alone in state k, every
+  !> other site in its reference state) tnode(k + 1, t) returns the representative node and tgop(k + 1, t) the operation that
+  !> maps the node onto it (augcls_amp_c).  tnode = 0: the node is not in the node set (or the site cannot flip).  The node store
+  !> exists only inside this routine, so the lookup is done here (asr_spectral).
+  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable, tsite, tnode, tgop)
     type(graph_t), intent(in) :: g
     type(class_alloy_t), intent(in) :: mdl
     integer, intent(in) :: cls(:), perm(:, :), start, maxlevel
@@ -478,10 +583,17 @@ contains
     type(augcls_op), intent(out) :: op
     integer, intent(in), optional :: maxrank
     logical, intent(in), optional :: flippable(:)
+    integer, intent(in), optional :: tsite(:)
+    integer, allocatable, intent(out), optional :: tnode(:, :), tgop(:, :)
     type(store_t) :: st
     logical, allocatable :: canflip(:)
-    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), stb(:)
-    integer :: nstb
+    integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), nstbn(:)
+    integer :: nstb, nthr, i2, ii, nrec
+    type :: cand_t                                       !! candidates of one node: records (site, orbit size, n, cfg(1:n))
+      integer :: n = 0
+      integer, allocatable :: d(:)
+    end type cand_t
+    type(cand_t), allocatable :: cb(:)
     integer :: nop, nsm, i, lev, r, r1, r2, k1, k2, nsit, f, j, idx, rkmax, cs, osz, gb, ns, k, l, gg, jj, kap, ncomb, q, dgt
     logical :: isnew
 
@@ -505,33 +617,57 @@ contains
     call canon_node(perm, nop, nsm, start, cfg0, cs, ccf, osz, gb)
     if (osz /= 1) error stop 'build_augcls_operator: start site is not invariant under the group'
     idx = find_or_add(st, cs, ccf, 0, isnew); st%orb(idx) = 1
+    ! Breadth-first closure, in chunks of nodes that exist already.  The candidates of a chunk (canonical form of every reachable
+    ! configuration) are computed in parallel: canon_node does not depend on the store.  They are then inserted serially in the
+    ! order (node, k1, k2, f) of the plain serial loop, so every node gets the same index as there, for any number of threads.
+    nthr = 1
+    !$ nthr = omp_get_max_threads()
+    allocate (cb(max(16, 4 * nthr)))
     i = 1
     do while (i <= st%n)
-      lev = st%level(i)
-      if (lev >= maxlevel) then; i = i + 1; cycle; end if
-      r = st%site(i)
-      c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
-        if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
-        do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
-          if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
-          call uniq3(r, r1, r2, sites, nsit)
-          ncomb = product(nst(sites))
-          do f = 0, ncomb - 1
-            cc = c0; q = f
-            do j = 1, nsit
-              if (nst(sites(j)) == 1) cycle
-              dgt = mod(q, nst(sites(j))); q = q / nst(sites(j))
-              tmp = set_state(cc, sites(j), dgt, nsm); cc = tmp
+      i2 = min(st%n, i + size(cb) - 1)
+      !$omp parallel do schedule(dynamic) private(lev, r, c0, k1, k2, r1, r2, sites, nsit, ncomb, f, cc, q, j, dgt, tmp, cs, ccf, &
+      !$omp&                                       osz, gb, nrec)
+      do ii = i, i2
+        nrec = 0
+        if (.not. allocated(cb(ii - i + 1)%d)) allocate (cb(ii - i + 1)%d(1024))
+        lev = st%level(ii)
+        if (lev < maxlevel) then
+          r = st%site(ii)
+          c0 = st%data(st%start(ii):st%start(ii) + st%len(ii) - 1)
+          do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
+            if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
+            do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
+              if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
+              call uniq3(r, r1, r2, sites, nsit)
+              ncomb = product(nst(sites))
+              do f = 0, ncomb - 1
+                cc = c0; q = f
+                do j = 1, nsit
+                  if (nst(sites(j)) == 1) cycle
+                  dgt = mod(q, nst(sites(j))); q = q / nst(sites(j))
+                  tmp = set_state(cc, sites(j), dgt, nsm); cc = tmp
+                end do
+                if (size(cc) > rkmax) cycle
+                call canon_node(perm, nop, nsm, r2, cc, cs, ccf, osz, gb)
+                call cand_push(cb(ii - i + 1)%d, nrec, [cs, osz, size(ccf), ccf])
+              end do
             end do
-            if (size(cc) > rkmax) cycle
-            call canon_node(perm, nop, nsm, r2, cc, cs, ccf, osz, gb)
-            idx = find_or_add(st, cs, ccf, lev + 1, isnew)
-            if (isnew) st%orb(idx) = osz
           end do
+        end if
+        cb(ii - i + 1)%n = nrec
+      end do
+      !$omp end parallel do
+      do ii = i, i2                                                      ! serial insertion, in the order of the serial loop
+        lev = st%level(ii); k = 0
+        do while (k < cb(ii - i + 1)%n)
+          cs = cb(ii - i + 1)%d(k + 1); osz = cb(ii - i + 1)%d(k + 2); nsit = cb(ii - i + 1)%d(k + 3)
+          idx = find_or_add(st, cs, cb(ii - i + 1)%d(k + 4:k + 3 + nsit), lev + 1, isnew)
+          if (isnew) st%orb(idx) = osz
+          k = k + 3 + nsit
         end do
       end do
-      i = i + 1
+      i = i2 + 1
     end do
 
     ! ---- tables
@@ -553,7 +689,7 @@ contains
     if (allocated(mdl%e)) op%e = mdl%e
     allocate (op%block0(9, 9)); op%block0 = 0.0_dp
     if (allocated(mdl%block0)) op%block0 = mdl%block0
-    allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop))
+    allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop), op%csg(9, nop))
     do gg = 1, nop                                                     ! orbital operation tables: D[pi(l),l] = sg(l)
       do l = 1, 9
         op%pi(l, gg) = 0; op%sg(l, gg) = 0.0_dp
@@ -574,18 +710,41 @@ contains
       end do
     end do
     op%chi = 1.0_dp
-    allocate (op%stab_ptr(st%n + 1), stb(nop * st%n)); nstb = 0
+    op%csg = op%sg
+    ! node tables: stabilisers counted in a first parallel pass (their offsets need a prefix sum), then every column i of the
+    ! tables filled in parallel; the store is read only (find_state), so the result does not depend on the threads
+    allocate (op%stab_ptr(st%n + 1), nstbn(st%n))
+    !$omp parallel do schedule(dynamic, 64) private(r, c0, gg, c2)
     do i = 1, st%n
       r = st%site(i)
       c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
-      op%stab_ptr(i) = nstb + 1                                        ! stabiliser: g maps the site and the configuration onto themselves
+      nstbn(i) = 0
       do gg = 1, nop
         if (perm(r, gg) /= r) cycle
         c2 = [(perm(c0(k) / nsm, gg) * nsm + mod(c0(k), nsm), k=1, size(c0))]
         call sort_small(c2)
-        if (all(c2 == c0)) then; nstb = nstb + 1; stb(nstb) = gg; end if
+        if (all(c2 == c0)) nstbn(i) = nstbn(i) + 1
       end do
-      if ((nstb - op%stab_ptr(i) + 1) * st%orb(i) /= nop) error stop 'build_augcls_operator: stabiliser size /= group order / orbit size'
+      if (nstbn(i) * st%orb(i) /= nop) error stop 'build_augcls_operator: stabiliser size /= group order / orbit size'
+    end do
+    !$omp end parallel do
+    op%stab_ptr(1) = 1
+    do i = 1, st%n
+      op%stab_ptr(i + 1) = op%stab_ptr(i) + nstbn(i)
+    end do
+    nstb = op%stab_ptr(st%n + 1) - 1
+    allocate (op%stab(nstb))
+    !$omp parallel do schedule(dynamic, 64) private(r, c0, gg, c2, j, k, tmp, cs, ccf, osz, gb)
+    do i = 1, st%n
+      r = st%site(i)
+      c0 = st%data(st%start(i):st%start(i) + st%len(i) - 1)
+      j = op%stab_ptr(i)                                               ! stabiliser: g maps the site and the configuration onto themselves
+      do gg = 1, nop
+        if (perm(r, gg) /= r) cycle
+        c2 = [(perm(c0(k) / nsm, gg) * nsm + mod(c0(k), nsm), k=1, size(c0))]
+        call sort_small(c2)
+        if (all(c2 == c0)) then; op%stab(j) = gg; j = j + 1; end if
+      end do
       op%level(i) = st%level(i); op%norb(i) = real(st%orb(i), dp); op%sq(i) = sqrt(op%norb(i)); op%site(i) = r
       op%ncl(i) = cls(r)
       op%lst(i) = get_state(c0, r, nsm)
@@ -605,8 +764,20 @@ contains
         if (j > 0) then; op%hopr(k, i) = j; op%hopg(k, i) = gb; end if
       end do
     end do
-    op%stab_ptr(st%n + 1) = nstb + 1
-    op%stab = stb(1:nstb)
+    !$omp end parallel do
+    if (present(tsite)) then                                           ! target nodes (see the header)
+      if (.not. (present(tnode) .and. present(tgop))) error stop 'build_augcls_operator: tsite needs tnode and tgop'
+      allocate (tnode(nsm, size(tsite)), tgop(nsm, size(tsite))); tnode = 0; tgop = 1
+      do i = 1, size(tsite)
+        r = tsite(i)
+        do k = 0, mdl%nsc(cls(r)) - 1
+          if (k > 0 .and. (r == start .or. .not. canflip(r))) cycle
+          tmp = set_state(cfg0, r, k, nsm)
+          call canon_node(perm, nop, nsm, r, tmp, cs, ccf, osz, gb)
+          tnode(k + 1, i) = find_state(st, cs, ccf); tgop(k + 1, i) = gb
+        end do
+      end do
+    end if
     allocate (op%wk(9 * st%n, 8))
     call augcls_set_start(op, 1, dmat)
   end subroutine build_augcls_operator
