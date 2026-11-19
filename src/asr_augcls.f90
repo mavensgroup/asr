@@ -51,6 +51,7 @@ module asr_augcls
     real(dp), pointer, contiguous :: norb(:) => null(), sq(:) => null()
     integer, allocatable :: pi(:, :)
     real(dp), allocatable :: sg(:, :), chi(:)
+    real(dp), allocatable :: csg(:, :)                            !! csg(l, g) = chi(g) sg(l, g), exactly 0 or +-1
     integer, pointer, contiguous :: stab_ptr(:) => null(), stab(:) => null()   !! stabiliser of node i: stab(stab_ptr(i):stab_ptr(i+1)-1)
     real(dp), pointer :: wk(:, :) => null()
   contains
@@ -94,8 +95,9 @@ contains
     integer :: g
     op%start_l = l0
     do g = 1, op%nop
-      op%chi(g) = dmat(l0, l0, g)
-      if (abs(abs(op%chi(g)) - 1.0_dp) > 1.0e-9_dp) error stop 'augcls_set_start: start orbital is not one-dimensional under the group'
+      if (abs(abs(dmat(l0, l0, g)) - 1.0_dp) > 1.0e-9_dp) error stop 'augcls_set_start: start orbital is not one-dimensional under the group'
+      op%chi(g) = sign(1.0_dp, dmat(l0, l0, g))
+      op%csg(:, g) = op%chi(g) * op%sg(:, g)
     end do
   end subroutine augcls_set_start
 
@@ -192,7 +194,7 @@ contains
     real(dp), intent(out) :: out(9)
     integer :: l
     do l = 1, 9
-      out(l) = op%chi(g) * op%sg(l, g) * v(9 * (r - 1) + op%pi(l, g))
+      out(l) = op%csg(l, g) * v(9 * (r - 1) + op%pi(l, g))
     end do
   end subroutine at_link
 
@@ -216,7 +218,7 @@ contains
     complex(dp), intent(out) :: out(9)
     integer :: l
     do l = 1, 9
-      out(l) = op%chi(g) * op%sg(l, g) * v(9 * (r - 1) + op%pi(l, g))
+      out(l) = op%csg(l, g) * v(9 * (r - 1) + op%pi(l, g))
     end do
   end subroutine at_link_c
 
@@ -288,7 +290,7 @@ contains
       do j = self%stab_ptr(i), self%stab_ptr(i + 1) - 1
         g = self%stab(j)
         do l = 1, 9
-          acc(l) = acc(l) + self%chi(g) * self%sg(l, g) * x(9 * (i - 1) + self%pi(l, g))
+          acc(l) = acc(l) + self%csg(l, g) * x(9 * (i - 1) + self%pi(l, g))
         end do
       end do
       x(9 * (i - 1) + 1:9 * i) = acc / real(ns, dp)
@@ -400,22 +402,24 @@ contains
     real(dp), intent(in) :: x(:)
     real(dp), intent(out) :: hx(:), t1(:), t2(:), t3(:)
     integer :: i, k, l, l2, g, r
-    real(dp) :: acc(9)
+    real(dp) :: acc(9), tl
     call apply_rand(self, self%d, x, t1)                               ! t1 = D x
-    !$omp parallel do private(k, l, l2, g, r, acc)
-    do i = 1, self%nn                                                  ! t2 = S t1
+    ! t2 = S t1.  The inner loop runs over the contiguous first index of block0 and btab.  Each acc(l) still sums its terms in
+    ! the order l2, then slot, and chi(g) = +-1 multiplies t1 exactly, so the result has the same bits as the l-outer form.
+    !$omp parallel do private(k, l, l2, g, r, acc, tl)
+    do i = 1, self%nn
       acc = 0.0_dp
-      do l = 1, 9
-        do l2 = 1, 9; acc(l) = acc(l) + self%block0(l, l2) * t1(9 * (i - 1) + l2); end do
+      do l2 = 1, 9
+        tl = t1(9 * (i - 1) + l2)
+        do l = 1, 9; acc(l) = acc(l) + self%block0(l, l2) * tl; end do
       end do
       do k = 1, self%nslot
         r = self%hopr(k, i)
         if (r == 0) cycle
         g = self%hopg(k, i)
-        do l = 1, 9
-          do l2 = 1, 9
-            acc(l) = acc(l) + self%chi(g) * self%btab(l, l2, k, g) * t1(9 * (r - 1) + l2)
-          end do
+        do l2 = 1, 9
+          tl = self%chi(g) * t1(9 * (r - 1) + l2)
+          do l = 1, 9; acc(l) = acc(l) + self%btab(l, l2, k, g) * tl; end do
         end do
       end do
       t2(9 * (i - 1) + 1:9 * i) = acc
@@ -651,7 +655,7 @@ contains
     if (allocated(mdl%e)) op%e = mdl%e
     allocate (op%block0(9, 9)); op%block0 = 0.0_dp
     if (allocated(mdl%block0)) op%block0 = mdl%block0
-    allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop))
+    allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop), op%csg(9, nop))
     do gg = 1, nop                                                     ! orbital operation tables: D[pi(l),l] = sg(l)
       do l = 1, 9
         op%pi(l, gg) = 0; op%sg(l, gg) = 0.0_dp
@@ -672,6 +676,7 @@ contains
       end do
     end do
     op%chi = 1.0_dp
+    op%csg = op%sg
     ! node tables: stabilisers counted in a first parallel pass (their offsets need a prefix sum), then every column i of the
     ! tables filled in parallel; the store is read only (find_state), so the result does not depend on the threads
     allocate (op%stab_ptr(st%n + 1), nstbn(st%n))
