@@ -1,7 +1,7 @@
 # STATUS
 
-Updated 2026-11-19.  `main` = `9383b29` (streamline, output-data, spectral window, parallel teams and hot loops merged).  The review fixes
-(`docs/REVIEW_fable.md`) and the F4 analysis are on `main`.  The only other branch is `epi-sro` (unmerged).
+Updated 2026-11-19.  `main` = `9bc255a` (streamline, output-data, spectral window, parallel teams, hot loops and epi-sro merged).  The review fixes
+(`docs/REVIEW_fable.md`) and the F4 analysis are on `main`.  No other branch is open.
 🟢 done and verified · 🟠 in progress or partly verified · 🔴 not done · ⛔ blocker.
 Only verified claims are marked 🟢.  Numbers, tables and history: `docs/FINDINGS_LOG.md` (section names in brackets).
 Plan and order of work: `docs/ROADMAP.md`.  Where things are and how to run them: `docs/HANDOFF.md`.
