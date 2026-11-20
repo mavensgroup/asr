@@ -1,5 +1,5 @@
-!> Effective pair interactions (EPI) from the augmented-space recursion: the input of the short-range order thermodynamics
-!> (tools/sro_alpha).  N species, any shell, any pair of sublattices.
+!> Effective pair interactions (EPI) from the augmented-space recursion: the input of a Monte Carlo of the short-range
+!> order.  N species, any shell, any pair of sublattices.
 !>
 !> Quantity.  Omega(c, s) is the grand potential (frozen potentials, fixed E_F) with species c on site 0, species s on a site j
 !> of shell n, and every other site averaged.  The pair table is the mixed second difference against the first species c0, s0

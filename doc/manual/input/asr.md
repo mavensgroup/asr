@@ -105,7 +105,8 @@ clustering depends on the order beyond the first shell, which this input does no
 ## `[epi]`
 
 Effective pair interactions of the converged alloy ([[asr_epi]]). They are the input
-of the short-range order thermodynamics (`tools/sro_alpha`). The section needs
+of a Monte Carlo or cluster-variation treatment of the short-range order, or can be
+compared with interactions fitted to experiment. The section needs
 `method = "asr"`. Both routes work. `edc` uses \(H^{(2)}\), and `ed3` uses the full
 generalised ASA problem of the SCF.
 
@@ -114,7 +115,7 @@ generalised ASA problem of the SCF.
 | `shells` | `0` | Coordination shells per sublattice. `0` switches the calculation off |
 | `lambda_points` | `4` | Gauss–Legendre nodes of the species path |
 | `symmetric` | `false` | `true`: on one sublattice only \(U(c,s)\) with \(s\ge c\) is computed, and \(U(s,c)=U(c,s)\) is copied |
-| `file` | `epi.toml` | Pair tables for `tools/sro_alpha` |
+| `file` | `epi.toml` | Pair tables (TOML) |
 
 The run computes the pair table \(U(c,s)\) for every pair type after the SCF.
 A pair type is one shell of one pair of sublattices. Species \(c\) sits on the
@@ -176,13 +177,5 @@ shell. Use MPI for alloys with four or more species. Three settings reduce the c
   table changes at rounding level only. The gain for the pair chains is not yet
   measured. The SCF gains 1.35× with `energy_block = 8`.
 
-From the pair tables to \(\alpha(T)\):
-
-```sh
-python3 -I tools/sro_alpha/sro_alpha.py epi.toml -T 1200 1000 800 --cool --kcm
-```
-
-The tool runs a canonical Monte Carlo of the pair model. It prints the
-Warren–Cowley parameters of every pair type and the `[[sro]]` block of the first
-shell for each temperature. `--kcm` adds the spherical-model result and the
-mean-field instability of the random alloy (one sublattice).
+`epi.toml` holds one `[[pair]]` table per pair type, energies in Ry. Any Monte Carlo
+code of the pair model \(E=\sum_{i<j}U(s_i,s_j)\) can read it.

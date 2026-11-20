@@ -1118,7 +1118,7 @@ contains
     end if
     if (r%epi%on) then
       fn = trim(r%epi%file)
-      write (line, '(1x,a28,2x,a)') fn, 'effective pair interactions (tools/sro_alpha)'
+      write (line, '(1x,a28,2x,a)') fn, 'effective pair interactions'
       call wline(u, line)
     end if
     if (len_trim(r%pot_file) > 0) then

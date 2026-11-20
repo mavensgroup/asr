@@ -94,7 +94,7 @@ uses them).
 * radial solver: hydrogenic levels 1e-10 Ry; free atoms He/Ne vs NIST LDA to 3e-7 Ha
 * augmented-space recursion equals the exact average over all 2^N configurations (1e-14), also for the multi-orbital TB-LMTO form and multi-sublattice/multicomponent classes
 * SRO electrostatics: the screened charge-excess model stays finite and positive for every first-shell SRO up to complete clustering; the closure is checked against exact solutions of the model on Monte Carlo supercells (`tools/sro_closure`)
-* effective pair interactions (`[epi]`, `asr_epi`): the frozen-pair chains equal the exact configuration average of Tr[G dH/dλ] (1e-11), and the path integral equals exact grand-potential differences (0.1 % with 4 path points); `tools/sro_alpha` turns the pair tables into α(T) by Monte Carlo (exact bcc Ising T_c bracketed)
+* effective pair interactions (`[epi]`, `asr_epi`): the frozen-pair chains equal the exact configuration average of Tr[G dH/dλ] (1e-11), and the path integral equals exact grand-potential differences (0.1 % with 4 path points)
 * serial and 1, 2, 4 MPI ranks agree bit for bit (CuZn B2, random alloys on routes `edc` and `ed3`)
 
 ## Conventions

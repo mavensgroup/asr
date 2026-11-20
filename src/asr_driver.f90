@@ -38,7 +38,7 @@
 !>                  per sublattice; default 0 = off), lambda_points (Gauss-Legendre nodes of the species path; default 4; 2 are
 !>                  enough for neighbours in a transition series; 1 = midpoint rule, a survey only), symmetric (default false; true: on one sublattice only
 !>                  U(c, s) with s >= c is computed and U(s, c) = U(c, s): fewer chains, no error measure),
-!>                  file (default "epi.toml": the pair tables for tools/sro_alpha)
+!>                  file (default "epi.toml": the pair tables)
 !>   [kspace]       (method = "kspace") nk, bz = "tetra"|"gauss", smear, sigma, trace, dos_nk, sphere_ratio (r_A / r_B of a B2
 !>                  structure; default 1 = equal spheres), alpha_scale (diagnostic: screening constants times this factor),
 !>                  std_alpha (diagnostic: the recursion's standard alpha instead of the hard-core alpha of sigma),
@@ -845,7 +845,7 @@ contains
     end function itoa_
   end subroutine run_asr
 
-  !> The pair tables as a TOML file for tools/sro_alpha: one [[pair]] per pair type, energies in Ry.
+  !> The pair tables as a TOML file: one [[pair]] per pair type, energies in Ry.
   subroutine write_epi(inp, res, fname)
     type(run_input_t), intent(in) :: inp
     type(class_scf_result_t), intent(in) :: res
