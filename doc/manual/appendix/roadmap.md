@@ -4,9 +4,7 @@ title: Roadmap and open items
 
 # Roadmap and open items
 
-The authoritative, current lists are `docs/ROADMAP.md`, `docs/TODO.md`,
-`docs/STATUS.md` and `docs/MAGNETISM_TODO.md` in the repository. This page
-states the direction in one place.
+This page states the direction in one place.
 
 ## Goal
 

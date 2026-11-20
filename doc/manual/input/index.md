@@ -76,7 +76,6 @@ See [Output files](../output.html).
 The configuration-averaged Bloch spectral function \(A(\mathbf k,E)\), the band structure of the disordered alloy, at the
 final potential.  Route `edc` only.  It is unfolded on the Brillouin zone of the graph lattice (bcc, fcc, sc) and given per
 graph site and per spin.  Every sublattice must be one lattice of translations (random alloys, B2, L2\(_1\); not L1\(_2\)).
-Theory: `docs/DERIVATION_spectral_argon.md`.
 
 | Key | Default | Meaning |
 |---|---|---|

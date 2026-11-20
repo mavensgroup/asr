@@ -70,7 +70,7 @@ The reduction is exact.
     Green function of that node set. For random fcc Fe-Ni-Cr and CoCrFeNi this
     takes 64 to 100 steps. At 24 steps the moments carry a termination error of a
     few per cent, and self-consistency multiplies it by the softness of the
-    moments (up to about 7 for Fe). See `docs/DERIVATION_levels_steps.md`.
+    moments (up to about 7 for Fe).
 
 ## Energy-dependent route
 

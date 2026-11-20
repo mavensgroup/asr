@@ -193,6 +193,5 @@ All modules link to their generated API pages.
 | `example/` | Ready-to-run input files |
 | `tools/` | `sqs.py` (SQS generator), `check_layers.py` (the layer rule), `gen_build_info.sh` (build provenance) |
 | `data/reference/` | Validation data: Stuttgart Ag parameters (`ag_fcc_stuttgart`), digitised CuZn/MnCr DOS |
-| `docs/` | Working notes: `STATUS.md` (verified claims), `TODO.md`, `ROADMAP.md`, `VALIDATION_TARGETS.md`, findings |
 | `trial/` | Scratch (git-ignored except `README.md`) |
 | `doc/` | This manual (mdBook in `doc/manual`; the FORD API reference is generated into `doc/ford_api`) |

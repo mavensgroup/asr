@@ -5,10 +5,9 @@ title: Validation
 # Validation
 
 The code's policy: **only verified claims are stated**. Every row below is
-either an automated test (`fpm test`, harness in [[asr_testing]]) or a measurement recorded in
-`docs/STATUS.md`. A number taken from another code is a *target*, never a result of
-asr; targets are listed with source, functional and lattice constant in
-`docs/VALIDATION_TARGETS.md`.
+either an automated test (`fpm test`, harness in [[asr_testing]]) or a recorded measurement.
+A number taken from another code is a *target*, never a result of
+asr; each target is given with its source, functional and lattice constant.
 
 !!! note "What asr is, for validation purposes"
     LDA (von Barth–Hedin `vbh` through libxc), ASA (space-filling spheres,

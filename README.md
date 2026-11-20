@@ -33,8 +33,7 @@ operator assumes the LMTO form h = c + d S d.
 Repository: **<https://github.com/mavensgroup/asr>**
 
 Everything is validated against independent references (exact enumeration, NIST atoms, Stuttgart LMTO
-output, KPM on large supercells). `docs/STATUS.md` is the status dashboard and lists only verified claims.
-`docs/ROADMAP.md` gives the plan, and `docs/FINDINGS_LOG.md` holds the detailed results.
+output, KPM on large supercells). Only verified claims are stated.
 
 ## Dependencies
 

@@ -13,7 +13,7 @@ input file, with `[asr] route`.
 | `route` | Operator | Recursions | Module |
 |---|---|---|---|
 | `edc` (default) | AMscf form \(H(E)=E-T(E-E_\nu-h)T-ThohT\), the orthogonal \(H^{(2)}\) | One chain per (central species, start orbital, contour energy); start site frozen | [[asr_edc]], [[asr_ed]], [[asr_edn]] |
-| `ed3` | Full generalised ASA problem \(K(E)=EO-H\), including the \(hph\) term | As `edc`, with two start vectors per chain | [[asr_ed3]] (derivation in `docs/DERIVATION_ed3.md`) |
+| `ed3` | Full generalised ASA problem \(K(E)=EO-H\), including the \(hph\) term | As `edc`, with two start vectors per chain | [[asr_ed3]] |
 
 | Reference form (modules only) | Operator | Module |
 |---|---|---|
@@ -23,7 +23,7 @@ input file, with `[asr] route`.
 !!! tip "Which route should I use?"
     Use `edc`, the production route. `ed3` adds the \(hph\) term that `edc` omits
     and agrees better with the k-space full-ASA reference where that term
-    matters (see `docs/DERIVATION_ed3.md`, section 1). It costs more per
+    matters (derivation in the supplementary material of the program paper). It costs more per
     iteration. The energy-independent and \(P(z)-S\) forms are exact
     cross-checks of `edc` at convergence but have no input switch.
 
@@ -145,7 +145,7 @@ the `hull` tail the worst case was a DOS of \(-2.1\) states/Ry at one energy
 (\(\mathrm{Im}\,z\) = 0.005, 48 steps), with 1 % of the weight negative. The tail adds a second
 mechanism: its band edges are complex, and its branch cut can lie above \(z\).
 
-Four statements are proven (`docs/DERIVATION_f4.md`).
+Four statements are proven.
 
 1. The chain is causal for one and two steps. A pole off the real axis can occur from three
    steps on. On the real axis a pole of negative weight belongs to a Ritz value that is not

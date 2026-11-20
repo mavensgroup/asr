@@ -85,8 +85,7 @@ The energy-dependent route uses `hull`, `bp` and `avg2` tails ([[asr_endep]]), t
     obeys the Nevanlinna bound \(|dG/dz| \le -\mathrm{Im}\,G/\mathrm{Im}\,z\).
     `test_terminators` checks this bound on two real Cr e_g chains. `hull`
     reaches 0.41 of the bound. `bp` exceeds it by a factor of about 1000. No
-    general repair of `bp` was found (`docs/FINDINGS_LOG.md`, "Levels-4 SCF
-    stall"). The `bp` tail is kept for comparison only.
+    general repair of `bp` was found. The `bp` tail is kept for comparison only.
 
     `bp` was first chosen because `hull` is too narrow on very short chains
     (4 to 6 steps). Production chains have 24 or 36 steps. There all tails agree
