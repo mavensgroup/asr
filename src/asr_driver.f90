@@ -34,7 +34,7 @@
 !>                  the same blocks), ef_linear_max (Ry; E_F
 !>                  steps up to this size are taken to first order without a new contour, exact at self-consistency;
 !>                  default 0 = off)
-!>   [epi]          (method = "asr", route "edc") effective pair interactions after the SCF (asr_epi): shells (coordination shells
+!>   [epi]          (method = "asr") effective pair interactions after the SCF (asr_epi): shells (coordination shells
 !>                  per sublattice; default 0 = off), lambda_points (Gauss-Legendre nodes of the species path; default 4; 2 are
 !>                  enough for neighbours in a transition series; 1 = midpoint rule, a survey only), symmetric (default false; true: on one sublattice only
 !>                  U(c, s) with s >= c is computed and U(s, c) = U(c, s): fewer chains, no error measure),
@@ -362,9 +362,6 @@ contains
     call get_value(child, 'file', inp%epi_file, 'epi.toml')
     if (inp%ci%epi_shells < 0 .or. inp%ci%epi_shells > 20) then; msg = '[epi] shells must be 0 (off) .. 20'; return; end if
     if (inp%ci%epi_nlam < 1 .or. inp%ci%epi_nlam > 32) then; msg = '[epi] lambda_points must be 1 .. 32'; return; end if
-    if (inp%ci%epi_shells > 0 .and. trim(inp%ci%route) /= 'edc') then
-      msg = '[epi] needs [asr] route = "edc" (the pair interactions of the ed3 route are not implemented)'; return
-    end if
 
     call section(table, 'kspace', child)
     call check_keys(child, ['nk          ', 'bz          ', 'smear       ', 'sigma       ', 'trace       ', 'dos_nk      ', &

@@ -42,7 +42,19 @@
 !> asr_augblk (one pass over the operator tables per step for all members), as edc_green_blk does in the SCF.  The chains are
 !> those of epi_blocks; the results differ at rounding level.
 !>
-!> Route: H^(2) (route = 'edc').  The screened Coulomb part of the pair table comes from asr_screening::screen_shells.
+!> Route ed3 (full generalised ASA problem, asr_ed3).  The secular matrix K(E) = E O - H is linear in E, so again
+!>     dOmega/dlambda = Sum_i f(e_i) de_i/dlambda = (1/pi) Im sum_j w_j Tr[G(z_j) dK/dlambda],   G = K^-1.
+!> Unscaled, K = eps - h + u h + h u - h Q h with eps = z - E_nu, u = o eps, Q = o - p eps (o, p in the representation alpha)
+!> and h = c + d S d.  Site 0 on the path changes eps, u, Q, c of site 0 and d of its bonds.  The identity (K G)_00 = 1 removes
+!> the terms (h u G)_00 - (h Q h G)_00 that do not close on site 0, and
+!>     Tr[G dK/dlambda] = sum_L { -(E_nu' + c') X0 + 2 u' X1 + 2 c' u X0 - Q' X2 - 2 c' Q X1
+!>                                + 2 kappa [ 1 - (eps - c) X0 - 2 c u X0 + 2 c Q X1 - Q X2 ] }_LL
+!> with u' = o' eps - o E_nu', Q' = o' - p' eps + p E_nu', and X0, X1, X2 the central blocks of asr_ed3 (ed3_blocks: the
+!> chains of K' from |a> = |u> + o |v> and |v> = h'|u>).  For p = 0, u -> 0 and Q -> -o this is the H^(2) expression above.
+!> epi3_integrand returns minus this trace (the form of epi_integrand), without the constant 2 kappa.
+!>
+!> Route: H^(2) (route = 'edc') or the full ASA (route = 'ed3').  The screened Coulomb part of the pair table comes from
+!> asr_screening::screen_shells.
 module asr_epi
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c
@@ -52,23 +64,27 @@ module asr_epi
   use asr_endep, only: cf_species, ed_project, ed_nchain, ed_nlev
   use asr_symmetry, only: cubic_site_perms, class_ops
   use asr_lapack, only: dsyev
+  use asr_ed3, only: ed3_t, ed3_work_t
   implicit none
   private
   public :: epi_par_t, epi_path_t, epi_work_t, epi_pair_t, epi_table_t
   public :: epi_species, epi_path, epi_setup, epi_integrand, epi_adapted, epi_pair_ops, epi_pair_list
   public :: epi_work_init, epi_start, epi_blocks, epi_blocks_blk, epi_exchange, epi_skip, epi_mirror
+  public :: epi3_setup, epi3_start, epi3_integrand
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
-  !> H^(2) parameters of one species in the screened representation alpha, per orbital
+  !> Parameters of one species in the screened representation alpha, per orbital (p: route ed3 only)
   type :: epi_par_t
     real(dp) :: e(9) = 0.0_dp, c(9) = 0.0_dp, d(9) = 0.0_dp, o(9) = 0.0_dp   !! E_nu, C - E_nu, |sqrt(Delta)|, o
+    real(dp) :: p(9) = 0.0_dp                                               !! p
   end type epi_par_t
 
   !> site 0 on the path between two species: parameters at lambda and their derivatives
   type :: epi_path_t
     real(dp) :: e(9) = 0.0_dp, c(9) = 0.0_dp, d(9) = 0.0_dp, o(9) = 0.0_dp
     real(dp) :: de(9) = 0.0_dp, dc(9) = 0.0_dp, dk(9) = 0.0_dp, dox(9) = 0.0_dp   !! d/dlambda of E_nu, c, ln d, o
+    real(dp) :: p(9) = 0.0_dp, dpx(9) = 0.0_dp                                  !! p and d/dlambda of p (route ed3)
   end type epi_path_t
 
   type :: epi_work_t
@@ -109,7 +125,7 @@ contains
     q = to_alpha(pp, alpha); o = o_alpha(q, alpha)
     do i = 1, 9
       l = orb_l(i)
-      par%e(i) = q%enu(l); par%c(i) = q%c(l) - q%enu(l); par%d(i) = abs(q%sqrdel(l)); par%o(i) = o(l)
+      par%e(i) = q%enu(l); par%c(i) = q%c(l) - q%enu(l); par%d(i) = abs(q%sqrdel(l)); par%o(i) = o(l); par%p(i) = q%p(l)
     end do
   end function epi_species
 
@@ -122,6 +138,7 @@ contains
     pt%c = a%c + lam * (b%c - a%c); pt%dc = b%c - a%c
     pt%d = a%d + lam * (b%d - a%d); pt%dk = (b%d - a%d) / pt%d
     pt%o = a%o + lam * (b%o - a%o); pt%dox = b%o - a%o
+    pt%p = a%p + lam * (b%p - a%p); pt%dpx = b%p - a%p
   end function epi_path
 
   !> Operator parameters of `mdl` (species 1 .. ns real, ns + 1 = site 0 on the path; mdl%nsp = ns + 1) in the scaling of
@@ -164,6 +181,71 @@ contains
     t = (pt%de(l) + pt%dc(l)) * x(0) - 2.0_dp * pt%dc(l) * pt%o(l) * x(1) - pt%dox(l) * x(2) &
         + 2.0_dp * pt%dk(l) * ((z - pt%e(l) - pt%c(l)) * x(0) + 2.0_dp * pt%c(l) * pt%o(l) * x(1) - pt%o(l) * x(2))
   end function epi_integrand
+
+  !> Route ed3: operator parameters of `mdl` and the coefficients ed of asr_ed3 for species 1 .. ns (par) and site 0 on the path
+  !> point pt (species ns + 1, the central species): the scaling T_R = (D_c / D_s)^1/2 with the Delta of the path point, as
+  !> asr_ed3::ed3_setup builds it from potential parameters.
+  subroutine epi3_setup(mdl, par, pt, ed)
+    type(class_alloy_t), intent(inout) :: mdl
+    type(epi_par_t), intent(in) :: par(:)
+    type(epi_path_t), intent(in) :: pt
+    type(ed3_t), intent(out) :: ed
+    real(dp) :: dc, ds
+    integer :: ns, s, i
+    ns = size(par)
+    if (mdl%nsp /= ns + 1) error stop 'epi3_setup: mdl%nsp must be the number of species + 1'
+    ed%ns = ns + 1; ed%central = ns + 1
+    allocate (ed%dc(9), ed%del(9, ns + 1), ed%enu(9, ns + 1), ed%o(9, ns + 1), ed%p(9, ns + 1), ed%g(9, ns + 1))
+    if (allocated(mdl%c)) deallocate (mdl%c, mdl%d, mdl%o, mdl%e)
+    allocate (mdl%c(9, ns + 1), mdl%d(9, ns + 1), mdl%o(9, ns + 1), mdl%e(9, ns + 1))
+    mdl%o = 0.0_dp; mdl%e = 0.0_dp
+    do i = 1, 9
+      dc = pt%d(i)**2
+      ed%dc(i) = dc
+      do s = 1, ns
+        ds = par(s)%d(i)**2
+        ed%del(i, s) = ds; ed%enu(i, s) = par(s)%e(i); ed%o(i, s) = par(s)%o(i); ed%p(i, s) = par(s)%p(i)
+        ed%g(i, s) = dc / ds * par(s)%c(i)
+      end do
+      ed%del(i, ns + 1) = dc; ed%enu(i, ns + 1) = pt%e(i); ed%o(i, ns + 1) = pt%o(i); ed%p(i, ns + 1) = pt%p(i)
+      ed%g(i, ns + 1) = pt%c(i)
+      mdl%c(i, :) = ed%g(i, :); mdl%d(i, :) = pt%d(i)
+    end do
+  end subroutine epi3_setup
+
+  !> Route ed3: start vectors of one symmetry-adapted combination v9 of orbital character l (an orbital index 1..9) on the start
+  !> node: |u>, |v> = h'|u>, |a> = |u> + o_c |v> (as asr_ed3::ed3_start for one orbital).  op carries epi3_setup's parameters,
+  !> the frozen sites and the characters of v9.
+  subroutine epi3_start(op, wk, ed, v9, l)
+    type(augcls_op), intent(in) :: op
+    type(ed3_work_t), intent(inout) :: wk
+    type(ed3_t), intent(in) :: ed
+    real(dp), intent(in) :: v9(9)
+    integer, intent(in) :: l
+    wk%s0 = (0.0_dp, 0.0_dp); wk%s0(1:9) = cmplx(v9, 0.0_dp, dp)
+    call augcls_hp_c(op, wk%s0, wk%vv)
+    if (ed_project) call augcls_project_c(op, wk%vv)
+    wk%av = wk%s0 + ed%o(l, ed%central) * wk%vv
+    wk%nv = sqrt(real(sum(wk%vv * wk%vv), dp)); wk%na = sqrt(real(sum(wk%av * wk%av), dp))
+    if (wk%nv < 1.0e-14_dp .or. wk%na < 1.0e-14_dp) error stop 'epi3_start: zero start vector'
+  end subroutine epi3_start
+
+  !> Route ed3: minus Tr[G dK/dlambda]_LL of the module header for one start vector of orbital character l from the central
+  !> blocks x(0:2) = X0, X1, X2 of asr_ed3::ed3_blocks at z; the constant 2 kappa is left out.  The sign makes it the
+  !> counterpart of epi_integrand: dOmega/dlambda = -(1/pi) Im sum_j w_j (sum of the integrands).
+  pure function epi3_integrand(pt, l, z, x) result(t)
+    type(epi_path_t), intent(in) :: pt
+    integer, intent(in) :: l
+    complex(dp), intent(in) :: z, x(0:)
+    complex(dp) :: t, eps, u, du, q, dq
+    eps = z - pt%e(l)
+    u = pt%o(l) * eps;  du = pt%dox(l) * eps - pt%o(l) * pt%de(l)
+    q = pt%o(l) - pt%p(l) * eps;  dq = pt%dox(l) - pt%dpx(l) * eps + pt%p(l) * pt%de(l)
+    t = -(pt%de(l) + pt%dc(l)) * x(0) + 2.0_dp * du * x(1) + 2.0_dp * pt%dc(l) * u * x(0) - dq * x(2) &
+        - 2.0_dp * pt%dc(l) * q * x(1) &
+        + 2.0_dp * pt%dk(l) * (-(eps - pt%c(l)) * x(0) - 2.0_dp * pt%c(l) * u * x(0) + 2.0_dp * pt%c(l) * q * x(1) - q * x(2))
+    t = -t
+  end function epi3_integrand
 
   !> Exchange interactions of one sublattice from the pair table u(c, s): v(p, q) = u(p,p) + u(q,q) - u(p,q) - u(q,p)
   pure function epi_exchange(u) result(v)

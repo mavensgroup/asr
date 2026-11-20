@@ -78,7 +78,7 @@ program test_run_input
   call check(index(msg, 'unknown key') > 0, 'typo in [epi] rejected')
   call put(bccfe//'[asr]'//nl//'route = "ed3"'//nl//'[epi]'//nl//'shells = 1'//nl)
   call read_run_input(f, inp, msg)
-  call check(index(msg, '[epi] needs [asr] route = "edc"') > 0, '[epi] with route ed3 rejected')
+  call check(len(msg) == 0 .and. inp%ci%epi_shells == 1 .and. trim(inp%ci%route) == 'ed3', '[epi] with route ed3 accepted')
   call put(kspace//bccfe//'[epi]'//nl//'shells = 1'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, '[epi] is read with method = "asr" only') > 0, '[epi] with method = kspace rejected')
