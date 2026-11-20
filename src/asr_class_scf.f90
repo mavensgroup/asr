@@ -284,7 +284,9 @@ contains
       if (allocated(ai%cls)) deallocate (ai%cls)
       allocate (ai%cls(1)); ai%cls(1) = inp%spec(psp(p))
       allocate (vtmp(n, nsp), etmp(0:2, nsp))
+      call timer_stop(res%timer, tb_setup); call timer_start(res%timer, tb_atom)
       call atomic_start(ai, 1, cr(p)%mesh, c, xf, nsp, vtmp, etmp)
+      call timer_stop(res%timer, tb_atom); call timer_start(res%timer, tb_setup)
       cr(p)%v = vtmp
       do sg = 1, nsp; enu(:, sg, p) = etmp(:, sg); end do
       deallocate (vtmp, etmp)
@@ -1160,10 +1162,12 @@ contains
           ! work space (10 vectors per member) below 400 MB
           nbe = 0
           if (inp%eblock > 0) nbe = blk_nbmax(inp%eblock, pop%dim(), 10, 400.0_dp)
+          chain_vec_par = .false.                             ! one thread per chain (asr_chain::chain_vec_par)
           !$omp parallel
           call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zq(1:nq), xl, n2, .false., min(nbe, nq), tz, tailmax)
           call epi_worker(pop, mp, par, kp, k2, jsite, vec, chi, lo, zb, xl, 1, .true., min(nbe, nba + nbv), tb, tailmax)
           !$omp end parallel
+          chain_vec_par = .true.
           if (par_size() > 1) then
             call par_sum_z(tz, size(tz)); call par_sum_z(tb, size(tb))
           end if

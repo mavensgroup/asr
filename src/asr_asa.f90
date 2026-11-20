@@ -172,7 +172,9 @@ contains
     do ic = 1, ncl
       n = cr(ic)%mesh%n
       allocate (rho(n, 2), exc(n), vxc(n, 2))
+      call timer_stop(res%timer, tb_setup); call timer_start(res%timer, tb_atom)
       call atomic_start(inp, ic, cr(ic)%mesh, c, xf, nsp, cr(ic)%v, enu(:, :, ic))
+      call timer_stop(res%timer, tb_atom); call timer_start(res%timer, tb_setup)
       deallocate (rho, exc, vxc)
     end do
     call timer_stop(res%timer, tb_setup)

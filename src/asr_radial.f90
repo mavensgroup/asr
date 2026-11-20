@@ -12,6 +12,7 @@ module asr_radial
   implicit none
   private
   public :: radmesh_t, make_radmesh, integrate_regular, integrate_inward, node_count, bound_state, hankel_logder, norm_pq, c_ry, c_nonrel
+  public :: root_t, root_init, root_next, root_update
 
   real(dp), parameter :: c_ry = 274.071979_dp       !! speed of light in Rydberg atomic units
   real(dp), parameter :: c_nonrel = 1.0e10_dp
@@ -22,6 +23,17 @@ module asr_radial
     real(dp) :: a = 0.0_dp, b = 0.0_dp
     real(dp), allocatable :: r(:), drdt(:)
   end type radmesh_t
+
+  !> Root of a continuous f on a sign-change bracket: Brent's method (zeroin, Brent 1973, ch. 4): inverse quadratic or
+  !> linear interpolation where it makes progress, otherwise bisection; the bracket always holds a sign change, and the
+  !> number of evaluations is at most about the square of that of bisection (in practice 6 to 15).  The caller drives it (no
+  !> procedure argument): x = root_next(rt); evaluate f(x); call root_update(rt, x, f(x)); repeat until rt%done.  The root
+  !> is rt%x, within max(tol_abs, tol_rel max(1, |x|)) plus rounding (4 eps |x|), or a point where f = 0.
+  type :: root_t
+    real(dp) :: a = 0.0_dp, b = 0.0_dp, c = 0.0_dp, fa = 0.0_dp, fb = 0.0_dp, fc = 0.0_dp, d = 0.0_dp, e = 0.0_dp
+    real(dp) :: xnext = 0.0_dp, x = 0.0_dp, tol_abs = 0.0_dp, tol_rel = 0.0_dp
+    logical :: done = .false.
+  end type root_t
 
 contains
 
@@ -167,6 +179,69 @@ contains
     end do
   end subroutine integrate_inward
 
+  !> Start on the bracket [a, b] with f(a) fa and f(b) fb of opposite sign (or one of them zero).
+  subroutine root_init(rt, a, fa, b, fb, tol_abs, tol_rel)
+    type(root_t), intent(out) :: rt
+    real(dp), intent(in) :: a, fa, b, fb, tol_abs, tol_rel
+    rt%a = a; rt%fa = fa; rt%b = b; rt%fb = fb; rt%c = a; rt%fc = fa; rt%d = b - a; rt%e = rt%d
+    rt%tol_abs = tol_abs; rt%tol_rel = tol_rel; rt%done = .false.
+    if (fa == 0.0_dp) then; rt%x = a; rt%done = .true.; return; end if
+    call root_step(rt)
+  end subroutine root_init
+
+  real(dp) function root_next(rt) result(x)
+    type(root_t), intent(in) :: rt
+    x = rt%xnext
+  end function root_next
+
+  !> f(x) = fx at the point root_next returned
+  subroutine root_update(rt, x, fx)
+    type(root_t), intent(inout) :: rt
+    real(dp), intent(in) :: x, fx
+    rt%b = x; rt%fb = fx
+    call root_step(rt)
+  end subroutine root_update
+
+  !> one pass of zeroin: keep the sign change in [b, c] (b the best point), test convergence, choose the next point
+  subroutine root_step(rt)
+    type(root_t), intent(inout) :: rt
+    real(dp) :: tol1, xm, p, q, r, s
+    if ((rt%fb > 0.0_dp .and. rt%fc > 0.0_dp) .or. (rt%fb < 0.0_dp .and. rt%fc < 0.0_dp)) then
+      rt%c = rt%a; rt%fc = rt%fa; rt%d = rt%b - rt%a; rt%e = rt%d
+    end if
+    if (abs(rt%fc) < abs(rt%fb)) then
+      rt%a = rt%b; rt%b = rt%c; rt%c = rt%a; rt%fa = rt%fb; rt%fb = rt%fc; rt%fc = rt%fa
+    end if
+    tol1 = 2.0_dp * epsilon(1.0_dp) * abs(rt%b) + 0.5_dp * max(rt%tol_abs, rt%tol_rel * max(1.0_dp, abs(rt%b)))
+    xm = 0.5_dp * (rt%c - rt%b)
+    if (abs(xm) <= tol1 .or. rt%fb == 0.0_dp) then; rt%x = rt%b; rt%done = .true.; return; end if
+    if (abs(rt%e) >= tol1 .and. abs(rt%fa) > abs(rt%fb)) then
+      s = rt%fb / rt%fa
+      if (rt%a == rt%c) then                                 ! linear interpolation
+        p = 2.0_dp * xm * s; q = 1.0_dp - s
+      else                                                   ! inverse quadratic interpolation
+        q = rt%fa / rt%fc; r = rt%fb / rt%fc
+        p = s * (2.0_dp * xm * q * (q - r) - (rt%b - rt%a) * (r - 1.0_dp))
+        q = (q - 1.0_dp) * (r - 1.0_dp) * (s - 1.0_dp)
+      end if
+      if (p > 0.0_dp) q = -q
+      p = abs(p)
+      if (2.0_dp * p < min(3.0_dp * xm * q - abs(tol1 * q), abs(rt%e * q))) then
+        rt%e = rt%d; rt%d = p / q
+      else                                                   ! interpolation would not shrink the bracket enough: bisect
+        rt%d = xm; rt%e = rt%d
+      end if
+    else
+      rt%d = xm; rt%e = rt%d
+    end if
+    rt%a = rt%b; rt%fa = rt%fb
+    if (abs(rt%d) > tol1) then
+      rt%xnext = rt%b + rt%d
+    else
+      rt%xnext = rt%b + sign(tol1, xm)
+    end if
+  end subroutine root_step
+
   !> Number of sign changes of P in (0, r_itop].
   function node_count(m, v, l, e, z, c, itop) result(nn)
     type(radmesh_t), intent(in) :: m
@@ -263,34 +338,60 @@ contains
   !> sphere is constant = v(isph) (decaying Hankel boundary condition).  Eigenvalue found by
   !> matching the outward and inward solutions at the outer turning point (both stable),
   !> bracketed by node counting.  On output y is normalised on [0, r(isph)].
-  subroutine bound_state(m, v, l, nod, z, c, isph, elo, ehi, e, y, ok)
+  !>
+  !> The matching function f = W{out, in} / norms is continuous in E: the system for (P, Q) has zero trace, so the Wronskian
+  !> does not depend on the matching radius, and a jump of the matching point with E changes |f| but not its sign.  Its only
+  !> zero between the energies where the node count reaches nod and nod + 1 is the eigenvalue.  So the node counts are
+  !> bisected only until an energy with nod nodes on each side of a sign change of f is found (coarse: 1 % of |E|); the
+  !> eigenvalue is then the root of f (root_t, to the same tolerance as before: 1e-13 relative).  If the coarse windows show
+  !> no sign change, they are bisected to 1e-12 as before, and the old scan follows if needed.  nshoot (optional): matching
+  !> evaluations used (each one outward and one inward integration).
+  subroutine bound_state(m, v, l, nod, z, c, isph, elo, ehi, e, y, ok, nshoot)
     type(radmesh_t), intent(in) :: m
     real(dp), intent(in) :: v(:), z, c, elo, ehi
     integer, intent(in) :: l, nod, isph
     real(dp), intent(out) :: e
     real(dp), intent(out) :: y(2, 0:0, isph)
     logical, intent(out), optional :: ok     !! .false. if no bracket was found (best estimate returned)
+    integer, intent(out), optional :: nshoot
     logical :: found
-    real(dp) :: e1, e2, ea, eb, fa, fb, fm, em, vout, s, ehi_eff, ll
-    integer :: it, ntot, nc
+    real(dp) :: ea, eb, fa, fb, fm, em, vout, s, ehi_eff, ll, lo1, hi1, lo2, hi2
+    integer :: it, ntot, nc, nev, nhi1, nhi2
+    type(root_t) :: rt
     real(dp), allocatable :: yo(:, :, :), yi(:, :)
     allocate (yo(2, 0:0, isph), yi(2, 2:isph))
-    found = .true.
+    found = .true.; nev = 0
     s = m%r(isph); vout = v(isph); ll = real(l * (l + 1), dp)
     ehi_eff = min(ehi, vout - 1.0e-8_dp)
-    e1 = bisect_nodes(nod)
-    e2 = bisect_nodes(nod + 1)
-    ea = e1; eb = e2
-    call eval(ea, fa, ntot, nc); call eval(eb, fb, ntot, nc)
-    if (fa * fb > 0.0_dp) call scan_bracket(ea, eb, fa, fb)
+    ! [lo1, hi1]: the node count reaches nod (nod = 0: from elo on);  [lo2, hi2]: it reaches nod + 1
+    lo1 = elo; hi1 = elo; nhi1 = -1
+    if (nod > 0) then
+      hi1 = ehi_eff
+      call narrow_nodes(nod, lo1, hi1, nhi1, 0.0_dp, 1.0e-2_dp)
+    end if
+    lo2 = elo; hi2 = ehi_eff; nhi2 = -1
+    if (nod > 0 .and. nhi1 >= 0 .and. nhi1 <= nod) lo2 = hi1           ! hi1 has nod nodes: below the next transition
+    call narrow_nodes(nod + 1, lo2, hi2, nhi2, 0.0_dp, 1.0e-2_dp)
+    fa = 0.0_dp; fb = 0.0_dp; ea = hi1; eb = lo2
+    if (eb > ea) then
+      call eval(ea, fa, ntot, nc); call eval(eb, fb, ntot, nc)
+    end if
+    if (.not. (eb > ea .and. fa * fb < 0.0_dp)) then                   ! as before: the windows to 1e-12, then the scan
+      if (nod > 0) call narrow_nodes(nod, lo1, hi1, nhi1, 1.0e-12_dp, 0.0_dp)
+      call narrow_nodes(nod + 1, lo2, hi2, nhi2, 1.0e-12_dp, 0.0_dp)
+      ea = hi1; eb = hi2
+      call eval(ea, fa, ntot, nc); call eval(eb, fb, ntot, nc)
+      if (fa * fb > 0.0_dp) call scan_bracket(ea, eb, fa, fb)
+    end if
     if (present(ok)) ok = found
-    do it = 1, 200
-      em = 0.5_dp * (ea + eb)
+    call root_init(rt, ea, fa, eb, fb, 0.0_dp, 1.0e-13_dp)
+    do it = 1, 300
+      if (rt%done) exit
+      em = root_next(rt)
       call eval(em, fm, ntot, nc)
-      if (fa * fm <= 0.0_dp) then; eb = em; fb = fm; else; ea = em; fa = fm; end if
-      if (abs(eb - ea) < 1.0e-13_dp * max(1.0_dp, abs(em))) exit
+      call root_update(rt, em, fm)
     end do
-    e = 0.5_dp * (ea + eb)
+    e = rt%x
     ! final wavefunction: outward to nc, inward beyond, matched in P
     call eval(e, fm, ntot, nc)
     y(:, 0, 1:nc) = yo(:, 0, 1:nc)
@@ -304,6 +405,7 @@ contains
       end do
       call norm_pq(m, c, 0, isph, y, nrm)
     end block
+    if (present(nshoot)) nshoot = nev
   contains
     subroutine eval(en, f, nt, nmatch)
       real(dp), intent(in) :: en
@@ -312,6 +414,7 @@ contains
       real(dp) :: kap, qp, fo, fi, cumk, kloc
       integer :: j, it2, istart
       logical :: usewkb
+      nev = nev + 1
       it2 = 0
       do j = 3, isph
         if (en - v(j) - ll / m%r(j)**2 > 0.0_dp) it2 = j
@@ -348,19 +451,22 @@ contains
       fi = max(abs(yi(1, nmatch)), abs(yi(2, nmatch)))
       f = (yo(2, 0, nmatch) / fo) * (yi(1, nmatch) / fi) - (yi(2, nmatch) / fi) * (yo(1, 0, nmatch) / fo)
     end subroutine eval
-    function bisect_nodes(target) result(eb_)
+    !> bisect [lo, hi] (node count below target at lo, at least target at hi) until hi - lo < max(tabs, trel max(1, |hi|));
+    !> nhi: node count at hi (-1 if not evaluated)
+    subroutine narrow_nodes(target, lo, hi, nhi, tabs, trel)
       integer, intent(in) :: target
-      real(dp) :: eb_, lo, hi, mid, f
+      real(dp), intent(inout) :: lo, hi
+      integer, intent(inout) :: nhi
+      real(dp), intent(in) :: tabs, trel
+      real(dp) :: mid, f
       integer :: k, nt, nmatch
-      lo = elo; hi = ehi_eff
       do k = 1, 200
+        if (hi - lo < max(tabs, trel * max(1.0_dp, abs(hi)))) exit
         mid = 0.5_dp * (lo + hi)
         call eval(mid, f, nt, nmatch)
-        if (nt >= target) then; hi = mid; else; lo = mid; end if
-        if (hi - lo < 1.0e-12_dp) exit
+        if (nt >= target) then; hi = mid; nhi = nt; else; lo = mid; end if
       end do
-      eb_ = hi
-    end function bisect_nodes
+    end subroutine narrow_nodes
     subroutine scan_bracket(ea_, eb_, fa_, fb_)
       real(dp), intent(inout) :: ea_, eb_, fa_, fb_
       real(dp) :: x0, x1, f0, f1

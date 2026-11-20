@@ -71,60 +71,110 @@ contains
   !>   band bottom D_l = 0);  etop: phi_l(S) = 0 (band top, the next node enters at S).
   !> Past etop the parametrisation jumps to the next branch (sqrt(Delta) changes sign, C runs away); Questaal avoids this by
   !> floating pnu with a fixed principal quantum number.
-  subroutine band_window(m, v, l, nodes, z, c, ebot, etop)
+  !>
+  !> Root search (one outward integration per energy, nshoot of them on output if present).  A node enters the sphere
+  !> exactly where phi_l(S; E) changes sign, and nodes never leave it as E rises (Sturm).  So once the node count is k at one
+  !> end of a bracket and k + 1 at the other, phi_l(S; E) has exactly one zero inside: it is found by root_t on phi_l(S).  On
+  !> (eprev, etop) phi_l(S) has no zero and D_l falls monotonically, so g = M S Q - l P = phi(S) (D_l - l) is continuous with
+  !> one sign change there: ebot is its root.  Both to 1e-13 relative (the bisections they replace ran 60 steps, to rounding).
+  !> If a bracket does not show the expected sign change, the plain bisection of before runs instead.
+  subroutine band_window(m, v, l, nodes, z, c, ebot, etop, nshoot)
     type(radmesh_t), intent(in) :: m
     real(dp), intent(in) :: v(:), z, c
     integer, intent(in) :: l, nodes
     real(dp), intent(out) :: ebot, etop
-    real(dp) :: elo, ehi, emid, eprev
-    integer :: it
+    integer, intent(out), optional :: nshoot
+    real(dp) :: elo, ehi, emid, eprev, pv, gv, glo, ghi
+    real(dp) :: y(2, 0:0, m%n)
+    integer :: it, nc, nev
+    type(root_t) :: rt
+    nev = 0
     elo = v(m%n) - 20.0_dp                      ! below the valence branches (semicore tops are above ~ -10 Ry)
     ehi = v(m%n) + 1.0_dp
-    do while (count_nodes(ehi) <= nodes .and. ehi < 400.0_dp)
+    call shoot(ehi, nc, pv, gv)
+    do while (nc <= nodes .and. ehi < 400.0_dp)
       ehi = v(m%n) + 2.0_dp * (ehi - v(m%n))
+      call shoot(ehi, nc, pv, gv)
     end do
-    etop = bisect_nodes(elo, ehi, nodes)
+    etop = transition(elo, ehi, nodes)
     eprev = elo
-    if (nodes > 0) eprev = bisect_nodes(elo, etop, nodes - 1)
-    ! on (eprev, etop) the branch has `nodes` nodes and D_l falls from +inf to -inf: bisect on the sign of D_l - l
-    elo = eprev; ehi = etop
-    do it = 1, 60
-      emid = 0.5_dp * (elo + ehi)
-      if (log_deriv(emid) > real(l, dp)) then; elo = emid; else; ehi = emid; end if
-    end do
-    ebot = 0.5_dp * (elo + ehi)
-  contains
-    integer function count_nodes(e)
-      real(dp), intent(in) :: e
-      real(dp) :: y(2, 0:0, m%n)
-      integer :: i
-      call integrate_regular(m, v, l, e, z, c, 0, m%n, y)
-      count_nodes = 0
-      do i = 3, m%n
-        if (y(1, 0, i) * y(1, 0, i - 1) < 0.0_dp) count_nodes = count_nodes + 1
+    if (nodes > 0) eprev = transition(elo, etop, nodes - 1)
+    ! on (eprev, etop) the branch has `nodes` nodes and D_l falls from +inf to -inf: the root of g, D_l = l
+    call shoot(eprev, nc, pv, glo); call shoot(etop, nc, pv, ghi)
+    if (glo * ghi < 0.0_dp) then
+      call root_init(rt, eprev, glo, etop, ghi, 0.0_dp, 1.0e-13_dp)
+      do it = 1, 300
+        if (rt%done) exit
+        emid = root_next(rt)
+        call shoot(emid, nc, pv, gv)
+        call root_update(rt, emid, gv)
       end do
-    end function count_nodes
-
-    real(dp) function log_deriv(e)
+      ebot = rt%x
+    else                                        ! as before: bisection on the sign of D_l - l
+      elo = eprev; ehi = etop
+      do it = 1, 60
+        emid = 0.5_dp * (elo + ehi)
+        call shoot(emid, nc, pv, gv)
+        if (gv / pv > 0.0_dp) then; elo = emid; else; ehi = emid; end if
+      end do
+      ebot = 0.5_dp * (elo + ehi)
+    end if
+    if (present(nshoot)) nshoot = nev
+  contains
+    !> outward integration at e: node count in the sphere, P(S), and g = M S Q(S) - l P(S) (D_l - l = g / P), both divided by
+    !> the Pruefer radius sqrt(P^2 + (M S Q)^2) at S
+    subroutine shoot(e, nn, ps, gs)
       real(dp), intent(in) :: e
-      real(dp) :: y(2, 0:0, m%n)
+      integer, intent(out) :: nn
+      real(dp), intent(out) :: ps, gs
+      real(dp) :: qs, rs
+      integer :: i
+      nev = nev + 1
       call integrate_regular(m, v, l, e, z, c, 0, m%n, y)
-      log_deriv = (1.0_dp + (e - v(m%n)) / (c * c)) * y(2, 0, m%n) * m%r(m%n) / y(1, 0, m%n)
-    end function log_deriv
+      nn = 0
+      do i = 3, m%n
+        if (y(1, 0, i) * y(1, 0, i - 1) < 0.0_dp) nn = nn + 1
+      end do
+      ps = y(1, 0, m%n)
+      qs = (1.0_dp + (e - v(m%n)) / (c * c)) * y(2, 0, m%n) * m%r(m%n)
+      gs = qs - real(l, dp) * ps
+      ! scaled by |(P, M S Q)| (the Pruefer radius at S, never zero): the same signs and zeros, but bounded and smooth in E,
+      ! where P(S) itself grows exponentially with E
+      rs = hypot(ps, qs)
+      if (rs > 0.0_dp) then; ps = ps / rs; gs = gs / rs; end if
+    end subroutine shoot
 
-    !> lowest energy at which the branch has more than k nodes (between a, which has <= k, and b, which has > k)
-    real(dp) function bisect_nodes(a, b, k)
+    !> lowest energy at which the branch has more than k nodes (between a, which has <= k, and b, which has > k).  If a has more
+    !> than k nodes already (a semicore branch whose lower neighbour lies below a), a: what the bisection converged to.
+    real(dp) function transition(a, b, k)
       real(dp), intent(in) :: a, b
       integer, intent(in) :: k
-      real(dp) :: lo, hi, mid
-      integer :: j
+      real(dp) :: lo, hi, mid, plo, phi, pm, gm
+      integer :: j, nlo, nhi, nm
       lo = a; hi = b
+      call shoot(lo, nlo, plo, gm)
+      if (nlo > k) then                         ! already more than k nodes at a: the bisection would converge onto a
+        transition = a; return
+      end if
+      call shoot(hi, nhi, phi, gm)
       do j = 1, 60
+        if (nlo == k .and. nhi == k + 1 .and. plo * phi < 0.0_dp) then   ! one node enters in (lo, hi): the zero of P(S)
+          call root_init(rt, lo, plo, hi, phi, 0.0_dp, 1.0e-13_dp)
+          do nm = 1, 300
+            if (rt%done) exit
+            mid = root_next(rt)
+            call shoot(mid, nc, pm, gm)
+            call root_update(rt, mid, pm)
+          end do
+          transition = rt%x
+          return
+        end if
         mid = 0.5_dp * (lo + hi)
-        if (count_nodes(mid) > k) then; hi = mid; else; lo = mid; end if
+        call shoot(mid, nm, pm, gm)
+        if (nm > k) then; hi = mid; nhi = nm; phi = pm; else; lo = mid; nlo = nm; plo = pm; end if
       end do
-      bisect_nodes = 0.5_dp * (lo + hi)
-    end function bisect_nodes
+      transition = 0.5_dp * (lo + hi)
+    end function transition
   end subroutine band_window
 
   !> E_nu kept inside [ebot, etop - enu_window_margin (5 %) of the band window] of its own branch (see band_window); returns
