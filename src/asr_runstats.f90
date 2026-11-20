@@ -14,7 +14,7 @@ module asr_runstats
   implicit none
   private
   public :: run_timer_t, timer_start, timer_stop, wall_seconds, cpu_seconds
-  public :: tb_setup, tb_params, tb_chains, tb_below, tb_dos, tb_bands, tb_density, tb_mix, tb_io, tb_spectral, tb_epi, n_tb, tb_name
+  public :: tb_setup, tb_params, tb_chains, tb_below, tb_dos, tb_bands, tb_density, tb_mix, tb_io, tb_spectral, tb_epi, tb_atom, n_tb, tb_name
   public :: et_band, et_core, et_dc, et_hartree, et_xc, et_mad, et_sim, n_et, et_name
 
   !> timer buckets
@@ -29,12 +29,13 @@ module asr_runstats
                         tb_io = 9, &      !! restart file
                         tb_spectral = 10, & !! Bloch spectral function A(k, E) after the SCF
                         tb_epi = 11, &    !! effective pair interactions after the SCF (asr_epi)
-                        n_tb = 11
+                        tb_atom = 12, &   !! free-atom start potentials (once; outside tb_setup)
+                        n_tb = 12
   character(len=*), parameter :: tb_name(n_tb) = [character(len=36) :: &
     'setup (graph, operators, screening)', 'potential parameters', 'recursion chains: SCF contour', &
     'recursion chains: bottom check', 'DOS on the real axis', 'k-space bands and BZ integration', &
     'density, core, Hartree, xc, energy', 'mixing and E_nu windows', 'restart file', 'Bloch spectral function A(k,E)', &
-    'effective pair interactions']
+    'effective pair interactions', 'free-atom start']
 
   !> total-energy terms (Ry).  Kohn-Sham form: output density in the input potential.  Their sum is etot (to rounding).
   !> v~_in = v_in + 2Z/r: the nuclear terms -2Z int n / r of the kinetic energy and of the sphere electrostatics cancel, so
