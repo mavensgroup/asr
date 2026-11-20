@@ -7,3 +7,7 @@ trial/*
 doc/build/
 doc/ford_api/
 doc/manual/api
+
+# local-only examples, not shipped in the tagged release
+example/cuzn_alloy_epi.toml
+example/cuzn_alloy_spectral.toml

@@ -24,7 +24,7 @@ program test_inputdump
   call read_run_input('example/co2fe04cr06al_l21.toml', inp, msg)
   call check(len(msg) == 0 .and. maxline(inp%resolved) <= 87, 'Heusler input: every resolved line fits the report (87 + 3)')
 
-  call read_run_input('example/cuzn_alloy_spectral.toml', inp, msg)
+  call read_run_input('test/data/cuzn_alloy_spectral.toml', inp, msg)
   call check(len(msg) == 0 .and. maxline(inp%resolved) <= 87 .and. index(inp%resolved, '[spectral]') > 0, &
              'spectral input: [spectral] shown, the long kpath wrapped to fit the report')
   print '(a)', inp%resolved(index(inp%resolved, '[spectral]'):)

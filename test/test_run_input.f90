@@ -164,11 +164,11 @@ program test_run_input
   call read_run_input(f, inp, msg)
   call check(index(msg, 'method = "asr"') > 0, '[[sro]] with method = kspace rejected')
 
-  ! every shipped example is a valid input (fpm test runs from the project root)
+  ! every shipped example is a valid input (the spectral one lives in test/data, not shipped) (fpm test runs from the project root)
   call example('example/feco_b2_asr.toml', 'asr'); call example('example/cuzn_b2.toml', 'asr')
   call example('example/cuzn_alloy.toml', 'asr'); call example('example/co2fe04cr06al_l21.toml', 'asr')
   call example('example/fe66ni14cr20_fcc.toml', 'asr'); call example('example/fe66ni14cr20_fcc_sro.toml', 'asr')
-  call example('example/cuzn_alloy_spectral.toml', 'asr')
+  call example('test/data/cuzn_alloy_spectral.toml', 'asr')
   ! the internal k-space reference inputs (test tool only, not shipped as examples)
   call example('data/kspace/ag_fcc.toml', 'kspace'); call example('data/kspace/fe_bcc.toml', 'kspace')
   call example('data/kspace/feco_b2_kspace.toml', 'kspace'); call example('data/kspace/fecu_b2.toml', 'kspace')

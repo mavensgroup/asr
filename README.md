@@ -72,7 +72,6 @@ asr example/cuzn_alloy.toml          # random binary bcc Cu50Zn50 via augmented-
 asr example/fe66ni14cr20_fcc.toml    # random fcc Fe66Ni14Cr20, multicomponent (Alam & Mookerjee 2009, Fig. 2)
 asr example/fe66ni14cr20_fcc_sro.toml  # the same with first-shell Warren-Cowley SRO, triad (1, 1, 0) (Fig. 4)
 asr example/co2fe04cr06al_l21.toml   # sublattice-disordered L2_1 Heusler Co2Fe0.4Cr0.6Al
-asr example/cuzn_alloy_epi.toml      # random Cu50Zn50 with the effective pair interactions of three shells; then tools/sro_alpha gives alpha(T)
 ```
 Outputs are written next to the input file. Input is one validated TOML record; unknown keys are errors.
 One input format for every system, solved by the energy-dependent augmented-space recursion. See [`doc/manual/quickstart.md`](doc/manual/quickstart.md); the Hamiltonian-specific input is separated in [`doc/manual/input/hamiltonian.md`](doc/manual/input/hamiltonian.md).
