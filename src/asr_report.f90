@@ -27,7 +27,7 @@ module asr_report
   public :: rep_energy, rep_components, rep_fermi, rep_checks, rep_timing, rep_warnings, rep_files, rep_close
   public :: ry_to_ev, bohr_to_ang, gamma_e_const, chi_p_const, get_host, get_pid, collect_warnings, clean_flags, fmt_dt
 
-  character(len=*), parameter :: program_version = 'asr 1.0.0'
+  character(len=*), parameter :: program_version = 'asr 1.0.1'
   real(dp), parameter :: ry_to_ev = 13.605693123_dp
   real(dp), parameter :: bohr_to_ang = 0.529177211_dp
   real(dp), parameter :: gamma_e_const = 0.173247_dp      !! mJ/(mol K^2) per (state/Ry, both spins)
@@ -136,7 +136,7 @@ module asr_report
   type :: rep_run_t
     ! Provenance and execution metadata
     character(len=64) :: prog_name = 'asr'
-    character(len=32) :: prog_version = '1.0.0'
+    character(len=32) :: prog_version = '1.0.1'
     character(len=64) :: git_rev = 'unknown'
     logical :: git_dirty = .false.
     character(len=128) :: compiler_ver = ''

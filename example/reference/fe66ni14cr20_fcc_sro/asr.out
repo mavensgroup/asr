@@ -1,0 +1,411 @@
+==========================================================================================
+ ASR  augmented-space recursion for disordered alloys  *  TB-LMTO-ASA
+==========================================================================================
+ program            : asr 1.0.0 git v1.0.0-7-gdb797e3 (working tree clean)
+ compiler           : GCC version 14.2.0
+ flags              : -mtune=generic -march=x86-64 -g -O2 -fbacktrace -fopenmp
+                      -ffree-line-length-none -fimplicit-none -ffree-form
+ started            : 2026-11-21 09:35:09
+ parallel           : MPI ranks 2, OpenMP threads 48 per rank
+ input              : fe66ni14cr20_fcc_sro.toml fingerprint ace230be667345cc
+ units              : energy Ry, length Bohr, charge e, moment mu_B, DOS states/Ry
+ conversions        : 1 Ry = 13.605693123 eV = 0.5 Ha;  1 Bohr = 0.529177211 Angstrom
+==========================================================================================
+
+=== input (every key used; # default = not in the input file) ============================
+   [calculation]
+   name = "Fe66Ni14Cr20 fcc SRO 110"
+   method = "asr"                                # default
+
+   [structure]
+   lattice = "fcc"
+   alat = 3.59
+   centering = "F"
+   period = 1                                    # default
+
+   [[sublattice]]
+   name = "fcc"
+   positions = [[0.0, 0.0, 0.0]]
+   species = ["Fe", "Ni", "Cr"]
+   concentrations = [0.66, 0.14, 0.2]
+
+   [[sro]]
+   pairs = [["Fe", "Ni", 1.0], ["Fe", "Cr", 1.0], ["Ni", "Cr", 0.0]]
+   shell = 1                                     # default
+
+   [[species]]
+   symbol = "Fe"
+   z = 26
+   nval = 8
+   konfig = [4, 4, 3, 4]
+   occupations = [2.0, 6.0]
+   spin_sign = 1.0                               # default
+
+   [[species]]
+   symbol = "Ni"
+   z = 28
+   nval = 10
+   konfig = [4, 4, 3, 4]
+   occupations = [2.0, 8.0]
+   spin_sign = 1.0                               # default
+
+   [[species]]
+   symbol = "Cr"
+   z = 24
+   nval = 6
+   konfig = [4, 4, 3, 4]
+   occupations = [1.0, 5.0]
+   spin_sign = 1.0                               # default
+
+   [scf]
+   save_potential = "fe66ni14cr20_sro110_pot.dat"
+   spin = 1
+   xc = "vbh"
+   sim_beta = 1.0
+   mixing = 0.2
+   max_iterations = 100
+   tolerance = 1.0E-05
+   mixing_restart = 0.0                          # default
+   zeta0 = 0.1                                   # default
+   relativistic = true                           # default
+   start_potential = ""                          # default
+
+   [asr]
+   levels = 3
+   recursion_steps = 24
+   rank = 1
+   contour_points = 32
+   supercell = 8
+   ed_terminator = "hull"
+   fermi_kt = 0.001
+   flip_radius = 99                              # default
+   cluster_radius = 1.2                          # default
+   inversion_radius = 0.0                        # default
+   fermi_poles = 0                               # default
+   depth_tol = 1.0E-05                           # default
+   ef_scan = 0                                   # default
+   ef_scan_step = 2.0E-05                        # default
+   ef_scan_center = inf                          # default
+   ef_scan_dump = ""                             # default
+   route = "edc"                                 # default
+   alpha_scale = 1.0                             # default
+   energy_block = 0                              # default
+   ef_linear_max = 0.0                           # default
+
+   [dos]
+   emin = -0.9
+   emax = 0.7
+   npoints = 321
+   eta = 0.02
+
+   [output]
+   dos_file = "fe66ni14cr20_sro110_dos.dat"
+   out_file = "asr.out"                          # default
+
+   [epi]
+   symmetric = false                             # default
+   shells = 0                                    # default
+   lambda_points = 4                             # default
+   file = "epi.toml"                             # default
+
+=== method ===============================================================================
+ Hamiltonian        : TB-LMTO-ASA, energy-dependent ASR, route edc (H^(2) form)
+ basis              : s p d, scalar relativistic; parameters in the gamma representation
+ XC functional      : vbh (libxc), LDA;  spin polarised: no
+ components         : 3 (sublattice, species) pairs, one potential each
+ augmented space    : levels 3, recursion steps 24, max rank 1, supercell 8
+ nodes / sublattice : fcc 15827
+ S^alpha            : kept range 1.200 alat, inversion radius 1.200 alat
+ screening alpha    : s 0.34850   p 0.05303   d 0.01071
+ terminator         : hull;  depth tolerance 1.0E-05 (relative)
+ occupation contour : 76 nodes: main line 32, Matsubara poles 16 (kT 1.000 mRy)
+                      bottom 1.200 Ry below the lowest E_nu;  E_F probe eta 0.010 Ry
+ electrostatics     : Madelung of the sublattice averages (Ewald, decoration cell)
+                      + screened charge deviations (SIM, sim_beta 1.000)
+ screening model    : hardness a 1.5864 Ry/e   G00 1.3565   G1 -0.1098   W00/G00 -0.4169
+ mixing             : Anderson, beta 0.200, history 6
+                      step limits 0.15 Ry (V), 0.08 Ry (E_nu)
+ convergence        : max over r of r/(1+r) |V_out - V_in| < 1.0E-05 Ry
+                      and a |u_out - u_in| of the SRO drive;  E_nu inside its band window
+
+=== structure ============================================================================
+ graph lattice      : fcc
+ lattice constant   : 6.784117 Bohr  (3.590000 Angstrom)
+ decoration cell    : 1^3 conventional cubes;  sites 4
+ sphere radius S    : 2.651208 Bohr  (equal spheres, space filling)
+ volume per site    : 78.05846 Bohr^3  (11.56707 Angstrom^3)
+
+ sublattice  site fraction  species and concentrations
+ ---------------------------------------------------------------------
+ fcc                1.0000   Fe 0.6600  Ni 0.1400  Cr 0.2000
+
+=== short-range order ====================================================================
+ first shell: centre on fcc, neighbours on fcc, 12 sites
+
+ conditional probability P(j|i) of species j on a first-shell site, centre species i
+   centre    P(Fe|i)    P(Ni|i)    P(Cr|i)
+   ---------------------------------------
+   Fe         1.0000     0.0000     0.0000
+   Ni         0.0000     0.8000     0.2000
+   Cr         0.0000     0.1400     0.8600
+
+ Warren-Cowley alpha_ij = 1 - P(j|i) / c_j;  i /= j: alpha > 0 fewer unlike neighbours
+ (clustering), alpha < 0 more (ordering)
+   centre  alpha(Fe)  alpha(Ni)  alpha(Cr)
+   ---------------------------------------
+   Fe        -0.5152     1.0000     1.0000
+   Ni         1.0000    -4.7143     0.0000
+   Cr         1.0000     0.0000    -3.3000
+
+ screening modes of the SRO closure
+   mode  lambda(Ahat)  Gamma = dq/db  G00 + G1 lambda    F [Ry/e]
+   --------------------------------------------------------------
+      1        0.0000        1.35649          1.35649     -0.4169
+      2        7.9200        0.45535          0.48673      1.8976
+      3       12.0000        0.00000          0.03867    infinite
+ F infinite: Gamma = 0, full clustering on that mode; its charge deviation vanishes
+
+ drive u [e], last iteration: Fe@fcc 0.00594 Ni@fcc 0.06377 Cr@fcc -0.06422
+
+=== SCF history ==========================================================================
+ iter       E_tot [Ry]     dE [Ry]     dV [Ry]  dE_nu [Ry]      E_F [Ry]  pass  wall [s]
+ ---------------------------------------------------------------------------------------
+    1   -2512.14695075         ---   8.509E+00   2.543E-01   -0.50943412     7    107.52
+    2   -2522.31229781  -1.017E+01   1.703E+00   2.194E-01   -0.38059190     5     66.02
+    3   -2517.90205646   4.410E+00   5.551E+00   2.061E-01   -0.28495921     3     39.50
+    4   -2519.37729805  -1.475E+00   5.637E+00   2.230E-01   -0.25508964     3     39.18
+    5   -2518.61935481   7.579E-01   4.624E+00   1.886E-01   -0.16952409     3     39.95
+    6   -2519.19052207  -5.712E-01   3.964E+00   2.350E-01   -0.02117306     3     39.92
+    7   -2520.93652400  -1.746E+00   2.452E+00   2.455E-01    0.09211746     3     40.01
+    8   -2522.48267654  -1.546E+00   5.896E-01   2.384E-01    0.10422761     2     27.02
+    9   -2522.44191705   4.076E-02   1.124E+00   2.017E-01    0.08614484     2     26.87
+   10   -2522.57024325  -1.283E-01   6.567E-01   1.792E-01    0.03973353     3     40.28
+   11   -2522.61441188  -4.417E-02   5.347E-01   1.464E-01   -0.01198132     2     27.04
+   12   -2522.67406544  -5.965E-02   2.217E-01   9.775E-02   -0.04935066     2     26.92
+   13   -2522.66217446   1.189E-02   4.644E-01   8.720E-02   -0.04969647     1     13.50
+   14   -2522.67478343  -1.261E-02   3.395E-01   3.703E-02   -0.07486301     2     26.74
+   15   -2522.69809525  -2.331E-02   9.152E-02   4.629E-02   -0.06479476     2     26.85
+   16   -2522.70220257  -4.107E-03   1.438E-01   1.528E-02   -0.07613496     2     26.78
+   17   -2522.68999374   1.221E-02   2.440E-01   2.848E-02   -0.06861209     2     26.76
+   18   -2522.48398115   2.060E-01   1.290E+00   1.438E-02   -0.07688854     2     26.71
+   19   -2520.79952848   1.684E+00   4.360E+00   5.145E-02   -0.06736030     2     26.86
+   20   -2513.26143779   7.538E+00   7.224E+00   1.027E-01    0.00099188     4     53.74
+   21   -2522.64166670  -9.380E+00   4.674E-01   1.252E-02   -0.06769818     3     40.22
+   22   -2522.70430793  -6.264E-02   5.933E-02   1.425E-02   -0.07156150     2     26.81
+   23   -2522.70438188  -7.395E-05   5.148E-02   1.323E-02   -0.07263233     2     26.65
+   24   -2522.69480529   9.577E-03   2.355E-01   1.236E-02   -0.07119776     2     26.76
+   25   -2522.68454496   1.026E-02   4.693E-01   3.566E-03   -0.07188018     1     13.51
+   26   -2522.70480476  -2.026E-02   2.801E-02   1.075E-02   -0.07210535     1     13.41
+   27   -2522.70505896  -2.542E-04   9.327E-03   8.595E-03   -0.07211037     1     13.47
+   28   -2522.70529718  -2.382E-04   4.651E-02   3.785E-03   -0.07246435     1     13.38
+   29   -2522.70476972   5.275E-04   4.125E-02   6.692E-03   -0.07212619     1     13.47
+   30   -2522.70524927  -4.795E-04   6.787E-03   6.570E-03   -0.07227445     1     13.52
+   31   -2522.70568765  -4.384E-04   2.249E-03   1.210E-03   -0.07271292     1     13.51
+   32   -2522.70576270  -7.505E-05   4.369E-03   4.373E-04   -0.07275658     1     13.53
+   33   -2522.70578250  -1.980E-05   1.761E-03   2.746E-04   -0.07281216     1     13.44
+   34   -2522.70576378   1.871E-05   1.195E-03   1.634E-04   -0.07280331     1     13.60
+   35   -2522.70574796   1.582E-05   4.952E-04   7.893E-05   -0.07279243     1     13.45
+   36   -2522.70574504   2.915E-06   7.631E-05   6.227E-05   -0.07279555     1     13.56
+   37   -2522.70574180   3.240E-06   2.809E-05   4.990E-05   -0.07279301     1     13.45
+   38   -2522.70573459   7.214E-06   2.616E-05   3.600E-05   -0.07278877     1     13.36
+   39   -2522.70573303   1.563E-06   2.074E-05   3.134E-05   -0.07278703     1     13.42
+   40   -2522.70572945   3.577E-06   3.062E-06   5.253E-06   -0.07278255     1     13.46
+ ---------------------------------------------------------------------------------------
+ converged after 40 iterations (dV < 1.0E-05 Ry, no E_nu held at its window)
+
+ per component:  qnet [e per atom]
+ iter  Fe@fcc qnet  Ni@fcc qnet  Cr@fcc qnet
+ -------------------------------------------
+    1      1.50623      0.56140     -5.36354
+    2     -0.20471      1.01103     -0.03218
+    3     -1.11818      0.36336      3.43564
+    4      0.14435     -3.44557      1.93554
+    5     -1.08299      1.10838      2.79801
+    6     -0.98645      1.27694      2.36142
+    7     -0.66650      1.27463      1.30721
+    8     -0.11355      0.07201      0.32432
+    9     -0.06199      0.67743     -0.26963
+   10      0.09311      0.13024     -0.39845
+   11      0.06778      0.15471     -0.33198
+   12     -0.03528      0.14515      0.01483
+   13      0.06563      0.11519     -0.29721
+   14     -0.08448      0.22428      0.12180
+   15      0.00939      0.05969     -0.07277
+   16     -0.00096     -0.05842      0.04405
+   17     -0.05701      0.17958      0.06243
+   18      0.20911      0.20108     -0.83083
+   19      0.47745     -2.71149      0.32246
+   20     -1.63568      1.25762      4.51742
+   21     -0.13742      0.28448      0.25436
+   22     -0.00167      0.06824     -0.04226
+   23      0.01080      0.00155     -0.03672
+   24     -0.04709      0.04236      0.12575
+   25     -0.02655      0.32555     -0.14028
+   26     -0.00328      0.04944     -0.02379
+   27      0.00192      0.02907     -0.02667
+   28     -0.00501      0.06251     -0.02724
+   29     -0.00824      0.03472      0.00290
+   30      0.00009      0.03712     -0.02629
+   31     -0.00001      0.03293     -0.02302
+   32     -0.00030      0.03686     -0.02482
+   33      0.00013      0.03321     -0.02366
+   34     -0.00014      0.03498     -0.02404
+   35      0.00005      0.03398     -0.02393
+   36      0.00000      0.03426     -0.02400
+   37      0.00000      0.03429     -0.02399
+   38      0.00000      0.03428     -0.02398
+   39      0.00000      0.03428     -0.02399
+   40      0.00000      0.03428     -0.02400
+
+
+=== total energy =========================================================================
+ Kohn-Sham form: output density in the input potential; no Fermi smearing entropy
+ term                                                   per site [Ry]
+ -------------------------------------------------------------------
+ valence band energy   sum_l (q1 + E_nu Q_l)              -1.90335637
+ core eigenvalue sum                                   -1474.48969313
+ double counting       -int n (v_in + 2Z/r)            -2019.61010440
+ sphere Hartree        1/2 int n V_H                    1080.72768338
+ exchange-correlation  int n eps_xc                     -107.43052434
+ Madelung              1/2 q V_M                           0.00000000
+ screened deviations   1/2 q V_F                           0.00026540
+ -------------------------------------------------------------------
+ total energy E_tot                                    -2522.70572945
+
+ per component [Ry per atom of the component]; last column per site = sum_p w_p E_p
+ term                            Fe@fcc          Ni@fcc          Cr@fcc        per site
+ --------------------------------------------------------------------------------------
+ valence band energy        -1.94029526     -2.36639737     -1.45732933     -1.90335637
+ core eigenvalue sum     -1486.44600584  -1758.92693229  -1235.92779377  -1474.48969313
+ double counting         -2033.56919361  -2467.93393987  -1659.71842516  -2019.61010440
+ sphere Hartree           1088.03465492   1314.63149890    892.88200642   1080.72768338
+ exchange-correlation     -108.08117826   -123.10581260    -94.31066465   -107.43052434
+ Madelung                    0.00000000      0.00000000      0.00000000      0.00000000
+ screened deviations         0.00000000      0.00080188      0.00076571      0.00026540
+ --------------------------------------------------------------------------------------
+ total energy            -2542.00201804  -3037.70078134  -2098.53144078  -2522.70572945
+
+
+=== converged results ====================================================================
+ E_F                : -0.07278255 Ry
+ charge residual    : -2.43E-08 e per site  (sum_p w_p qnet_p; 0 = neutral)
+
+ component Fe@fcc   Z  26.0   valence 8   c  0.6600   weight per site  0.6600
+   S 2.65121 Bohr   electrons  26.00000 e   qnet   0.00000 e   moment   0.00000 mu_B
+
+   potential parameters, gamma representation [Ry]
+   spin  l         E_nu            C  sqrt(Delta)            p        gamma
+   ------------------------------------------------------------------------
+      1  s    -0.446303    -0.267081    -0.435433     0.038042     0.429976
+      1  p    -0.282879     0.760849     0.418166     0.022923     0.115203
+      1  d    -0.216642    -0.146287     0.121076     1.480725     0.000719
+
+   moments and DOS at E_F, both spins
+   spin  l      q0 [e]   q1 [e Ry]  q2 [e Ry^2]     Q_l [e]   N_l(E_F) [1/Ry]
+   --------------------------------------------------------------------------
+      1  s     0.67212     0.00000      0.00997     0.67212            0.1658
+      1  p     0.79700     0.00000      0.01149     0.79700            0.8247
+      1  d     6.53088    -0.00001      0.05469     6.53088           24.8238
+   --------------------------------------------------------------------------
+   sum (valence electrons in the sphere)            8.00000           25.8143
+
+ component Ni@fcc   Z  28.0   valence 10   c  0.1400   weight per site  0.1400
+   S 2.65121 Bohr   electrons  28.03428 e   qnet   0.03428 e   moment   0.00000 mu_B
+
+   potential parameters, gamma representation [Ry]
+   spin  l         E_nu            C  sqrt(Delta)            p        gamma
+   ------------------------------------------------------------------------
+      1  s    -0.447962    -0.308468    -0.419806     0.047919     0.425448
+      1  p    -0.288407     0.704746     0.406638     0.025753     0.112948
+      1  d    -0.213533    -0.187135     0.103473     2.136839    -0.002330
+
+   moments and DOS at E_F, both spins
+   spin  l      q0 [e]   q1 [e Ry]  q2 [e Ry^2]     Q_l [e]   N_l(E_F) [1/Ry]
+   --------------------------------------------------------------------------
+      1  s     0.70828     0.00001      0.01188     0.70828            0.2813
+      1  p     0.77059     0.00000      0.01179     0.77059            0.9594
+      1  d     8.55542    -0.00001      0.06022     8.55542           19.5213
+   --------------------------------------------------------------------------
+   sum (valence electrons in the sphere)           10.03428           20.7620
+
+ component Cr@fcc   Z  24.0   valence 6   c  0.2000   weight per site  0.2000
+   S 2.65121 Bohr   electrons  23.97600 e   qnet  -0.02400 e   moment   0.00000 mu_B
+
+   potential parameters, gamma representation [Ry]
+   spin  l         E_nu            C  sqrt(Delta)            p        gamma
+   ------------------------------------------------------------------------
+      1  s    -0.413192    -0.195175    -0.453038     0.029876     0.434717
+      1  p    -0.250431     0.865948     0.432661     0.022792     0.119090
+      1  d    -0.218391    -0.066051     0.147473     0.902992     0.006187
+
+   moments and DOS at E_F, both spins
+   spin  l      q0 [e]   q1 [e Ry]  q2 [e Ry^2]     Q_l [e]   N_l(E_F) [1/Ry]
+   --------------------------------------------------------------------------
+      1  s     0.64964     0.00000      0.00873     0.64964            0.1701
+      1  p     0.80145     0.00000      0.01096     0.80145            1.4755
+      1  d     4.52491     0.00000      0.04064     4.52491           17.6128
+   --------------------------------------------------------------------------
+   sum (valence electrons in the sphere)            5.97600           19.2584
+
+=== Fermi level ==========================================================================
+ E_F                : -0.07278255 Ry
+ N(E_F) per site    : 23.7958 states/Ry  (1.74896 states/eV), both spins
+ N(E_F) broadening  : 0.0100 Ry  (G at E_F + i eta)
+ Sommerfeld gamma_e : 4.1226 mJ/(mol K^2)  (bare band)
+ Pauli chi_P        : 5.654E-05 emu/mol  (bare, no Stoner enhancement)
+ gamma_e = (pi^2/3) k_B^2 N(E_F) = 0.173247 mJ/(mol K^2) per state/Ry
+ chi_P = mu_B^2 N(E_F) = 2.37605E-06 emu/mol per state/Ry;  mol = mole of sites
+
+ component      s [1/Ry]   p [1/Ry]   d [1/Ry]   total [1/Ry]   weight
+ --------------------------------------------------------------------
+ Fe@fcc           0.1658     0.8247    24.8238        25.8143   0.6600
+ Ni@fcc           0.2813     0.9594    19.5213        20.7620   0.1400
+ Cr@fcc           0.1701     1.4755    17.6128        19.2584   0.2000
+ --------------------------------------------------------------------
+ per site (sum_p w_p N_p)                             23.7958
+
+=== health checks ========================================================================
+ check                                         value                 limit         status
+ ---------------------------------------------------------------------------------------
+ SCF converged (dV)                            3.1E-06 Ry            1.0E-05 Ry    OK
+ E_nu held at its window, last / whole run     0 / 0                 0             OK
+ non-causal contour values (-Im G <= 0)        0 of 924              0             OK
+ valence weight below contour, first / final   9.6E-10 / 1.4E-09     1.0E-03 e     OK
+ cell charge residual                          -2.4E-08 e            1.0E-03 e     OK
+ recursion depth used, mean                    20.58 of 24           -             info
+ bp tail fallbacks, last iteration             0                     -             info
+ Anderson restarts in the run                  8                     -             info
+ E_F passes, last iteration                    1                     -             info
+
+=== timing ===============================================================================
+ part                                   calls    wall [s]     cpu [s]  cpu/wall   share
+ -------------------------------------------------------------------------------------
+ setup (graph, operators, screening)        5        1.02       41.32      40.3    0.1%
+ potential parameters                      43        0.07        0.12       1.7    0.0%
+ recursion chains: SCF contour             81     1072.76    48433.05      45.1   92.9%
+ recursion chains: bottom check             2       12.31      240.86      19.6    1.1%
+ DOS on the real axis                       1       58.34     2764.44      47.4    5.1%
+ density, core, Hartree, xc, energy        40        2.80       17.76       6.3    0.2%
+ mixing and E_nu windows                   40        2.11        2.11       1.0    0.2%
+ restart file                              40        0.20        0.13       0.6    0.0%
+ free-atom start                            3        4.36        4.35       1.0    0.4%
+ other (outside the parts above)                     0.53        2.46       4.7    0.0%
+ -------------------------------------------------------------------------------------
+ total                                            1154.51    51506.60      44.6  100.0%
+ chain evaluations, SCF contour: 74844   (69 per wall second)
+ chain time per rank [s]: min    1086.4  mean    1114.9  max    1143.4  max/mean 1.026
+ rank 0 of 2; CPU time is the process time of this rank (all threads)
+
+=== warnings =============================================================================
+ none
+
+=== files written ========================================================================
+ fe66ni14cr20_sro110_dos.dat   DOS curve
+ fe66ni14cr20_sro110_pot.dat   restart potentials (last iteration)
+ asr.json                      machine-readable summary
+ asr.out                       text report
+
+=== end of run ===========================================================================
+ finished           : 2026-11-21 09:54:23   total wall time    1154.51 s
+ status             : NORMAL TERMINATION   SCF CONVERGED
+==========================================================================================

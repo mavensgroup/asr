@@ -48,7 +48,7 @@ contains
     character(len=2) :: syms(9) = ['Cu', 'Zn', 'Ni', 'Fe', 'Co', 'Cr', 'Mn', 'Ti', 'Al']
 
     rep%prog_name = 'asr'
-    rep%prog_version = '1.0.0'
+    rep%prog_version = '1.0.1'
     rep%git_rev = '2d998ac'
     rep%git_dirty = .false.
     rep%compiler_ver = 'Intel(R) Fortran Compiler 2025.0'

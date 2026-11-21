@@ -1,5 +1,5 @@
 name = "asr"
-version = "1.0.0"
+version = "1.0.1"
 license = "MIT"
 author = "Rudra Banerjee"
 description = "Augmented space recursion for disordered alloys"

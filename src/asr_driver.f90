@@ -931,7 +931,7 @@ contains
     integer :: p, sg, l, kap, k, i, j, n1, n2, nmax, dot
 
     rep%prog_name = 'asr'
-    rep%prog_version = '1.0.0'
+    rep%prog_version = '1.0.1'
     rep%git_rev = git_rev
     rep%git_dirty = git_dirty
     rep%compiler_ver = compiler_version()
