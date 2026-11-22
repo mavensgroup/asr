@@ -9,7 +9,7 @@ This page states the direction in one place.
 ## Goal
 
 A robust, modern Fortran ASR code for problems CPA cannot handle: high-entropy
-alloys, disordered altermagnets, short-range order, and off-diagonal /
+alloys, partially disordered compounds, short-range order, and off-diagonal /
 environment disorder.
 
 ## Fixed decisions

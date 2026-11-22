@@ -11,7 +11,7 @@
 [![Documentation](https://img.shields.io/badge/docs-mdBook%20%2B%20FORD%20API-4051b5)](https://mavensgroup.github.io/asr/)
 
 A from-scratch modern-Fortran code for electronic structure of random alloys beyond CPA: high-entropy alloys,
-disordered altermagnets, short-range order.
+partially disordered compounds, short-range order.
 
 ## Method and Hamiltonian
 
