@@ -59,9 +59,9 @@ module asr_epi
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c
   use asr_augblk, only: blk_work_t, blk_hamx, blk_project
-  use asr_edn, only: edn_t
+  use asr_edc, only: edn_t
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
-  use asr_endep, only: cf_species, ed_project, ed_nchain, ed_nlev
+  use asr_chain, only: cf_species, ed_project, ed_nchain, ed_nlev
   use asr_symmetry, only: cubic_site_perms, class_ops
   use asr_lapack, only: dsyev
   use asr_ed3, only: ed3_t, ed3_work_t
