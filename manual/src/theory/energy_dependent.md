@@ -23,7 +23,7 @@ input file, with `[asr] route`.
 !!! tip "Which route should I use?"
     Use `edc`, the production route. `ed3` adds the \(hph\) term that `edc` omits
     and agrees better with the k-space full-ASA reference where that term
-    matters (derivation in the supplementary material of the program paper). It costs more per
+    matters (derivation [below](#ed3-the-full-generalised-asa-problem)). It costs more per
     iteration. The energy-independent and \(P(z)-S\) forms are exact
     cross-checks of `edc` at convergence but have no input switch.
 
@@ -100,6 +100,116 @@ species \(c\) on \(R_0\). This is the species-resolved Green function. The
 energy-independent route with a frozen centre gives the same function. The two routes are
 exact cross-checks of one another at convergence. At a finite number of steps they are
 different approximants.
+
+## `ed3`: the full generalised ASA problem
+
+`edc` works with the orthogonal \(H^{(2)}\). It has no \(hph\) term. The k-space reference
+solves the full generalised ASA problem. `ed3` brings the recursion to that problem
+([[asr_ed3]]). It keeps the frozen centre and the scaling of `edc`.
+
+### The secular matrix
+
+All potential parameters are diagonal in site and orbital. The screening \(\alpha\) is the
+same for every species, so \(S=S^\alpha\) does not depend on the configuration. Write
+\(c=C^\alpha-E_\nu\), \(D=\Delta^\alpha\), \(d=D^{1/2}\), \(o=o^\alpha\),
+\(p=p^\alpha=p^\gamma+o^2\), \(h=c+dSd\) and \(\varepsilon=E-E_\nu\). The overlap and the
+Hamiltonian of the ASA problem are
+
+\[
+O=1+oh+ho+hph,\qquad H=E_\nu+h+E_\nu oh+hoE_\nu+h(o+pE_\nu)h .
+\]
+
+Their secular matrix is
+
+\[
+K(E)=EO-H=\varepsilon-h+\varepsilon oh+ho\varepsilon-hoh+hp\varepsilon h .
+\]
+
+It factorises as \(K=(1+ho)\,[\varepsilon(1+oh)-h]+h\,p^\gamma\varepsilon\,h\). The overlap is
+\(O=(1+ho)(1+oh)+hp^\gamma h\). Both terms are positive semidefinite, so \(O\) is positive
+definite when \(1+oh\) is invertible. The eigenvalues of the pencil are then real, and the
+contour integral of \(G=K^{-1}\) is valid.
+
+### Central-species scaling
+
+Fix the centre to species \(c\) and scale with \(T_R=(D_c/D_R)^{1/2}\), as in `edc`. Then
+\(h'=ThT=g+S'\) with the random diagonal \(g_R=(D_c/D_R)\,c_R\) and the non-random
+\(S'=D_c^{1/2}SD_c^{1/2}\). The scaled secular matrix is
+
+\[
+K'(E)=TKT=\tilde\varepsilon-h'+uh'+h'u-h'\tilde Qh' ,
+\]
+
+\[
+\tilde\varepsilon_R=\frac{D_c}{D_R}\,\varepsilon_R,\qquad u_R=o_R\varepsilon_R,\qquad
+\tilde Q_R=\frac{D_R}{D_c}\,(o_R-p_R\varepsilon_R) .
+\]
+
+The proof uses only that \(T\) is diagonal: \(T(hXh)T=h'(T^{-1}XT^{-1})h'\) for any diagonal
+\(X\), and \(T^{-2}=D_R/D_c\). The scaled matrix has four properties.
+
+* Every random factor is site diagonal. It sits around the non-random \(S'\). This is the
+  structure the augmented space needs. It holds for any number of species and sublattices,
+  for each spin, and for an \(E_\nu\) per orbital.
+* Every coefficient is linear in \(E\). So \(K'\) has no poles. The pole problem of the
+  \(P(z)-S\) form cannot occur.
+* \(K'\) is symmetric. At complex \(E\) it is complex symmetric. Its diagonal factors depend
+  on species and \(l\) only, so the point-group reduction and the SRO shell classes apply
+  unchanged.
+* \(T=1\) on the centre. So \(\langle 1|K'^{-1}|1\rangle=G_{11}\).
+
+The code applies \(K'\) in its canonical form
+\(K'=D^\text{diag}-(VS'+S'V)-S'\tilde QS'\). Here
+\(V_s=(\tfrac12+c_so_s)-(o_s+c_sp_s)\,\varepsilon_s\). The single \(-S'\) term splits into two
+halves, so \(V\) starts with \(\tfrac12\). One Lanczos step needs two applications of \(S'\),
+as in `edc`.
+
+### Moments from two chains
+
+A sphere charge needs three central blocks, \(G_{11}\), \((hG)_{11}\) and \((hGh)_{11}\). The
+energy moments of one Green function are not enough. Take \(|u\rangle=|1L\rangle\),
+\(|v\rangle=h'|u\rangle\) and \(|a\rangle=|u\rangle+o_c|v\rangle\). Since \(T=1\) on the
+centre, the moments in the gamma representation are
+
+\[
+q_0=\langle a|K'^{-1}|a\rangle,\qquad q_1=\langle v|K'^{-1}|a\rangle,\qquad
+q_2=\langle v|K'^{-1}|v\rangle .
+\]
+
+\(|v\rangle=g_c|u\rangle+S'|u\rangle\) does not depend on the configuration. So both vectors lie
+in the reference sector of the augmented space. They also lie in the same reduced basis. One
+complex-symmetric Lanczos chain starts from each. \(q_0\) and \(q_2\) are diagonal elements.
+Their error is of second order in the Lanczos residual. \(q_1\) comes from projecting each chain
+onto the other start vector. That error is of first order. The two chains give \(q_1\) twice.
+The code uses the mean and prints the largest difference.
+
+The sphere charge is \(q_0+p^\gamma q_2\). It needs no cross term. It is a positive sum of two
+Herglotz functions. The density is \(q_0\phi^2+2q_1\phi\dot\phi+q_2\dot\phi^2\). The band energy
+of a channel is \(q_1+E_\nu\,(q_0+p^\gamma q_2)\). This follows from \(E_\alpha z^TOz=z^THz\) for
+every eigenvector. The form \(q_1+E_\nu q_0\) holds only for the energy moments of `edc`. In
+the generalised problem it would lose \(E_\nu p^\gamma q_2\) per channel.
+
+One chain is not enough. With chains from \(|u\rangle\) and \(S'|u\rangle\) instead, the charge
+needs the cross term \((hG)_{11}\), which carries the first-order error. On terminated chains
+that choice also lost the positivity of the \(2\times 2\) block of \(-\mathrm{Im}\,G\) at some
+energies. The chains from \(|a\rangle\) and \(|v\rangle\) kept it at every test energy. When
+\(p^\gamma=0\), one chain would suffice, because \((hz)_1\) then follows from \(z_1\) on every
+eigenvector. For d bands \(p^\gamma\) is not small, so the code does not use this shortcut.
+
+### Limits
+
+* **Ordered limit.** With one species per sublattice the augmented space is the reference
+  sector alone. Then \(K\) is the k-space pencil term by term. The two differ only by the
+  range of \(S\) and by the chain length.
+* **Second-order limit.** At \(p^\gamma=0\),
+  \((1+oh)\,G\,(1+ho)=[\varepsilon-h(1+oh)^{-1}]^{-1}\) exactly. Expanding
+  \(h(1+oh)^{-1}=h-hoh+\dots\) gives \([E-H^{(2)}]^{-1}\). So \(H^{(2)}\) is the second-order
+  truncation, and `ed3` and `edc` agree in the physical moments to second order.
+* **Electron count.** The sum of the sphere charges over all sites is the number of occupied
+  states. The weight of a single orbital is not 1, because \(O\) carries \(o\) and \(p\) of the
+  neighbours. Only the trace over all sites counts states.
+* **Representation.** The generalised problem does not depend on \(\alpha\) apart from the
+  range of \(S\). `ed3` has about half the representation dependence of `edc`.
 
 ## The reduced operator and its symmetric subspace
 

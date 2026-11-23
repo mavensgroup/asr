@@ -18,6 +18,7 @@
   - [Recursion and Terminators](theory/recursion.md)
   - [Energy-Dependent ASR](theory/energy_dependent.md)
   - [SCF and Electrostatics](theory/scf_electrostatics.md)
+  - [Bloch Spectral Function](theory/spectral.md)
 - [Guides](guides/index.md)
   - [Convergence](guides/convergence.md)
   - [Magnetism](guides/magnetism.md)

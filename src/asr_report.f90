@@ -1,5 +1,5 @@
 !> Human-readable run report (asr.out) and machine-readable summary (asr.json).
-!> Implements the SOTA output architecture described in notes/OUTPUT_PLAN.md:
+!> Output layout as documented in manual/src/output.md:
 !>   - Single canonical unit system (Ry, Bohr, e, mu_B, states/Ry), units in every header
 !>   - Maximum 90 columns width, guaranteed no number collisions or wrapping
 !>   - Fixed greppable section headers ("=== name ===")

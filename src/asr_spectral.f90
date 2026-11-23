@@ -1,5 +1,5 @@
-!> Configuration-averaged Bloch spectral function A(k, E) of the energy-dependent ASR (route edc).  Derivation and review:
-!> notes/DERIVATION_spectral_argon.md (Q1, Q2 Form 2B, Q3b, Q7 and the review section).
+!> Configuration-averaged Bloch spectral function A(k, E) of the energy-dependent ASR (route edc).  Derivation:
+!> manual/src/theory/spectral.md.
 !>
 !> Method.  The off-site elements come from the chains that the SCF runs anyway.  With the centre frozen to species c the scaled
 !> operator gives G^(2) = T (E - H(E))^-1 T, and T = 1 on the centre.  So
@@ -21,7 +21,7 @@
 !> (random alloys, B2, L2_1; not L1_2, whose face sites are related by rotations only): spectral_translations_ok.
 !>
 !> Window.  The Fourier sum stops at rmax.  A sharp stop rings: for an ordered metal with eta 0.01 Ry, A dips to -30 % of its
-!> peak (desktop desk27).  The default window is the ball window of the derivation (Result Q4.2): w(R) is the overlap volume of two
+!> peak.  The default window is the ball window: w(R) is the overlap volume of two
 !> balls of diameter rmax at distance R, divided by the volume of one ball, w(R) = (1 - R/rmax)^2 (1 + R/(2 rmax)) for R < rmax.
 !> Its Fourier transform is |FT of the ball|^2 >= 0.  Samples of such a function on a lattice keep a non-negative Fourier series
 !> (Poisson summation: the series is the periodic sum of the continuum transform).  So the windowed A is the exact A convolved in

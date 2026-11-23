@@ -1188,7 +1188,7 @@ contains
     end subroutine moments
   end subroutine alloy_scf
 
-  !> screening constants (s, p, d) of the recursion Hamiltonian; H^(2) is representation dependent (STATUS.md 2026-10-06)
+  !> screening constants (s, p, d) of the recursion Hamiltonian; H^(2) is representation dependent
   pure function alloy_alpha(inp) result(al)
     type(alloy_input_t), intent(in) :: inp
     real(dp) :: al(0:2)

@@ -24,13 +24,13 @@
 !>                  model; with [[sro]] it also sets the screened potential of the correlated first shell (asr_screening)
 !>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull (default) | bp | avg2; bp can put a pole of the
-!>                  terminated fraction next to the contour on complex chains, see notes/FINDINGS_LOG.md), fermi_kt, fermi_poles, depth_tol,
+!>                  terminated fraction next to the contour on complex chains, see manual/src/theory/recursion.md), fermi_kt, fermi_poles, depth_tol,
 !>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop),
-!>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, notes/DERIVATION_ed3.md),
+!>                  route = "edc" (default: H^(2), asr_edc) | "ed3" (full generalised ASA problem, asr_ed3),
 !>                  alpha_scale (diagnostic: screening constants times this factor; default 1),
 !>                  energy_block (contour energies per chain block, capped by memory; default 0 = one energy per chain with the
 !>                  real kernels; 8 was 1.35x faster for CoCrFeNi at about 6x the memory; the 1e-4 block difference in B2 ed3 is
-!>                  rounding scatter inside the length error of the chain, notes/REVIEW_fable.md 3.8; the chains of [epi] use
+!>                  rounding scatter inside the length error of the chain; the chains of [epi] use
 !>                  the same blocks), ef_linear_max (Ry; E_F
 !>                  steps up to this size are taken to first order without a new contour, exact at self-consistency;
 !>                  default 0 = off)

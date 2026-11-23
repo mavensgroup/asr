@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Exact charge-excess model on minimal-tail configurations against the closures (notes/FINDINGS_LOG.md, "B3 closure").
+"""Exact charge-excess model on minimal-tail configurations against the closures (closure of the first-shell SRO in asr_screening).
 
-The ASR treats the sites beyond the first shell as uncorrelated, and the SQS cells of gate B3 (tools/sqs.py --alpha) are built the
+The ASR treats the sites beyond the first shell as uncorrelated, and the SQS cells (tools/sqs.py --alpha) are built the
 same way.  This test makes such configurations by inverse Monte Carlo: pair couplings on shells 1..NS are adjusted until the
 first-shell alpha has its target and the alphas of shells 2..NS are as close to zero as the lattice allows.  For every
 configuration the exact Gamma (all lattice vectors of the periodic cell, as sro_exact_test.py) is compared with the closures at

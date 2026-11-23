@@ -4,6 +4,7 @@ ordered_subpage: augmented_space.md
                  recursion.md
                  energy_dependent.md
                  scf_electrostatics.md
+                 spectral.md
 ---
 
 # Theory
@@ -19,6 +20,7 @@ substitute for the original papers (see [References](../appendix/references.html
 | [Hamiltonians](../hamiltonian/index.html) | Which Hamiltonian does the method run on, and which parameters does the code generate? (TB-LMTO-ASA is the only one implemented) |
 | [Energy-dependent ASR](energy_dependent.html) | What are the production routes (`edc`, `ed3`) and the reference forms? |
 | [SCF and electrostatics](scf_electrostatics.html) | How are charges, Fermi level, Madelung energy and mixing handled? |
+| [Bloch spectral function](spectral.html) | How is \(A(\mathbf k,E)\) of a disordered alloy obtained from the recursion? |
 
 ## The pipeline
 

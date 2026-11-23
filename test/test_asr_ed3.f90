@@ -1,4 +1,4 @@
-!> Gate 1 of notes/DERIVATION_ed3.md: the full-ASA energy-dependent augmented-space operator against brute force on a ring of
+!> Exactness test of route ed3 (manual/src/theory/energy_dependent.md): the full-ASA energy-dependent augmented-space operator against brute force on a ring of
 !> N sites (9 orbitals), binary alloy, start site frozen to the central species c, all other sites A (x) or B.
 !> Brute force: K = E O - H of bands_core (src/asr_asa.f90), O = 1 + o h + h o + h p h,
 !> H = E_nu + h + E_nu o h + h o E_nu + h (o + p E_nu) h, h = c + d S d (alpha representation, p from to_alpha).

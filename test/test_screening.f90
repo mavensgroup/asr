@@ -1,4 +1,4 @@
-!> asr_screening: lattice Coulomb kernel and the single-site screened electrostatics with first-shell SRO (gate B3).
+!> asr_screening: lattice Coulomb kernel and the single-site screened electrostatics with first-shell SRO.
 !>  Ewald M(k): CsCl (bcc H) and rock-salt (sc R) Madelung constants.  screen_lattice: beta round trip, the unscreened limit,
 !>  the reference values of the derivation (bcc a = 2.85 A: a = 1.263 Ry gives beta 1.045, lambda 0.212), the lattice maximum
 !>  of beta, mesh convergence.  screen_matrix: no SRO = SIM (linear form, bit for bit), diag(w) F symmetric, sublattice sum
@@ -163,7 +163,7 @@ program test_screening
   ! (c) the start of the SCF.  A potential without an SRO part has u = 0: then u_out = dq and v = W dq, at most a |dq| per
   ! mode (0 <= Gamma <= 2), and v follows the charges: dq = 0 gives v = 0.  The start u = Gamma^+ dq stands for an input
   ! potential that already holds F dq.  It keeps the first charges: with dq = 0 in the next iteration v = W (I - Gamma) u is
-  ! still several Ry for the free-atom charges of the triad (1,1,0) (desk10, iteration 1).
+  ! still several Ry for the free-atom charges of the triad (1,1,0) in the first iteration.
   dq3 = [1.5062_dp, 0.5614_dp, -5.3635_dp]; dq3 = dq3 - sum(x * dq3)
   u3 = 0.0_dp
   call screen_update(g3, w3, x, [1, 1, 1], dq3, u3, uo3, v3)

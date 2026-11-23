@@ -1,6 +1,6 @@
 !> Bloch spectral function through the production routine class_scf (asr_spectral, spectral_final): ordered fcc Cu.
 !> For one species the scaled operator is z - H^(2) itself.  The reference is the dense inverse of z - H^(2) on the same node
-!> set (unreduced operator, same levels), which is the limit of a long chain (notes/DERIVATION_levels_steps.md, Result S2).  Its
+!> set (unreduced operator, same levels), which is the limit of a long chain.  Its
 !> diagonal elements G_{0L,RL} on the targets within rmax, unfolded with the Bloch phases, must give the A(k, E) of class_scf
 !> (targets, mirror images, symmetrisation, D2h readout, unfolding).  Also: no reciprocity defect.  The node set here is the
 !> whole periodic cell (256 sites), so the dense sum over every site is the exact A(k, E) of the cell at the commensurate k of the

@@ -1,5 +1,5 @@
 !> Screened electrostatics of charge fluctuations in a substitutional alloy, single-site form, with first-shell short-range
-!> order (gate B3; derivation in notes/FINDINGS_LOG.md, "B3 re-derived").
+!> order (derivation below; summary in manual/src/theory/scf_electrostatics.md).
 !>
 !> Charge-excess model (linear q-V law): every site of the graph lattice responds to its own Madelung potential,
 !>     q_i = b_i - (V_i - mu) / a,      V_i = sum_{j /= i} M_ij q_j,      M_ij = 2 / R_ij  (Ry, Bohr; ASA point charges),
@@ -16,13 +16,13 @@
 !> diag(w) Ahat is symmetric (w_p = f_kappa x_c; f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so diag(w) F is symmetric and
 !> E = 1/2 sum_p w_p dq_p (F dq)_p has dE/dq_p = w_p (F dq)_p.
 !>
-!> Closure of the first-shell SRO (notes/FINDINGS_LOG.md, "B3 closure"; scripts in tools/sro_closure).  The linear form
+!> Closure of the first-shell SRO (numerical checks in tools/sro_closure).  The linear form
 !> Gamma = G00 + G1 Ahat keeps the correlations of the first shell only.  Its structure factor turns negative at the zone
 !> boundary for strong clustering, and G00 + G1 lambda then has a zero (fcc beta 1.0: lambda* = 12.35; beta 1.2: 7.67).  The
 !> exact model has no zero: Gamma = <G(k) S(k)> / x with G > 0 and S >= 0, and sum_R G(R) = 0 gives Gamma -> 0 (F -> +infinity)
 !> for full segregation.  The code therefore completes the structure factor of every eigenmode of Ahat (eigenvalue lambda,
 !> first-shell alpha_1 = lambda / z) with as few correlations beyond the first shell as possible (minimal-tail closure), the
-!> configuration model of the ASR itself and of the SQS cells of gate B3:
+!> configuration model of the ASR itself and of the SQS cells used to test it:
 !>   -1 <= lambda <= -1/c1min (fcc -1..3, bcc -1..1): S = 1 + lambda c1(k) >= 0 is realizable; Gamma = G00 + G1 lambda exactly.
 !>   lambda > -1/c1min (clustering): S ~ max(0, c1(k) - c0), c0 from c1min upwards; S concentrates at k = 0, where G = 0.
 !>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates at the ordering point k_o.

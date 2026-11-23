@@ -1,4 +1,4 @@
-!> Gate 1, part B, of notes/DERIVATION_ed3.md: the full-ASA energy-dependent operator on the site-class operator asr_augcls
+!> Exactness test of route ed3, part B (manual/src/theory/energy_dependent.md): the full-ASA energy-dependent operator on the site-class operator asr_augcls
 !> (N species, site classes, first-shell SRO, point-group reduction).  K' = et - h' + u h' + h' u - h' Qt h' with
 !> h' = g + S' (augcls apply with o = E_nu = 0), random diagonals by augcls_rand_c (complex, normalised coordinates).
 !>  (B1) ring of 5, four species: classes ordered {1} | binary {2,3} | ternary {1,3,4}; site 1 (ternary) frozen to each of its

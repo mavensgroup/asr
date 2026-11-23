@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pole of the SRO screening matrix F of asr_screening against sim_beta (notes/FINDINGS_LOG.md, "B3 closure").
+"""Pole of the SRO screening matrix F of asr_screening against sim_beta (closure of the first-shell SRO in asr_screening).
 
 numpy port of asr_screening::screen_lattice (coulomb_k, the bisection for the hardness a, G00, G1).  It prints, per lattice and
 beta: a, G00, G1, the pole lambda* = -G00/G1 of F(lambda) = (W00 + W1 lambda) / (G00 + G1 lambda), and F at the Ahat eigenvalues

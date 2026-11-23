@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Numeric check of the S_trunc identity, the positivity argument and the energy condition (notes/FINDINGS_LOG.md, "B3 closure").
+"""Numeric check of the S_trunc identity, the positivity argument and the energy condition (closure of the first-shell SRO in asr_screening).
 
 Gamma = G00 I + G1 Ahat is the single-site response (dq = Gamma db).  Claims checked here on the code's own lattice functions:
  (1) diag(x) Gamma = <G(k) S_trunc(k)>_BZ on the deviation subspace x.db = 0, S_trunc(k) = diag(x) [(I - 1 x^T) + c1(k) Ahat].

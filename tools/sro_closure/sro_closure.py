@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The closure of the first-shell SRO (notes/FINDINGS_LOG.md, "B3 closure"): a structure factor that is positive by construction.
+"""The closure of the first-shell SRO (closure of the first-shell SRO in asr_screening): a structure factor that is positive by construction.
 
 Krivoglaz-Clapp-Moss / spherical-model form for one SRO mode with first-shell value alpha_1 = lambda / z:
     alpha(k) = N / (1 - t c1(k)),   N = 1 / <1/(1 - t c1)>   (so <alpha(k)> = 1),   alpha_1 = <c1 alpha> = (1 - N) / t.

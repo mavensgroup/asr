@@ -1,4 +1,4 @@
-!> Unit test for SOTA output architecture (notes/OUTPUT_PLAN.md).
+!> Unit test of the output layout (asr_report; manual/src/output.md).
 !> Verifies:
 !>   1. Line widths in text report <= 90 columns across 1, 3, and 9 components, nspin 1 and 2.
 !>   2. Section headers present in exact order.
