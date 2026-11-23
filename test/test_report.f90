@@ -225,6 +225,9 @@ contains
     do ic = 1, 3
       do is = 1, 2
         call make_synthetic_run(rep, nc(ic), sp(is), has_sro=(nc(ic) > 1))
+        ! Long working directories (a path segment longer than a line included) must still wrap within 90 columns.
+        if (ic == 3) rep%workdir = '/tmp/a-rather-long-scratch-directory-name/' // repeat('x', 100) // &
+                                   '/session-0123456789abcdef/package/ASRec-1.0.1'
         write (fname, '(a,i0,a,i0,a)') 'test_c', nc(ic), '_s', sp(is), '.out'
         rep%out_file = fname
         call rep_write_report(rep, fname)

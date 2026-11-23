@@ -356,7 +356,7 @@ contains
     integer, intent(in) :: u
     character(len=*), intent(in) :: prefix, text, indent
     character(len=512) :: line, token
-    integer :: p, q, n
+    integer :: p, q, n, cut, s, hl
     line = trim(prefix)
     n = len_trim(text)
     if (n == 0) then
@@ -371,6 +371,26 @@ contains
       do while (q <= n .and. text(q:q) /= ' '); q = q + 1; end do
       token = text(p:q-1)
       p = q
+      ! A token longer than a line (a long path) is split, preferably after a '/', so that no line exceeds 90 columns.
+      if (len_trim(token) > 90 - len(indent)) then
+        hl = len_trim(line) + 1
+        if (90 - hl < 20) then
+          call wline(u, line)
+          line = indent
+          hl = len(indent)
+        end if
+        do while (len_trim(token) > 90 - hl)
+          cut = 90 - hl
+          s = index(token(1:cut), '/', back=.true.)
+          if (s > cut / 2) cut = s
+          call wline(u, line(1:hl) // token(1:cut))
+          token = token(cut+1:)
+          line = indent
+          hl = len(indent)
+        end do
+        line = line(1:hl) // trim(token)
+        cycle
+      end if
       if (len_trim(line) > len_trim(prefix) .and. len_trim(line) + 1 + len_trim(token) > 90) then
         call wline(u, line)
         line = indent // trim(token)
