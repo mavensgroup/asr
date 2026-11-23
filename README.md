@@ -44,14 +44,31 @@ output, KPM on large supercells). Only verified claims are stated.
 
 See [`doc/manual/installation.md`](doc/manual/installation.md) for the compiler, fpm and how the build finds libxc.
 
+## Package layout
+| path | contents |
+|---|---|
+| `README.md`, `LICENSE` | this file; MIT licence |
+| `fpm.toml`, `env.sh` | fpm package manifest (one dependency, toml-f); shell set-up with the build, test and run functions |
+| `app/` | `main.f90`, the program `asr <input.toml>`; `term_bench.f90`, a terminator benchmark |
+| `src/` | the library modules of the program (see "What is inside" below) |
+| `src/reference/` | earlier generations of the method and independent numerics, used only by tests as cross-checks |
+| `test/` | the fast unit tests, run by `fpm test` |
+| `test_slow/` | the self-consistent and enumeration tests, run by `asr_test_slow` |
+| `example/` | the six example inputs of the paper (TOML) |
+| `example/reference/` | the outputs of those six examples (`asr.out`, `asr.json`, DOS files) and their run times in `README.md` |
+| `data/` | reference data for tests: Stuttgart LMTO output for fcc Ag, published MnCr DOS, k-space test inputs |
+| `doc/manual/` | the user and developer manual (mdBook sources); `doc/media/` logos |
+| `ford.md` | configuration of the FORD API documentation |
+| `tools/` | helper scripts: SRO triads, SQS cells, the SRO closure tests, documentation build, build information |
+
 ## Getting the code, building, and testing
 ```bash
 git clone https://github.com/mavensgroup/asr.git
 cd asr
 source env.sh                 # Intel oneAPI (ifx, MKL) + fpm flags
 asr_build --tests             # fpm build (fetches toml-f on first run)
-asr_test                      # fast unit tests, fpm test (38 programs, about 1.5 min on 18 cores)
-asr_test_slow                 # 13 self-consistent and enumeration tests (test_slow/, tens of minutes)
+asr_test                      # fast unit tests, fpm test (45 programs, 693 checks, about 2.3 min on 18 cores)
+asr_test_slow                 # 15 self-consistent and enumeration tests (test_slow/, tens of minutes)
 ```
 After a module *signature* change do `rm -rf build/ifx_*` — fpm's incremental build can keep stale objects.  The typical
 symptom is a segmentation fault at the entry of a routine whose source did not change (seen in `asa_scf`).
@@ -72,6 +89,7 @@ asr example/fe66ni14cr20_fcc.toml    # random fcc Fe66Ni14Cr20, multicomponent (
 asr example/fe66ni14cr20_fcc_sro.toml  # the same with first-shell Warren-Cowley SRO, triad (1, 1, 0) (Fig. 4)
 asr example/co2fe04cr06al_l21.toml   # sublattice-disordered L2_1 Heusler Co2Fe0.4Cr0.6Al
 ```
+`asr` is the installed binary (`fpm install`, see [`doc/manual/installation.md`](doc/manual/installation.md)); without installing, use `asr_run example/cuzn_b2.toml`.
 Outputs are written next to the input file. Input is one validated TOML record; unknown keys are errors.
 One input format for every system, solved by the energy-dependent augmented-space recursion. See [`doc/manual/quickstart.md`](doc/manual/quickstart.md); the Hamiltonian-specific input is separated in [`doc/manual/input/hamiltonian.md`](doc/manual/input/hamiltonian.md).
 
@@ -83,10 +101,10 @@ uses them).
 | layer | modules |
 |---|---|
 | method: recursion | `asr_operator` (abstract `linop`, CSR), `asr_chain` (terminated continued fraction, tails, adaptive depth), `asr_contour` |
-| method: disorder | `asr_augspace` (graph, hashed states), `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_symmetry` (O_h/D_4h reduction), `asr_sublattice`, `asr_sro` (first-shell Warren–Cowley SRO), `asr_epi` (effective pair interactions for the SRO thermodynamics), `asr_lattices` |
+| method: disorder | `asr_augspace` (graph, hashed states), `asr_augcls` (multi-sublattice/multicomponent augmented space), `asr_augblk` (block kernels), `asr_symmetry` (O_h/D_4h reduction), `asr_sublattice`, `asr_sro` (first-shell Warren–Cowley SRO), `asr_epi` (effective pair interactions for the SRO thermodynamics), `asr_spectral` (Bloch spectral function A(k, E) on route `edc`), `asr_lattices` |
 | Hamiltonian: TB-LMTO-ASA | `asr_radial` (scalar-relativistic Koelling–Harmon, exact E-derivatives), `asr_xc` (libxc), `asr_atom`, `asr_potpar`, `asr_harmonics`, `asr_strconst` (screened S^α), `asr_lmto_ham`, `asr_lmto_alloy`, energy-dependent routes `asr_edc` (route `edc`, the default) and `asr_ed3` (route `ed3`, full ASA), `asr_input_lmto` |
 | SCF and electrostatics (joins the two) | `asr_class_scf`, `asr_mixing` (Anderson), `asr_ewald` (Madelung), `asr_screening` (screened electrostatics of the charge deviations) |
-| base, driver, output | `asr_kinds`, `asr_lapack`, `asr_testing`, `asr_tomlutil`, `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`), `asr_driver` (the one input format and driver of `asr <input.toml>`), `asr_inputdump`, `asr_report`, `asr_runstats` |
+| base, driver, output | `asr_kinds`, `asr_lapack`, `asr_testing`, `asr_tomlutil`, `asr_mpi` (MPI layer, serial stubs without `-DUSE_MPI`), `asr_driver` (the one input format and driver of `asr <input.toml>`), `asr_inputdump`, `asr_report`, `asr_runstats`, `asr_build_info` |
 | reference (`src/reference/`) | binary and n-species predecessors (`asr_augorb`, `asr_augsym`, `asr_augn`, `asr_ed`, `asr_edn`, `asr_endep`, `asr_alloy_scf`, `asr_lmto_realization`) and independent numerics (`asr_recursion`, `asr_greens`, `asr_terminator`, `asr_partial`, `asr_kpm`, `asr_pfun`, `asr_kspace`, `asr_lattice_toy`) |
 
 ## Validation highlights
@@ -99,9 +117,3 @@ uses them).
 ## Conventions
 Rydberg atomic units; `alat` in Å in inputs, Bohr internally; orbital order s, p(y,z,x), d(xy,yz,3z²−r²,xz,x²−y²).
 Stuttgart (AMscf) and Questaal are reference *code* only — no numbers from them are used as inputs.
-
-## Machines and code sync
-Heavy runs go to the desktop (`ssh desktop`, needs the SRM VPN: `nmcli con up id "SRM"`). Code moves through GitHub (<https://github.com/mavensgroup/asr>):
-commit locally, then `asr_sync` (pushes `main` to GitHub and fast-forwards the desktop working copy `~/asr_remote4`) or `asr_pull` (fetches commits made on the other side).
-The desktop working copy must stay clean (commit there before syncing); run outputs live in the ignored `trial/`.
-

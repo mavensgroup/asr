@@ -6,13 +6,8 @@ export ASR_LDFLAGS="-qopenmp -qmkl=parallel"
 asr_build() { [ -x ./tools/gen_build_info.sh ] && ./tools/gen_build_info.sh; fpm build --compiler ifx --flag "$ASR_FFLAGS" --link-flag "$ASR_LDFLAGS" "$@"; }
 asr_test()  { [ -x ./tools/gen_build_info.sh ] && ./tools/gen_build_info.sh; fpm test  --compiler ifx --flag "$ASR_FFLAGS" --link-flag "$ASR_LDFLAGS" "$@"; }
 asr_run()   { [ -x ./tools/gen_build_info.sh ] && ./tools/gen_build_info.sh; fpm run   --target asr --compiler ifx --flag "$ASR_FFLAGS" --link-flag "$ASR_LDFLAGS" -- "$@"; }
-# Code lives on GitHub: https://github.com/mavensgroup/asr (public).  The laptop pushes over ssh (remote "origin"); the desktop
-# cannot reach GitHub over ssh (port 22 reset on the campus network) and pulls read-only over https (remote "github") into its
-# working copy ~/asr_remote4.  The old bare hub desktop:~/asr.git is retired.
-#   asr_sync : push local main to GitHub and fast-forward the desktop working copy (run on the laptop)
-#   asr_pull : fetch the latest main (run on either machine)
-asr_sync() { git push origin main && ssh desktop 'cd ~/asr_remote4 && git pull --ff-only -q github main && git log --oneline -1'; }
-asr_pull() { if git remote | grep -qx github; then git pull --ff-only github main; else git pull --ff-only origin main; fi; }
+# Optional local additions (machine-specific helpers), not part of the distribution.
+[ -f "$(dirname "${BASH_SOURCE[0]}")/env.local.sh" ] && source "$(dirname "${BASH_SOURCE[0]}")/env.local.sh"
 # asr_test      : the fast unit tests (fpm test, test/), about 2 min
 # asr_test_slow : the slow self-consistent and enumeration tests (test_slow/, fpm examples); prints the failed ones, nonzero exit if any
 asr_test_slow() {

@@ -14,3 +14,4 @@ example/cuzn_alloy_spectral.toml
 
 # internal working notes, kept outside this repository
 /docs
+env.local.sh
