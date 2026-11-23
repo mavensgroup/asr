@@ -17,7 +17,7 @@ title: Recursion and disorder (method = "asr")
 | `rank` | `1` | Maximum number of simultaneously flipped sites in an augmented-space state (≥ 0). Sites beyond are an average medium. Rank 2 is a refinement; for soft-moment alloys it changes moments by several percent ([Convergence](../guides/convergence.html)) |
 | `supercell` | `8` | Graph size in conventional cells; a multiple of `period` |
 | `flip_radius` | `99` | Only sites within this distance may flip |
-| `cluster_radius`, `inversion_radius` | code defaults | Real-space cluster for the structure constants and for their inversion |
+| `cluster_radius`, `inversion_radius` | `1.2`, `0.0` | Real-space cluster for the structure constants and for their inversion (in `alat`; `0.0` keeps `cluster_radius`) |
 
 ### Energy integration
 
@@ -27,7 +27,7 @@ title: Recursion and disorder (method = "asr")
 | `fermi_kt` | `0.001` | Electronic temperature (Ry); gives a smooth \(N(E_F)\) |
 | `fermi_poles` | `0` | Matsubara poles enclosed (0 = automatic, range 0 to 200) |
 | `ed_terminator` | `hull` | Tail of each chain: `hull`, `bp`, `avg2`. Keep `hull` ([Recursion and terminators](../theory/recursion.html)) |
-| `depth_tol` | code default | A chain stops early when \(G\) changes by less than this; `levels` is the maximum |
+| `depth_tol` | `1e-5` | A chain stops early when \(G\) changes by less than this; `levels` is the maximum |
 
 ### Route (Hamiltonian-dependent)
 
@@ -65,7 +65,9 @@ min, mean, max and max/mean.  A max/mean well above 1 means some ranks wait for 
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ef_scan`, `ef_scan_step`, `ef_scan_center` | `0` | Scan \(N(E)\) around \(E_F\) at the start potential |
+| `ef_scan` | `0` | Diagnostic: scan \(N(E)\) on `2 * ef_scan + 1` energies around `ef_scan_center` at the start potential, then stop |
+| `ef_scan_step` | `2e-5` | Energy step (Ry) for `ef_scan` |
+| `ef_scan_center` | start \(E_F\) | Centre energy (Ry) for `ef_scan` |
 | `ef_scan_dump` | — | File: dump \(N(E)\) at the start potential, then stop |
 | `alpha_scale` | `1` | Multiply the screening constants by this factor |
 

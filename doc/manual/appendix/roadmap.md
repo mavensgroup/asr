@@ -20,15 +20,15 @@ environment disorder.
 | Compiler | Intel `ifx` primary; gfortran is a bonus, not a gate |
 | Linear algebra | MKL |
 | xc | libxc ≥ 7 through the C ABI |
-| Parallelism | OpenMP; MPI / coarrays only if measurement shows a need |
-| Production method | Energy-dependent ASR in the AMscf form (`asr_ed`); the energy-independent route and KKR-ASA are cross-checks |
+| Parallelism | OpenMP + MPI (`-DUSE_MPI`, [[asr_mpi]]) |
+| Production method | Energy-dependent ASR (`route = "edc"` default, [[asr_edc]], and `route = "ed3"`, [[asr_ed3]]); the energy-independent route and KKR-ASA are reference cross-checks |
 
 ## Planned and open
 
 * Non-collinear magnetism → needs block / complex-Hermitian recursion.
 * Plug-in Hamiltonians: Wannier (`*_hr.dat`) and generic tight binding through
   [[asr_operator]].
-* Short-range order (Warren–Cowley) and correlated disorder.
+* Multi-shell short-range order and correlated disorder beyond the first shell (`[[sro]]` and `[epi]` handle first-shell SRO and pair interactions).
 * Explaining the ≈ 5 % excess Fe moment in the alloy route versus the ordered ASA.
 * A seed that polarises only the valence region.
 * Verifying the Luchini–Nex joiner against the original paper.

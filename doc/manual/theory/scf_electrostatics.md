@@ -131,10 +131,7 @@ The band energy must be the occupied eigenvalue sum of the Hamiltonian that the 
 
 ## Charge definitions
 
-| Setting | Definition |
-|---|---|
-| `charges = "lowdin"` | Weights of orthonormal orbitals (order 3) |
-| `charges = "sphere"` | Start vectors \((1-hph/2)|L\rangle\) give ASA sphere charges; loses ≈ 0.03 e per cell at order 3 (shifts \(E_F\) by ≈ 10 mRy in CuZn) |
+In the production `asr` routes, `edc` uses the orthogonal \(M_0\) (`q0`) sphere charges, while `ed3` and `kspace` use the full ASA sphere charges \(q_0 + p\,q_2\). (The legacy reference module [[asr_alloy_scf]] also supported a `charges = "lowdin" | "sphere"` switch for order-3 fixed-operator tests.)
 
 ## Convergence measure
 

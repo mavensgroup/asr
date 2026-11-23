@@ -190,13 +190,29 @@ block index, path distance, \(\mathbf k\) in units \(2\pi/a\)). Two aligned comm
 close the header, as in the DOS file. One block of energies follows per k point; a blank
 line separates the blocks, so gnuplot reads them with `index` or `splot`.
 
+```text
+#        1         2         3         4           5             6             7             8             9            10
+#     dist        kx        ky        kz      E [Ry]             A           A s           A p           A d         A bcc
+   0.00000   0.00000   0.00000   0.00000   -0.900000   1.23456E-01   ...
+```
+
 Columns: path distance, \(k_x, k_y, k_z\), \(E\) (Ry), \(A\) summed over spins and
-\(s, p, d\), its \(s, p, d\) parts, with `spin = 2` the two spin channels, and the part of
-each origin sublattice (the parts add up to \(A\)).
+\(s, p, d\), its \(s, p, d\) parts, with `spin = 2` the two spin channels (`A up`, `A down`),
+and the part of each origin sublattice (`A <sublattice>`, the parts add up to \(A\)).
 
 For an ordered structure with one species, the file `<file>.bands` gives the exact
 eigenvalues of the same \(H^{(2)}(\mathbf k)\) along the path (9 per spin channel, Ry), with
 the same header.
+
+## `[epi]` file (`epi.toml`)
+
+Written when `[epi] shells > 0` (`file`, default `epi.toml`). A TOML file holding
+run metadata (`name`, `lattice`, `alat` in Bohr, `period`, `fermi_energy`, `converged`,
+`lambda_points`, `symmetric`), one `[[sublattice]]` table per sublattice (`name`,
+`site_fraction`, `species`, `concentrations`, `sites` in units of `alat / 2`), and one
+`[[pair]]` table per pair type (`sublattices`, `shell`, `vector`, `distance`,
+`multiplicity`, `kernel`, `vectors`, `u_band`, `u_es` in Ry). See the
+[Short-range order and EPI guide](guides/sro_epi.html).
 
 ## `params_file` (`method = "kspace"` only)
 

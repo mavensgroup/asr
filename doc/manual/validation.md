@@ -40,9 +40,10 @@ asr_test test_radial      # a single test (fpm test <name>)
 | Energy-dependent | `test_endep`, `test_endep_ordered`, `test_pfun`, `test_asr_ed`, `test_asr_ed_n`, `test_asr_ed_sym` | Ordered limit equals the exact k-space inverse of \(P(z)-S(\mathbf k)\); disordered species-resolved \(G\) equals ensemble averages of dense inverses (ring, brute force) for `asr_endep`, `asr_ed` (binary), `asr_edn` (3 species); reduced = unreduced; exact potential function equals the real-axis radial solver on the real axis |
 | SRO electrostatics | `test_screening` | Lattice Coulomb kernel (CsCl, NaCl Madelung constants); the screening closure equals the first-shell form wherever that is realizable, is positive and decreasing up to complete clustering (no pole), is continuous, gives \(\Gamma=G(H)\) for perfect B2 order, and equals the numpy closure that was checked against exact solutions on Monte Carlo supercells (`tools/sro_closure`); the drive iteration reaches \(V=F\,\delta q\), and \(\delta q=0\) on a fully clustered mode |
 | KPM | `test_kpm` | KPM on a periodic sc lattice reproduces the exact k-space DOS (independent truth for disordered tests) |
-| Input | `test_input`, `test_lmto_input`, `test_alloy_input` | Unknown keys and bad values are errors, never silent defaults |
+| Input & reporting | `test_run_input`, `test_inputdump`, `test_report` | Unknown keys and bad values are errors, never silent defaults; resolved inputs and JSON/text reports match |
+| SRO, EPI, Spectral, MPI | `test_sro`, `test_epi`, `test_epi_scf`, `test_spectral`, `test_spectral_scf`, `test_mpi`, `test_chain_teams` | First-shell SRO conditionals; frozen-pair EPI chains vs exact `Tr[G dH/dlambda]` (`1e-11`) and path integral vs grand-potential differences (`0.1 %` at 4 points); Bloch spectral unfolding and ball window; serial vs MPI and nested OpenMP teams |
 
-The tests in `test/` form the fast suite run by `fpm test` (about 1.5 min). Thirteen
+The tests in `test/` (45 programs) form the fast suite run by `fpm test` (about 1.5 min). Fifteen
 self-consistent and enumeration tests take 25 s to several minutes each. They live in
 `test_slow/` as fpm examples, assert in the same way, and run with `asr_test_slow`
 (`env.sh`). The table above lists both.

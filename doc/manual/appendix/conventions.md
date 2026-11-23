@@ -13,7 +13,7 @@ title: Units and conventions
 | Energies (`emin`, `emax`, `eta`, `smear`, `fermi_kt`, `mixing` parameters) | Ry | Ry (\(\hbar^2/2m=1\), \(e^2=2\)) | Ry |
 | Charges | — | electrons | electrons |
 | Moments | — | | μ\(_B\) |
-| Density of states | — | | states / Ry / atom (per spin channel for `lmto`, summed over spin for `alloy`/`sublattice`) |
+| Density of states | — | | states / Ry / atom (per spin channel for `kspace`; summed over spin for `asr`, plus per-spin columns when `spin = 2`) |
 
 Libxc works in Hartree and e/bohr³; the wrapper ([[asr_xc]]) converts to Rydberg.
 The speed of light is \(c=274.071979\) Ry atomic units ([[asr_radial]]).
@@ -37,9 +37,8 @@ standard (`pptrns`) conversion; the code does this internally and the sign of
 
 | Name | Meaning | Where |
 |---|---|---|
-| `sc`, `bcc`, `fcc` | One-atom cubic Bravais lattices | `model`, `lmto`, `alloy` (random: bcc, fcc), `sublattice` (graph) |
-| `b2` | CsCl, two atoms: A at (0,0,0), B at (½,½,½) | `lmto`, `alloy` (ordered) |
-| `cell` | General cell, `vectors` and `[[site]]` | `lmto` |
+| `sc`, `bcc`, `fcc` | One-atom cubic Bravais lattices (and graph lattices for decorations) | `method = "asr"` and `method = "kspace"` |
+| `cell` | General cell, `vectors` and `[[site]]` | `method = "kspace"` |
 
 Integer half-lattice coordinates on the graphs: sc all even; bcc all of one
 parity; fcc coordinate sum even ([[asr_lattice_toy]], [[asr_lattices]]).

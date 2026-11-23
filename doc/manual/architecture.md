@@ -33,11 +33,12 @@ implemented). The diagram shows the modules of the program (`app/main.f90`) only
  ──── METHOD (Hamiltonian-agnostic) ────────┬──── HAMILTONIAN: TB-LMTO-ASA ───────────────────
  disorder      asr_augcls  asr_augblk        │  operator    asr_edc  asr_ed3  asr_lmto_alloy
                asr_augspace  asr_sublattice  │              asr_lmto_ham  asr_lmto_cell
-               asr_sro  asr_lattices         │  physics     asr_radial  asr_potpar  asr_atom
- recursion     asr_chain  asr_contour        │              asr_xc  asr_strconst  asr_harmonics
-                                             │  input       asr_input_lmto
+               asr_sro  asr_epi  asr_spectral│  physics     asr_radial  asr_potpar  asr_atom
+               asr_lattices                  │              asr_xc  asr_strconst  asr_harmonics
+ recursion     asr_chain  asr_contour        │  input       asr_input_lmto
  ──────────────────────────────────────────────────────────────────────────────────────────────
  base          asr_kinds  asr_operator  asr_symmetry  asr_tomlutil  asr_lapack  asr_mpi
+               asr_build_info
 ```
 
 The method sees only the abstract operator ([[asr_operator]]) and the class
@@ -58,7 +59,7 @@ production code, for example the class operator with `edc` against the binary
 route, or the recursion against an exact configuration average. A reference
 module may use production modules; a production module never uses a reference
 module. `tools/check_layers.py` checks the rule and prints the size of the
-program (38 modules, about 10 700 lines; reference layer 16 modules).
+program (46 reachable modules, about 14 900 lines; reference layer 16 modules).
 
 ## Program flow
 
@@ -107,6 +108,7 @@ All modules link to their generated API pages.
 | [[asr_tomlutil]] | Sub-table access and strict key checking for the TOML readers |
 | [[asr_driver]] | The one input reader and the dispatch on `method` |
 | [[asr_inputdump]] | The resolved input (every key with the value used) for the report |
+| [[asr_build_info]] | Build provenance (`git_rev`, `git_dirty`), generated at compile time by `tools/gen_build_info.sh` |
 | [[asr_input_lmto]] | Input record of the k-space method (`lmto_input_t`, species) |
 
 ### TB-LMTO-ASA Hamiltonian and the k-space method
@@ -138,6 +140,8 @@ All modules link to their generated API pages.
 | [[asr_lattices]] | Periodic sc/bcc/fcc graphs and random alloy realisations |
 | [[asr_sublattice]] | Decoration cells: sublattices from Wyckoff positions and centering |
 | [[asr_sro]] | First-shell short-range order: conditional probabilities |
+| [[asr_epi]] | Effective pair interactions (`[epi]`) for SRO thermodynamics |
+| [[asr_spectral]] | Configuration-averaged Bloch spectral function \(A(\mathbf k, E)\) on route `edc` |
 | [[asr_screening]] | Screened charge-deviation electrostatics (SIM, SRO closure) |
 | [[asr_lmto_alloy]] | Graph and bond blocks \(S^\alpha\) from own LMTO output (common screening) |
 | [[asr_edc]] | AMscf-form energy-dependent ASR on the site-class operator (`route = "edc"`, the default) |

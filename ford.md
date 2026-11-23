@@ -6,7 +6,7 @@ website: https://mavens-group.github.io/author/rudra-banerjee/
 github: https://github.com/rudrab
 linkedin: https://www.linkedin.com/in/rudra-banerjee-a6bb99b7
 license: mit
-version: 0.1.0
+version: 1.0.1
 src_dir: ./src
          ./app
 output_dir: ./doc/ford_api
@@ -42,7 +42,7 @@ Welcome to the internal source code and API reference for **asr** (Augmented-Spa
 
 | Section | Description | Direct Link |
 | :--- | :--- | :--- |
-| **Modules** | All 52 Fortran modules implementing recursion, TB-LMTO-ASA, and SCF | [Browse Modules](lists/modules.html) |
+| **Modules** | All Fortran modules in `src/` (including `src/reference/`) implementing recursion, TB-LMTO-ASA, and SCF | [Browse Modules](lists/modules.html) |
 | **Derived Types** | Public & internal data types (`potpar_t`, `augorb_op`, `cell_t`, etc.) | [Browse Types](lists/types.html) |
 | **Procedures** | Mathematical solvers, Hamiltonians, Lanczos recursion, and utilities | [Browse Procedures](lists/procedures.html) |
 | **Source Files** | Syntax-highlighted Fortran source code | [Browse Source](lists/files.html) |

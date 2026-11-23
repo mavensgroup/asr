@@ -39,7 +39,7 @@ order:
 3. Raise `max_iterations`.
 4. Energy-dependent routes: set `fermi_kt` (e.g. 0.001).
 5. Restart from a good potential with `save_potential` / `start_potential`.
-6. If \(E_F\) sits on a very sharp d peak, use `bz = "tetra"` in `lmto`.
+6. If \(E_F\) sits on a very sharp d peak, use `bz = "tetra"` in `[kspace]` (`method = "kspace"`).
 
 ## Symptoms
 
@@ -48,7 +48,7 @@ order:
 | Negative l-resolved DOS | Recursion too shallow → [Convergence](convergence.html) |
 | Charge transfer changes sign or oscillates over many iterations | Normal in the first 15–20 iterations of the alloy SCF (see the shipped CuZn example, which reaches 0.067 e only after ~20 iterations); persistent oscillation → `sim_beta`, `mixing` |
 | Fermi level drifts between iterations | Sharp \(N(E)\); use `fermi_kt`, tetrahedra |
-| \(E_F\) differs from another code by ≈ 10 mRy | `charges = "sphere"` at order 3; compare using `lowdin` |
+| \(E_F\) differs from another code by ≈ 10 mRy | Representation / overlap terms (`edc` vs `ed3` / full ASA `q0 + p q2`) |
 | s,p occupations 3–5 % above a Stuttgart reference | Known open item: Stuttgart moments include \(o\) and \(p\) terms, ours are plain orthonormal \(|u|^2\) (untested hypothesis) |
 | Unexplained link/runtime errors after editing a type or procedure signature | fpm kept stale objects: `rm -rf build/ifx_*` and rebuild |
 | `IEEE_DIVIDE_BY_ZERO is signaling` on exit | Runtime flag notice; see [Quick start](../quickstart.html) |
@@ -57,5 +57,5 @@ order:
 
 * `asr.out` records the full input and effective settings (screening \(\alpha\),
   node counts, depth). Attach it to bug reports.
-* Diagnostics for the energy-dependent route: `tail_scan`, `kkr_check`.
+* Diagnostics in `[asr]`: `ef_scan`, `ef_scan_dump`, `alpha_scale`; in `[kspace]`: `second_order`, `std_alpha`, `trace`.
 * Keep `trial/` for scratch runs; it is ignored by git.

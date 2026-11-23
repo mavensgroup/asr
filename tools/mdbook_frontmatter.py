@@ -58,10 +58,108 @@ def protect_math(content):
     return ''.join(out)
 
 
+ADMONITION_RE = re.compile(r'^!!!\s+(note|warning|tip|danger|important)(?:\s+"([^"]*)")?\s*$')
+WIKILINK_RE = re.compile(r'\[\[([A-Za-z0-9_]+)(?:\([^)]*\):[A-Za-z0-9_]+)?\]\]')
+PROGRAMS = {'asr_main', 'term_bench'}
+
+
+def convert_admonitions(content):
+    """Convert Python-Markdown/FORD '!!! kind "title"' blocks into HTML admonition divs."""
+    lines = content.splitlines(keepends=True)
+    out = []
+    i = 0
+    fence = None
+    while i < len(lines):
+        line = lines[i]
+        mark = line.lstrip()[:3]
+        if fence is None and mark in ('```', '~~~'):
+            fence = mark
+            out.append(line)
+            i += 1
+            continue
+        if fence is not None:
+            out.append(line)
+            if line.lstrip().startswith(fence):
+                fence = None
+            i += 1
+            continue
+
+        m = ADMONITION_RE.match(line.rstrip('\r\n'))
+        if not m:
+            out.append(line)
+            i += 1
+            continue
+
+        kind = m.group(1).lower()
+        title = m.group(2) if m.group(2) is not None else kind.capitalize()
+        i += 1
+        body = []
+        while i < len(lines):
+            nxt = lines[i]
+            if nxt.strip() == '':
+                body.append('\n')
+                i += 1
+            elif nxt.startswith('    ') or nxt.startswith('\t'):
+                body.append(nxt[4:] if nxt.startswith('    ') else nxt[1:])
+                i += 1
+            else:
+                break
+        while body and body[-1].strip() == '':
+            body.pop()
+        out.append(f'<div class="admonition admonition-{kind}">\n<p class="admonition-title">{title}</p>\n\n')
+        out.extend(body)
+        if body and not body[-1].endswith('\n'):
+            out.append('\n')
+        out.append('\n</div>\n')
+    return ''.join(out)
+
+
+def convert_wikilinks(content, chapter_path):
+    """Convert FORD [[symbol]] links outside code blocks/spans into relative mdBook API links."""
+    depth = chapter_path.replace('\\', '/').count('/')
+    prefix = '../' * depth
+
+    def repl(m):
+        name = m.group(1)
+        subdir = 'program' if name in PROGRAMS else 'module'
+        return f'[{name}]({prefix}api/{subdir}/{name}.html)'
+
+    out, fence = [], None
+    block = []
+
+    def flush():
+        text = ''.join(block)
+        parts, last = [], 0
+        for m in CODE_SPAN.finditer(text):
+            parts.append(WIKILINK_RE.sub(repl, text[last:m.start()]))
+            parts.append(m.group(0))
+            last = m.end()
+        parts.append(WIKILINK_RE.sub(repl, text[last:]))
+        out.append(''.join(parts))
+        block.clear()
+
+    for line in content.splitlines(keepends=True):
+        mark = line.lstrip()[:3]
+        if fence is None and mark in ('```', '~~~'):
+            flush(); fence = mark; out.append(line)
+        elif fence is not None:
+            out.append(line)
+            if line.lstrip().startswith(fence):
+                fence = None
+        else:
+            block.append(line)
+    flush()
+    return ''.join(out)
+
+
 def process_item(item):
     if 'Chapter' in item:
         ch = item['Chapter']
-        ch['content'] = protect_math(clean_chapter_content(ch.get('content', '')))
+        path = ch.get('path') or ch.get('source_path') or ''
+        text = clean_chapter_content(ch.get('content', ''))
+        text = convert_admonitions(text)
+        text = convert_wikilinks(text, path)
+        ch['content'] = protect_math(text)
         for sub in ch.get('sub_items', []):
             process_item(sub)
 

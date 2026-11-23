@@ -52,11 +52,11 @@ species = ["Fe"]
 
 Ordered B2 FeCo: `centering = "P"`, two sublattices (cube corner and centre).
 
-Random fcc \ce{Fe66Ni14Cr20}: `lattice = "fcc"`, `centering = "F"`, one sublattice
+Random fcc \(\text{Fe}_{66}\text{Ni}_{14}\text{Cr}_{20}\): `lattice = "fcc"`, `centering = "F"`, one sublattice
 with `species = ["Fe", "Ni", "Cr"]` and `concentrations = [0.66, 0.14, 0.20]`
 (`example/fe66ni14cr20_fcc.toml`).
 
-Partially disordered L2\(_1\) \ce{Co2Fe_{0.4}Cr_{0.6}Al}: the cell is a decoration of the
+Partially disordered L2\(_1\) \(\text{Co}_2\text{Fe}_{0.4}\text{Cr}_{0.6}\text{Al}\): the cell is a decoration of the
 bcc graph with \(a_\text{bcc}=a/2\), so `period = 2`, `centering = "F"`; Co on
 8c, Al on 4a, Fe/Cr random on 4b (`example/co2fe04cr06al_l21.toml`).
 

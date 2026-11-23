@@ -34,6 +34,7 @@ in [[asr_driver]]. The old `[calculation] kind = ...` input (`model`, `lmto`,
 | `[calculation]` | `name`, `method` | no | below |
 | `[structure]`, `[[sublattice]]`, `[[site]]` | geometry, sublattices, species and concentrations | no | [Structure](structure.html) |
 | `[[sro]]` | first-shell short-range order | no (the method) | [Recursion](asr.html) |
+| `[epi]` | effective pair interactions after the SCF | no (the method) | [Recursion](asr.html) |
 | `[asr]` | recursion, contour, route, diagnostics | the method, except `route` | [Recursion](asr.html) |
 | `[[species]]` | atomic data from which the parameters are generated | **yes** | [Hamiltonian](hamiltonian.html) |
 | `[scf]` | xc, spin, mixing, convergence, screening model | partly | [Hamiltonian](hamiltonian.html) |

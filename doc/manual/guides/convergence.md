@@ -78,9 +78,7 @@ The reduction is exact.
   upper bound; the statistics (`ed_nchain`, `ed_nlev`) show how deep chains
   really went.
 * `ed_terminator`: keep the default `hull`. At 24 or 36 steps all three tails
-  agree within 0.005 muB. The `tail_scan` diagnostic prints the moments against
-  termination depth for each tail, each at its own \(E_F\). Do not use `bp` for
-  SCF runs (see [Recursion and terminators](../theory/recursion.html)).
+  agree within 0.005 muB. Do not use `bp` for SCF runs (see [Recursion and terminators](../theory/recursion.html)).
 * `fermi_kt` > 0 helps the SCF because \(N(E_F)\) becomes smooth.
 * Long chains on ordered cells carry a length error near \(10^{-3}\) e. On B2
   CuZn (route `ed3`, supercell 16) the Cu charge transfer is 0.13 e. It moves

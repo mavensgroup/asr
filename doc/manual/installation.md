@@ -29,7 +29,8 @@ This guide covers everything needed to install dependencies, obtain the `asr` so
 | Component | Version | Purpose |
 |---|---|---|
 | **Python 3 + NumPy** | Python ≥ 3.9 | Running the Special Quasirandom Structure generator (`tools/sqs.py`) |
-| **[FORD](https://github.com/Fortran-FOSS-Programmers/ford)** | ≥ 7.0 | Building this HTML user manual and API reference (`ford ford.md`) |
+| **[mdBook](https://rust-lang.github.io/mdBook/)** | ≥ 0.4 | Building the HTML user manual (`doc/manual/`) via `./tools/build_docs.sh` |
+| **[FORD](https://github.com/Fortran-FOSS-Programmers/ford)** | ≥ 7.0 | Building the Fortran API reference (`ford ford.md`) |
 | **Graphviz (`dot`)** | any recent | Generating module dependency and call graphs in FORD documentation |
 
 !!! note "Why no Fortran `.mod` files are needed for `libxc`"
@@ -135,13 +136,14 @@ cd asr
 |---|---|
 | `fpm.toml` | Package manifest (`asr` metadata, `libxc` link target, `toml-f` dependency) |
 | `env.sh` | Environment setup script (loads Intel oneAPI, sets compiler/linker flags, defines helper functions) |
-| `src/` | Library modules (`asr_radial`, `asr_xc`, `asr_potpar`, `asr_strconst`, `asr_asa`, `asr_augspace`, `asr_ed`, `asr_endep`, …) |
+| `src/` | Production library modules (`asr_radial`, `asr_xc`, `asr_potpar`, `asr_strconst`, `asr_augspace`, `asr_augcls`, `asr_edc`, `asr_ed3`, `asr_class_scf`, `asr_sro`, `asr_epi`, `asr_spectral`, …) and `src/reference/` (earlier generations and reference numerics) |
 | `app/main.f90` | Command-line executable entry point (`asr <input.toml>`) |
-| `test/` | Automated verification and regression test programs (`test_*.f90`) |
-| `example/` | Ready-to-run TOML input files covering ordered crystals (k-space and recursion), random alloys, a partially disordered Heusler and short-range order |
-| `data/reference/` | Independent benchmark reference data (Stuttgart LMTO, NIST, exact configurations) |
+| `test/` | Automated fast verification and regression test programs (`test_*.f90`) |
+| `test_slow/` | Self-consistent and enumeration tests (`test_*.f90`, run with `asr_test_slow`) |
+| `example/` | Ready-to-run TOML input files covering ordered crystals, random alloys, a partially disordered Heusler, short-range order, EPIs, and Bloch spectral functions |
+| `data/reference/` | Independent benchmark reference data (Stuttgart LMTO, digitised published DOS) |
 | `tools/sqs.py` | Special Quasirandom Structure (SQS) generator script |
-| `doc/` & `ford.md` | FORD user manual (`doc/manual/`), custom stylesheet (`doc/css/asr.css`), and generated HTML (`doc/build/`) |
+| `doc/` & `ford.md` | mdBook user manual (`doc/manual/`, `doc/book.toml`) and FORD API reference (`ford.md`), built with `./tools/build_docs.sh` into `doc/build/book/` and `doc/ford_api/` |
 
 ---
 
@@ -160,7 +162,7 @@ On the first run, `fpm` automatically clones `toml-f` (`v0.5.2`) into `build/dep
 
 #### What `env.sh` configures
 
-`env.sh` sources `/opt/intel/oneapi/setvars.sh` (edit line 2 of `env.sh` if your oneAPI installation lives elsewhere or is loaded via `module load`) and defines three shell functions (`asr_build`, `asr_test`, `asr_run`) with the following compiler and linker flags:
+`env.sh` sources `/opt/intel/oneapi/setvars.sh` (edit line 2 of `env.sh` if your oneAPI installation lives elsewhere or is loaded via `module load`) and defines `asr_build`, `asr_test`, `asr_test_slow`, `asr_run`, `asr_sync`, and `asr_pull` with the following compiler and linker flags:
 
 ```text
 FPM_FC      = ifx
@@ -224,28 +226,24 @@ export OMP_NUM_THREADS=16
 asr_test
 ```
 
-The full test suite runs in **≈ 3 minutes on 16 cores**. You can also run individual test executables by name for a fast check (a few seconds):
+The fast test suite (`test/`, 45 programs) runs in **≈ 1.5 minutes on 18 cores**. You can also run individual test executables by name for a fast check (a few seconds):
 
 ```bash
 asr_test test_radial       # hydrogenic levels to 1e-10 Ry; He/Ne vs NIST LDA to 3e-7 Ha
-asr_test test_augspace     # augmented-space recursion vs exact 2^N configuration average (1e-14)
-asr_test test_asa          # self-consistent fcc Ag, bcc Fe, fcc Cu/Ni, and B2 FeCu
+asr_test test_augn         # n-component augmented space vs exact configuration average (1e-14)
+asr_test test_asa_ag       # self-consistent fcc Ag against Stuttgart LMTO reference
 ```
 
-Every test program prints `passed N, failed 0.` and exits with status `0`. Next, run a 1-second end-to-end smoke test on an example input:
+For the 15 longer self-consistent and enumeration tests in `test_slow/`, run `asr_test_slow` (or `fpm run --example test_augspace`).
+
+Every test program prints `passed N, failed 0.` and exits with status `0`. Next, run an end-to-end smoke test on an example input (e.g. ordered B2 CuZn, ≈ 30–40 s on a workstation):
 
 ```bash
-mkdir -p /tmp/asr_smoke && cp example/fcc_ordered.toml /tmp/asr_smoke/
-asr_run -- /tmp/asr_smoke/fcc_ordered.toml
+mkdir -p /tmp/asr_smoke && cp example/cuzn_b2.toml /tmp/asr_smoke/
+asr_run -- /tmp/asr_smoke/cuzn_b2.toml
 ```
 
-Expected output:
-
-```text
-asr 1.0.1  fcc NN s-band
-input: /tmp/asr_smoke/fcc_ordered.toml
-wrote /tmp/asr_smoke/fcc_ordered_dos.dat
-```
+This writes `asr.out`, `asr.json`, and `cuzn_b2_dos.dat` into `/tmp/asr_smoke/`.
 
 ---
 
@@ -259,7 +257,7 @@ asr <path/to/input.toml>
 asr_run -- <path/to/input.toml>
 ```
 
-`asr` accepts **one** positional argument: the path to a TOML input file. All output files (`asr.out`, `*_dos.dat`, `*_params.dat`, saved potentials) are written **in the same directory as the input file**.
+`asr` accepts **one** positional argument: the path to a TOML input file. All output files (`asr.out`, `asr.json`, `*_dos.dat`, and optionally `epi.toml`, `spectral.dat`, saved potentials, or `params.dat` for `kspace`) are written **in the same directory as the input file**.
 
 | Exit Code | Meaning |
 |---|---|
@@ -284,16 +282,19 @@ The active thread count is recorded at the top of `asr.out`.
 
 ## 7. Building This Documentation
 
-To build the HTML user manual and API reference locally from the source tree:
+To build the HTML user manual (mdBook) and Fortran API reference (FORD) locally from the source tree:
 
 ```bash
 pip install --user ford
+# Install mdbook (e.g. cargo install mdbook, or download a release binary)
 # Optional: install Graphviz ('dot') if you want call/module dependency graphs
 # sudo dnf install graphviz   (Fedora)
 # sudo apt install graphviz   (Ubuntu/Debian)
 
-ford ford.md
-xdg-open doc/build/index.html
+./tools/build_docs.sh
+xdg-open doc/build/book/index.html
+# Or serve locally with live reload:
+./tools/build_docs.sh --serve
 ```
 
 Set `graph: true` in `ford.md` if Graphviz is installed and you wish to generate interactive dependency diagrams across modules and procedures.
@@ -310,4 +311,4 @@ Set `graph: true` in `ford.md` if Graphviz is installed and you wish to generate
 | `forrtl: severe (174): SIGSEGV` on large runs | Thread stack exhausted in Lanczos recursion | Run `ulimit -s unlimited`, set `export OMP_STACKSIZE=256M`, and keep `-heap-arrays 1024` |
 | Link/runtime errors after pulling commits | Stale `.mod` or `.o` files in `build/` | Clean and rebuild: `rm -rf build/ifx_* && asr_build --tests` |
 
-Next step: head to the **[Quick start](quickstart.html)** to run four progressively richer calculations (`model`, `lmto`, `alloy`, and `sublattice`).
+Next step: head to the **[Quick start](quickstart.html)** to run four progressively richer calculations (ordered B2 CuZn, ferromagnetic B2 FeCo, random bcc CuZn, and partially disordered L2\(_1\) Heusler).

@@ -30,7 +30,7 @@ Concentrations are not here; they live in `[[sublattice]]`.
 | Key | Default | Meaning |
 |---|---|---|
 | `spin` | `1` | `1` non-magnetic, `2` collinear spin-polarised |
-| `xc` | `vbh` | libxc functional name (`vbh`: von Barth–Hedin LDA) |
+| `xc` | `vbh` | libxc functional name: `vbh`, `vwn`, `pw`, `pwmod`, or `pbe` |
 | `relativistic` | `true` | Scalar-relativistic radial solver; `false` is the non-relativistic limit |
 | `zeta0` | `0.1` (`0.4` for `kspace`) | Initial spin polarisation (seed) |
 | `mixing` | `0.3` | Anderson mixing parameter |

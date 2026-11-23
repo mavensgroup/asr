@@ -177,7 +177,7 @@ negative values as not converged in the number of steps.
 | `fermi_kt` | Smeared occupations; makes \(N(E_F)\) smooth in the SCF |
 
 Statistics on how many chains and levels were used are kept in
-[[asr_endep]] (`ed_nchain`, `ed_nlev`).
+[[asr_chain]] (`ed_nchain`, `ed_nlev`).
 
 ## An exact reference: k-space
 

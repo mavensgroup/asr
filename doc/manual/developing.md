@@ -19,8 +19,8 @@ Then load the environment and build:
 source env.sh
 asr_build --tests         # build library, app, tests
 asr_test test_contour     # one test (fpm test NAME)
-asr_test                  # the fast suite: 38 programs, about 1.5 min on 18 cores
-asr_test_slow             # the 13 slow tests in test_slow/ (SCF, enumeration), tens of minutes
+asr_test                  # the fast suite: 45 programs, about 1.5 min on 18 cores
+asr_test_slow             # the 15 slow tests in test_slow/ (SCF, enumeration), tens of minutes
 fpm run --example test_alloy_scf   # one slow test
 ```
 
@@ -84,8 +84,8 @@ species-resolved Green function).
 2. `get_value(child, 'key', variable, default)`.
 3. Validate the value at the end of the reader with a clear message.
 4. Mirror it in the module header comment, add a row to the
-   [input reference](input/index.html), and add a case to the matching
-   `test_*_input`.
+   [input reference](input/index.html), and add a case to `test/test_run_input.f90`
+   (and `test/test_inputdump.f90` if appropriate).
 
 ## Documentation conventions (FORD)
 
@@ -132,10 +132,10 @@ ordered_subpage: child1.md
 ### Building
 
 ```bash
-ford ford.md              # doc/build/index.html
+./tools/build_docs.sh     # builds FORD (doc/ford_api/) and mdBook (doc/build/book/)
 ```
 
-Check the output for `Warning:` lines about unresolved `[[…]]` links and fix them.
+Check the FORD output for `Warning:` lines about unresolved `[[…]]` links and fix them.
 
 ## Code style
 
