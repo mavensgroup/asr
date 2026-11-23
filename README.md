@@ -59,6 +59,8 @@ See [`doc/manual/installation.md`](doc/manual/installation.md) for the compiler,
 | `data/` | reference data for tests: Stuttgart LMTO output for fcc Ag, published MnCr DOS, k-space test inputs |
 | `doc/manual/` | the user and developer manual (mdBook sources); `doc/media/` logos |
 | `ford.md` | configuration of the FORD API documentation |
+| `probe/` | diagnostic programs (convergence studies, route comparisons), built as fpm examples; not tests |
+| `trial/` | run directory for local work; only its `README.md` is in the package |
 | `tools/` | helper scripts: SRO triads, SQS cells, the SRO closure tests, documentation build, build information |
 
 ## Getting the code, building, and testing

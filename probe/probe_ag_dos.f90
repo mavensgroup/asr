@@ -34,7 +34,7 @@ program probe_ag_dos
   ef = -0.18641407_dp
 
   do l = 0, 3
-    open (newunit=u, file='/home/rudra/Devel/ASR/asr_new/data/reference/ag_fcc_stuttgart/dos_'//trim(names(l)), status='old')
+    open (newunit=u, file='data/reference/ag_fcc_stuttgart/dos_'//trim(names(l)), status='old')
     do i = 1, ne; read (u, *) ex, ref(i, l); end do
     close (u)
   end do
@@ -54,7 +54,7 @@ program probe_ag_dos
       dd = abs(sum(dos(i, :)) - sum(ref(i, 0:2)))
       dmax = max(dmax, dd)
     end do
-    write (fn, '(a,i0,a)') '/home/rudra/Devel/ASR/asr_new/trial/ag_dos_v', iv, '.dat'
+    write (fn, '(a,i0,a)') 'trial/ag_dos_v', iv, '.dat'
     open (newunit=u, file=trim(fn), status='replace')
     write (u, '(a)') '# E  ours_s ours_p ours_d  ref_s ref_p ref_d'
     do i = 1, ne
