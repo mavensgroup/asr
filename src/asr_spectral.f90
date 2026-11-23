@@ -1,5 +1,5 @@
 !> Configuration-averaged Bloch spectral function A(k, E) of the energy-dependent ASR (route edc).  Derivation and review:
-!> docs/DERIVATION_spectral_argon.md (Q1, Q2 Form 2B, Q3b, Q7 and the review section).
+!> notes/DERIVATION_spectral_argon.md (Q1, Q2 Form 2B, Q3b, Q7 and the review section).
 !>
 !> Method.  The off-site elements come from the chains that the SCF runs anyway.  With the centre frozen to species c the scaled
 !> operator gives G^(2) = T (E - H(E))^-1 T, and T = 1 on the centre.  So

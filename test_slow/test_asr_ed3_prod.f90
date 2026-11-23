@@ -1,4 +1,4 @@
-!> Production routine of docs/DERIVATION_ed3.md (asr_ed3 on asr_augcls), run before any desktop gate:
+!> Production routine of notes/DERIVATION_ed3.md (asr_ed3 on asr_augcls), run before any desktop gate:
 !>  (P1) augcls_hp_c == augcls_apply with o = e = 0 (one application of S instead of two).
 !>  (P2) ring of 5, four species, classes, conditional first shell: ed3_blocks == exact conditional configuration average of
 !>       G11, (hG)11, (hGh)11 of K = E O - H (bands_core form), for the parameters of ed3_setup.

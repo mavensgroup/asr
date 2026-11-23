@@ -4,7 +4,7 @@
 !> is.  A terminated chain with real coefficients (energy-independent route) is too.  The truncated energy-dependent chain is
 !> not analytic in general (REVIEW_fable F4): it can have poles off the real axis.  The contour sum of such a chain is still
 !> the exact moment up to the error of the chain at the nodes; a pole between the path and the real axis enters with its
-!> residue (docs/DERIVATION_f4.md, Results 9 and 10).  Gauss-Legendre in the angle.
+!> residue (notes/DERIVATION_f4.md, Results 9 and 10).  Gauss-Legendre in the angle.
 module asr_contour
   use asr_kinds, only: dp, pi
   implicit none

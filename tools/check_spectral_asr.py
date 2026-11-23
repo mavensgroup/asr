@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Complete numerical verification script for Q1 - Q8 of docs/HANDOFF_spectral_argon.md:
+Complete numerical verification script for Q1 - Q8 of notes/HANDOFF_spectral_argon.md:
 1. Exact off-site scaling (Q2): Form 2A (frozen pair) and Form 2B (single-centre dressed target)
    for both H^(2) (route edc) and full ASA (route ed3), plus first-shell SRO (Q7).
 2. Off-diagonal Lanczos extraction (Q3): Polarisation (a), Krylov projection (b), and Block Lanczos (c),

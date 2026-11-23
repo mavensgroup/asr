@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact solution of the charge-excess model on supercells against the single-site F (docs/FINDINGS_LOG.md, "B3 closure").
+"""Exact solution of the charge-excess model on supercells against the single-site F (notes/FINDINGS_LOG.md, "B3 closure").
 
 Model: q_i = b_i - (V_i - mu)/a, V = M q (M = 2/R, periodic Ewald).  On a periodic supercell q(k) = G(k) b(k), G = a/(a + M(k)),
 G = 0 at reciprocal lattice vectors (neutrality).  Species averages for ANY b:

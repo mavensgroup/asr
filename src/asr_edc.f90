@@ -163,7 +163,7 @@ contains
     if (present(mused)) mused = m
   end subroutine edc_green
 
-  !> G_c(E) of the start component iv as edc_green, and its projections on target vectors (asr_spectral; docs/DERIVATION_spectral_argon.md,
+  !> G_c(E) of the start component iv as edc_green, and its projections on target vectors (asr_spectral; notes/DERIVATION_spectral_argon.md,
   !> Form 2B).  With x = (E - H(E))^-1 |iv> from the chain and its tail,
   !>     gp(l, t) = sum_k tw(l, k, t) psi_x(node k of t, l),
   !> where node k of target t is (site of t in local state k - 1, all other sites in the reference state), psi_x its amplitude in the

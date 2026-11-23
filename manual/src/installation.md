@@ -29,8 +29,8 @@ This guide covers everything needed to install dependencies, obtain the `asr` so
 | Component | Version | Purpose |
 |---|---|---|
 | **Python 3 + NumPy** | Python ≥ 3.9 | Running the Special Quasirandom Structure generator (`tools/sqs.py`) |
-| **[mdBook](https://rust-lang.github.io/mdBook/)** | ≥ 0.4 | Building the HTML user manual (`doc/manual/`) via `./tools/build_docs.sh` |
-| **[FORD](https://github.com/Fortran-FOSS-Programmers/ford)** | ≥ 7.0 | Building the Fortran API reference (`ford ford.md`) |
+| **[mdBook](https://rust-lang.github.io/mdBook/)** | ≥ 0.4 | Building the HTML user manual (`manual/src/`) via `./tools/build_docs.sh` |
+| **[FORD](https://github.com/Fortran-FOSS-Programmers/ford)** | ≥ 7.0 | Building the Fortran API reference (`ford manual/ford.md`) |
 | **Graphviz (`dot`)** | any recent | Generating module dependency and call graphs in FORD documentation |
 
 !!! note "Why no Fortran `.mod` files are needed for `libxc`"
@@ -143,7 +143,7 @@ cd asr
 | `example/` | Ready-to-run TOML input files covering ordered crystals, random alloys, a partially disordered Heusler, short-range order, EPIs, and Bloch spectral functions |
 | `data/reference/` | Independent benchmark reference data (Stuttgart LMTO, digitised published DOS) |
 | `tools/sqs.py` | Special Quasirandom Structure (SQS) generator script |
-| `doc/` & `ford.md` | mdBook user manual (`doc/manual/`, `doc/book.toml`) and FORD API reference (`ford.md`), built with `./tools/build_docs.sh` into `doc/build/book/` and `doc/ford_api/` |
+| `manual/` | mdBook user manual (`manual/src/`, `manual/book.toml`) and FORD API reference (`manual/ford.md`), built with `./tools/build_docs.sh` into `manual/build/book/` and `manual/ford_api/` |
 
 ---
 
@@ -292,12 +292,12 @@ pip install --user ford
 # sudo apt install graphviz   (Ubuntu/Debian)
 
 ./tools/build_docs.sh
-xdg-open doc/build/book/index.html
+xdg-open manual/build/book/index.html
 # Or serve locally with live reload:
 ./tools/build_docs.sh --serve
 ```
 
-Set `graph: true` in `ford.md` if Graphviz is installed and you wish to generate interactive dependency diagrams across modules and procedures.
+Set `graph: true` in `manual/ford.md` if Graphviz is installed and you wish to generate interactive dependency diagrams across modules and procedures.
 
 ---
 

@@ -17,16 +17,16 @@ cd "$REPO_ROOT"
 MODE="${1:-all}"
 
 build_book() {
-    echo "==> [mdBook] Building manual from doc/manual/..."
-    [ -e doc/manual/api ] || ln -sfn ../ford_api doc/manual/api
-    mdbook build doc
-    echo "==> [mdBook] Manual built at doc/build/book/index.html"
+    echo "==> [mdBook] Building manual from manual/src/..."
+    [ -e manual/src/api ] || ln -sfn ../ford_api manual/src/api
+    mdbook build manual
+    echo "==> [mdBook] Manual built at manual/build/book/index.html"
 }
 
 build_ford() {
     echo "==> [FORD] Parsing Fortran code in src/ and app/..."
-    ford ford.md
-    echo "==> [FORD] API reference built at doc/ford_api/index.html"
+    ford manual/ford.md
+    echo "==> [FORD] API reference built at manual/ford_api/index.html"
 }
 
 case "$MODE" in
@@ -37,16 +37,16 @@ case "$MODE" in
         build_ford
         ;;
     --serve)
-        [ -d doc/ford_api ] || build_ford
-        [ -e doc/manual/api ] || ln -sfn ../ford_api doc/manual/api
+        [ -d manual/ford_api ] || build_ford
+        [ -e manual/src/api ] || ln -sfn ../ford_api manual/src/api
         echo "==> Serving documentation with live reload (http://localhost:3000)..."
         echo "==> Press Ctrl+C to stop."
-        mdbook serve doc --open
+        mdbook serve manual --open
         ;;
     --watch)
-        [ -e doc/manual/api ] || ln -sfn ../ford_api doc/manual/api
-        echo "==> Watching doc/manual/ for changes..."
-        mdbook watch doc
+        [ -e manual/src/api ] || ln -sfn ../ford_api manual/src/api
+        echo "==> Watching manual/src/ for changes..."
+        mdbook watch manual
         ;;
     all|"")
         build_ford
@@ -54,8 +54,8 @@ case "$MODE" in
         echo ""
         echo "================================================================="
         echo "Documentation build complete!"
-        echo "  - User Manual:    file://$REPO_ROOT/doc/build/book/index.html"
-        echo "  - Fortran API:    file://$REPO_ROOT/doc/build/book/api/index.html"
+        echo "  - User Manual:    file://$REPO_ROOT/manual/build/book/index.html"
+        echo "  - Fortran API:    file://$REPO_ROOT/manual/build/book/api/index.html"
         echo "To browse locally with live-reload while writing:"
         echo "  ./tools/build_docs.sh --serve"
         echo "================================================================="

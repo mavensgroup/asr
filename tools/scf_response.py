@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Linear response of the SCF from an [asr] ef_scan_dump file (route edc, spin 2, at least 3 scan energies): the
 self-consistent change of the moments and charges that follows from a change after one iteration at a fixed potential.
-See docs/DERIVATION_scf_response.md, part C.
+See notes/DERIVATION_scf_response.md, part C.
 
 From the dump, per component p and spin s (1/Ry per atom):
   n_ps    = dq_ps / dE_F                                thermal DOS: response to a uniform shift of the potential

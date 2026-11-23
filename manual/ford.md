@@ -7,14 +7,14 @@ github: https://github.com/rudrab
 linkedin: https://www.linkedin.com/in/rudra-banerjee-a6bb99b7
 license: mit
 version: 1.0.1
-src_dir: ./src
-         ./app
-output_dir: ./doc/ford_api
-exclude_dir: ./build
-             ./trial
-             ./test
-media_dir: ./doc/media
-favicon: ./doc/media/favicon.png
+src_dir: ../src
+         ../app
+output_dir: ./ford_api
+exclude_dir: ../build
+             ../trial
+             ../test
+media_dir: ./media
+favicon: ./media/favicon.png
 extensions: f90
 display: public
          protected
@@ -26,7 +26,7 @@ proc_internals: false
 md_extensions: markdown.extensions.toc
                markdown.extensions.sane_lists
                markdown.extensions.admonition
-css: ./doc/css/asr.css
+css: ./css/asr.css
 creation_date: %Y-%m-%d
 print_creation_date: true
 parallel: 4

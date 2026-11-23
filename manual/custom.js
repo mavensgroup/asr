@@ -1,4 +1,4 @@
-// doc/custom.js
+// manual/custom.js
 document.addEventListener("DOMContentLoaded", function() {
 
     var homeLink = path_to_root + "index.html";

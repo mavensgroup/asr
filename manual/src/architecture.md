@@ -198,4 +198,4 @@ All modules link to their generated API pages.
 | `tools/` | `sqs.py` (SQS generator), `check_layers.py` (the layer rule), `gen_build_info.sh` (build provenance) |
 | `data/reference/` | Validation data: Stuttgart Ag parameters (`ag_fcc_stuttgart`), digitised CuZn/MnCr DOS |
 | `trial/` | Scratch (git-ignored except `README.md`) |
-| `doc/` | This manual (mdBook in `doc/manual`; the FORD API reference is generated into `doc/ford_api`) |
+| `manual/` | This manual (mdBook in `manual/src`; the FORD API reference is generated into `manual/ford_api`) |

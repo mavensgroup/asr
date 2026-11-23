@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Causality analysis of an [asr] ef_scan_dump file (route edc).  See docs/DERIVATION_f4.md.
+"""Causality analysis of an [asr] ef_scan_dump file (route edc).  See notes/DERIVATION_f4.md.
 
 The dump holds, for every scan energy, the Fermi contour (nodes z, weights w) and every chain (a_k, b_k) of
 asr_edc::edc_green.  From them this tool rebuilds the Green function with the code's `hull` tail and without a tail and
@@ -10,7 +10,7 @@ reports, per scan energy and in total:
           (then some tail with Im t <= 0 gives -Im G <= 0: the head of the chain alone does not guarantee causality)
   timag   nodes where the hull tail itself has Im t > 0
   chi     bare on-site charge response of every component, chi_p = (1/pi) Im sum_j w_j sum_{L, spin} G^2 (1/Ry; see
-          docs/DERIVATION_scf_response.md, Result B1), at the central scan energy
+          notes/DERIVATION_scf_response.md, Result B1), at the central scan energy
   N       electron count from the dump (must equal the `ef_scan` line of the run), and its increments along the scan
           (a decreasing N(mu) is a negative thermal DOS)
   vortex  phase vortices of G on the grid (scan energy) x (Matsubara frequency): +1 = zero, -1 = pole of G inside the

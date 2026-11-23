@@ -28,7 +28,7 @@
 !> The chains (spin x component x start orbital x energy) are independent (H depends on E) and run in parallel (OpenMP), one
 !> per task; every thread keeps its own copy of the class operator.
 !>
-!> route = 'ed3' (docs/DERIVATION_ed3.md, asr_ed3): the full generalised ASA problem instead of H^(2).  The chains give the central
+!> route = 'ed3' (notes/DERIVATION_ed3.md, asr_ed3): the full generalised ASA problem instead of H^(2).  The chains give the central
 !> blocks xm0 = G_11, xm1 = (hG)_11, xm2 = (hGh)_11 and the moments are those of k-space (bands_moments): q0 = xm0 + 2 o xm1 + o^2 xm2,
 !> q1 = xm1 + o xm2, q2 = xm2, density q0 phi^2 + 2 q1 phi phidot + q2 phidot^2, channel charge q0 + p^gamma q2 = xm0 + 2 o xm1 + p xm2.
 !> E_band = sum_l (q1 + E_nu,l (q0 + p^gamma q2)) as in asa_scf: the occupied eigenvalue sum.  E_F comes from the channel charges.  gz(...) then holds G + 2 o hG + p hGh, whose
@@ -146,7 +146,7 @@ module asr_class_scf
     logical :: below_ok = .true.
     !> contour node values (node, start orbital, component, spin) of the last moment evaluation, and how many of them are not
     !> causal: -Im G <= 0 (edc) or the block -Im G not positive semidefinite (ed3).  A Herglotz function has none.  The
-    !> truncated energy-dependent chain can have some (docs/DERIVATION_f4.md); the charges then carry the chain error there.
+    !> truncated energy-dependent chain can have some (notes/DERIVATION_f4.md); the charges then carry the chain error there.
     integer :: nnode = 0, nnoncausal = 0
     !> effective pair interactions (asr_epi), one entry per pair type; epi_wbelow: largest valence weight of the path site
     !> (electrons) in the 3 Ry below the contour bottom over all path points (must vanish, as wbelow)
@@ -673,7 +673,7 @@ contains
     if (res%nclamp > 0) print '(a,i0,a)', '  WARNING: E_nu held at its band window in the last iteration (', res%nclamp, &
       ' channels): not a fixed point, the result depends on the window margin'
     if (res%nnoncausal > 0) print '(a,i0,a,i0,a)', '  WARNING: Green function not causal at ', res%nnoncausal, ' of ', res%nnode, &
-      ' contour node values in the last iteration (truncated energy-dependent chain, docs/DERIVATION_f4.md)'
+      ' contour node values in the last iteration (truncated energy-dependent chain, notes/DERIVATION_f4.md)'
     ! valence weight below the contour bottom at the final potential (the occupied moments would miss it)
     call all_params()
     call weight_below(res%wbelow)
@@ -749,7 +749,7 @@ contains
           do pp_ = 1, ncomp
             do o = 1, 4
               ll = lorb(o)
-              ! causality at every node in the upper half plane: -Im G > 0 for a Herglotz function (docs/DERIVATION_f4.md)
+              ! causality at every node in the upper half plane: -Im G > 0 for a Herglotz function (notes/DERIVATION_f4.md)
               do j = 1, nq + 1
                 if (aimag(zq(j)) <= 0.0_dp) cycle
                 nnode = nnode + 1

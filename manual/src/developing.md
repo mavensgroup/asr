@@ -90,7 +90,7 @@ species-resolved Green function).
 ## Documentation conventions (FORD)
 
 The API reference is built by [FORD](https://github.com/Fortran-FOSS-Programmers/ford)
-from the source comments; this manual is the set of pages in `doc/manual/`.
+from the source comments; this manual is the set of pages in `manual/src/`.
 
 | Marker | Where | Use |
 |---|---|---|
@@ -115,7 +115,7 @@ function interp(x) result(y)
 
 ### Manual pages
 
-Each page in `doc/manual/` begins with front matter:
+Each page in `manual/src/` begins with front matter:
 
 ```markdown
 ---
@@ -132,7 +132,7 @@ ordered_subpage: child1.md
 ### Building
 
 ```bash
-./tools/build_docs.sh     # builds FORD (doc/ford_api/) and mdBook (doc/build/book/)
+./tools/build_docs.sh     # builds FORD (manual/ford_api/) and mdBook (manual/build/book/)
 ```
 
 Check the FORD output for `Warning:` lines about unresolved `[[…]]` links and fix them.

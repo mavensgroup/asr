@@ -3,7 +3,7 @@
 give when they are cut after m' <= m steps and closed with the hull tail (the Lanczos coefficients of the m'-step chain are
 the first m' of the m-step chain).  E_F is set again for every m' from the scan energies (N = N_elec, interpolation).
 Usage: step_profile.py chains.dat [m1,m2,...] [--notail]
-See docs/DERIVATION_levels_steps.md."""
+See notes/DERIVATION_levels_steps.md."""
 import sys
 import numpy as np
 from f4_dump import read_dump, tail_hull, chain_green

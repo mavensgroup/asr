@@ -1,5 +1,5 @@
 !> Screened electrostatics of charge fluctuations in a substitutional alloy, single-site form, with first-shell short-range
-!> order (gate B3; derivation in docs/FINDINGS_LOG.md, "B3 re-derived").
+!> order (gate B3; derivation in notes/FINDINGS_LOG.md, "B3 re-derived").
 !>
 !> Charge-excess model (linear q-V law): every site of the graph lattice responds to its own Madelung potential,
 !>     q_i = b_i - (V_i - mu) / a,      V_i = sum_{j /= i} M_ij q_j,      M_ij = 2 / R_ij  (Ry, Bohr; ASA point charges),
@@ -16,7 +16,7 @@
 !> diag(w) Ahat is symmetric (w_p = f_kappa x_c; f_kappa z = f_kappa' z', P(c, s) = P(s, c)), so diag(w) F is symmetric and
 !> E = 1/2 sum_p w_p dq_p (F dq)_p has dE/dq_p = w_p (F dq)_p.
 !>
-!> Closure of the first-shell SRO (docs/FINDINGS_LOG.md, "B3 closure"; scripts in tools/sro_closure).  The linear form
+!> Closure of the first-shell SRO (notes/FINDINGS_LOG.md, "B3 closure"; scripts in tools/sro_closure).  The linear form
 !> Gamma = G00 + G1 Ahat keeps the correlations of the first shell only.  Its structure factor turns negative at the zone
 !> boundary for strong clustering, and G00 + G1 lambda then has a zero (fcc beta 1.0: lambda* = 12.35; beta 1.2: 7.67).  The
 !> exact model has no zero: Gamma = <G(k) S(k)> / x with G > 0 and S >= 0, and sum_R G(R) = 0 gives Gamma -> 0 (F -> +infinity)

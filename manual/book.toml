@@ -3,7 +3,7 @@ title = "asr"
 authors = ["Rudra Banerjee"]
 description = "Augmented-space recursion suite for disordered materials"
 language = "en"
-src = "manual"
+src = "src"
 
 [build]
 build-dir = "build/book"

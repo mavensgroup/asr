@@ -1,4 +1,4 @@
-!> Full-ASA energy-dependent recursion (route `ed3`, docs/DERIVATION_ed3.md) on the site-class operator asr_augcls.  For a central
+!> Full-ASA energy-dependent recursion (route `ed3`, notes/DERIVATION_ed3.md) on the site-class operator asr_augcls.  For a central
 !> species c (start site frozen to c, one recursion per (class, species) and start orbital) the secular matrix of the generalised
 !> ASA problem, K(E) = E O - H, scaled with T_R = (D_c / D_s)^1/2 is
 !>   K'(E) = T K T = et - h' + u h' + h' u - h' Qt h',   h' = g + S',   S' = D_c^1/2 S D_c^1/2,
@@ -9,7 +9,7 @@
 !> Both vectors lie in the reference sector and in the same reduced basis, since h' |u> = g_c |u> + S' |u> is not random.  One
 !> complex-symmetric Lanczos chain from each gives q0 and q2 as diagonal elements (error second order in the residual) and q1
 !> twice by projection (first order); the mean of the two is used and their difference measures the tail.  So the sphere charge
-!> q0 + p^gamma q2 needs no cross term.  docs/DERIVATION_ed3.md section 6 compares this with chains from |u>, S'|u>.
+!> q0 + p^gamma q2 needs no cross term.  notes/DERIVATION_ed3.md section 6 compares this with chains from |u>, S'|u>.
 module asr_ed3
   use asr_kinds, only: dp
   use asr_augcls, only: class_alloy_t, augcls_op, augcls_hp_c, augcls_rand_c, augcls_project_c

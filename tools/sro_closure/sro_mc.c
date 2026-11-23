@@ -1,5 +1,5 @@
 /* Canonical Monte Carlo (species exchange, Metropolis) on a lattice embedded in a periodic simple-cubic grid of n^3 points.
- * Kernel of sro_exact_test.py (docs/FINDINGS_LOG.md, "B3 closure").  Build: gcc -O2 -shared -fPIC -o sro_mc.so sro_mc.c
+ * Kernel of sro_exact_test.py (notes/FINDINGS_LOG.md, "B3 closure").  Build: gcc -O2 -shared -fPIC -o sro_mc.so sro_mc.c
  *
  * spec[(ix*n + iy)*n + iz] = species (0 .. nsp-1) of a lattice site, -1 on grid points that are not lattice sites.
  * sites[nsite]            = grid indices of the lattice sites.

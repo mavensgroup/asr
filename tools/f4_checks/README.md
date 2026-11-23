@@ -1,4 +1,4 @@
-# Numerical checks of docs/DERIVATION_f4.md
+# Numerical checks of notes/DERIVATION_f4.md
 
 Small real pencils $(A, M)$ on simple cubic clusters (`f4lab.py`), `numpy` and `scipy` only.  Run each script in this directory.
 

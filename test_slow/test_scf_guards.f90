@@ -1,4 +1,4 @@
-!> Guards of the class SCF (docs/REVIEW_fable.md section 6): a result is valid only if (1) E_nu is not held at its band window
+!> Guards of the class SCF (notes/REVIEW_fable.md section 6): a result is valid only if (1) E_nu is not held at its band window
 !> in the last iteration (clamp_enu, asr_potpar::enu_window_margin) and (2) no valence weight lies below the bottom of the
 !> occupation contour (class_scf_result_t%wbelow).  Small fcc Cu runs through the production routine class_scf.
 program test_scf_guards
