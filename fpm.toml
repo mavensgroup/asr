@@ -182,3 +182,8 @@ main = "test_epi_scf.f90"
 name = "test_spectral_scf"
 source-dir = "test_slow"
 main = "test_spectral_scf.f90"
+
+[[example]]
+name = "test_cluster_scf"
+source-dir = "test_slow"
+main = "test_cluster_scf.f90"
