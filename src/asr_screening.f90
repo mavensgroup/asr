@@ -120,24 +120,27 @@ contains
   !> Basis-resolved lattice Coulomb matrix M_bb'(k) in Ry/e (Ewald; k in 1/Bohr, not a reciprocal lattice vector) for a crystal
   !> structure with primitive vectors p (columns, Bohr) and Cartesian basis positions tau(3, nb) (Bohr):
   !>     M_bb'(k) = sum_T (2 / |T + tau_b' - tau_b|) exp(i k . (T + tau_b' - tau_b))   (T = 0 excluded when b = b').
-  !> M(k) is Hermitian.  For a single-site Bravais cell (nb = 1, tau = 0) it equals coulomb_k.
-  subroutine coulomb_k_basis(p, tau, kv, mb)
+  !> M(k) is Hermitian.  For a single-site Bravais cell (nb = 1, tau = 0) it equals coulomb_k.  eta (optional, 1/Bohr) overrides
+  !> the default Ewald splitting parameter so tests can check eta independence.
+  subroutine coulomb_k_basis(p, tau, kv, mb, eta)
     real(dp), intent(in) :: p(3, 3), tau(:, :), kv(:, :)
     complex(dp), intent(out) :: mb(size(tau, 2), size(tau, 2), size(kv, 2))
+    real(dp), intent(in), optional :: eta
     real(dp), allocatable :: tv(:, :), gv(:, :)
-    real(dp) :: b(3, 3), omega, eta, rmax, gmax, v(3), d(3), r, q2, dtmax, ph
+    real(dp) :: b(3, 3), omega, et, rmax, gmax, v(3), d(3), r, q2, dtmax, ph
     complex(dp) :: s, sr
     integer :: nb, n(3), i1, i2, i3, nt, ng, ik, j, b1, b2
     nb = size(tau, 2)
     omega = abs(det3(p))
     b(:, 1) = cross(p(:, 2), p(:, 3)); b(:, 2) = cross(p(:, 3), p(:, 1)); b(:, 3) = cross(p(:, 1), p(:, 2))
     b = 2.0_dp * pi * b / omega
-    eta = sqrt(pi) / (omega / real(max(nb, 1), dp))**(1.0_dp / 3.0_dp)
+    et = sqrt(pi) / (omega / real(max(nb, 1), dp))**(1.0_dp / 3.0_dp)
+    if (present(eta)) et = eta
     dtmax = 0.0_dp
     do b1 = 1, nb
       do b2 = b1 + 1, nb; dtmax = max(dtmax, norm2(tau(:, b2) - tau(:, b1))); end do
     end do
-    rmax = 7.0_dp / eta; gmax = 14.0_dp * eta + maxval(norm2(b, dim=1))
+    rmax = 7.0_dp / et; gmax = 14.0_dp * et + maxval(norm2(b, dim=1))
     do i1 = 1, 3; n(i1) = ceiling((rmax + dtmax) * norm2(b(:, i1)) / (2.0_dp * pi)) + 1; end do
     allocate (tv(3, product(2 * n + 1)))
     nt = 0
@@ -166,7 +169,7 @@ contains
             ! sum_T erf(eta |T + d|) / |T + d| exp(i k.(T + d)) is a lattice-periodic function of d: its Fourier series has the
             ! phases exp(-i G.d), not exp(i (k + G).d).  With the latter the result depends on eta off the diagonal.
             ph = -dot_product(gv(:, j), d)
-            s = s + exp(-q2 / (4.0_dp * eta**2)) / q2 * cmplx(cos(ph), sin(ph), dp)
+            s = s + exp(-q2 / (4.0_dp * et**2)) / q2 * cmplx(cos(ph), sin(ph), dp)
           end do
           s = 4.0_dp * pi / omega * s
           sr = (0.0_dp, 0.0_dp)
@@ -174,10 +177,10 @@ contains
             v = tv(:, j) + d; r = norm2(v)
             if (r < 1.0e-10_dp .or. r > rmax) cycle
             ph = dot_product(kv(:, ik), v)
-            sr = sr + (erfc(eta * r) / r) * cmplx(cos(ph), sin(ph), dp)
+            sr = sr + (erfc(et * r) / r) * cmplx(cos(ph), sin(ph), dp)
           end do
           s = s + sr
-          if (b1 == b2) s = cmplx(real(s, dp) - 2.0_dp * eta / sqrt(pi), 0.0_dp, dp)
+          if (b1 == b2) s = cmplx(real(s, dp) - 2.0_dp * et / sqrt(pi), 0.0_dp, dp)
           mb(b1, b2, ik) = 2.0_dp * s
           if (b2 > b1) mb(b2, b1, ik) = conjg(mb(b1, b2, ik))
         end do

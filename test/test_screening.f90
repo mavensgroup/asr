@@ -183,14 +183,28 @@ program test_screening
     use asr_prototypes, only: prototype_structure
     type(structure_t) :: st
     type(screen_t) :: sb, shcp, sn1, sn2
-    complex(dp) :: mb1(1, 1, 1)
-    real(dp) :: rvs(3, 2), grs(2), wrs(2)
+    complex(dp) :: mb1(1, 1, 1), mba(4, 4, 1), mbb(4, 4, 1), mbpm(4, 4, 2)
+    real(dp) :: rvs(3, 2), grs(2), wrs(2), gr4(1), wr4(1), kv2(3, 2)
     p = reshape([-1, 1, 1, 1, -1, 1, 1, 1, -1], [3, 3]) * 0.5_dp * alat
     kv(:, 1) = [0.37_dp, -0.21_dp, 0.53_dp]
     call coulomb_k(p, kv, m)
     call coulomb_k_basis(p, reshape([0.0_dp, 0.0_dp, 0.0_dp], [3, 1]), kv, mb1)
     call check_close(real(mb1(1, 1, 1), dp), m(1), 1.0e-12_dp, 'coulomb_k_basis matches coulomb_k on a one-site lattice')
     call check_close(aimag(mb1(1, 1, 1)), 0.0_dp, 1.0e-14_dp, 'coulomb_k_basis diagonal is real')
+
+    call prototype_structure('nias', st, msg, c_over_a=1.7_dp)
+    kv2(:, 1) = [0.31_dp, -0.19_dp, 0.27_dp]; kv2(:, 2) = -kv2(:, 1)
+    call coulomb_k_basis(st%avec * alat, st%tau * alat, kv2(:, 1:1), mba, eta=0.35_dp)
+    call coulomb_k_basis(st%avec * alat, st%tau * alat, kv2(:, 1:1), mbb, eta=0.60_dp)
+    call check_close(maxval(abs(mba - mbb)) / maxval(abs(mba)), 0.0_dp, 1.0e-12_dp, &
+                     'coulomb_k_basis off-diagonal independent of Ewald eta')
+    call coulomb_k_basis(st%avec * alat, st%tau * alat, kv2, mbpm)
+    call check_close(abs(mbpm(3, 3, 1) - mbpm(4, 4, 1)) / abs(mbpm(3, 3, 1)), 0.0_dp, 1.0e-12_dp, &
+                     'NiAs M(k): M_33(k) = M_44(k)')
+    call check_close(abs(abs(mbpm(1, 3, 1)) - abs(mbpm(1, 4, 2))) / abs(mbpm(1, 3, 1)), 0.0_dp, 1.0e-12_dp, &
+                     'NiAs M(k): |M_13(k)| = |M_14(-k)|')
+    call check_close(abs(abs(mbpm(2, 3, 1)) - abs(mbpm(2, 4, 2))) / abs(mbpm(2, 3, 1)), 0.0_dp, 1.0e-12_dp, &
+                     'NiAs M(k): |M_23(k)| = |M_24(-k)|')
 
     call prototype_structure('b2', st, msg)
     call screen_structure(st, alat, 1.0_dp, sb, msg)
@@ -217,6 +231,8 @@ program test_screening
     call check(len(msg) == 0 .and. sn2%z == 6, 'NiAs c/a 1.7 anion SRO shell: z = 6 in plane')
     rvs(:, 1) = 0.0_dp; rvs(:, 2) = [alat, 0.0_dp, 0.0_dp]
     call screen_structure_shells(st, alat, sn2, rvs, grs, wrs, b0=3, b2=[3, 3], nk=10)
+    call screen_structure_shells(st, alat, sn2, rvs(:, 1:1), gr4, wr4, b0=4, b2=[4], nk=10)
+    call check_close(grs(1), gr4(1), 1.0e-12_dp, 'NiAs screen_structure_shells: G_33(0) = G_44(0)')
     call check_close(grs(1), sn2%g00, 1.0e-12_dp, 'NiAs screen_structure_shells: G(0) = G00 on anion sublattice')
     call check_close(grs(2), sn2%g1, 1.0e-12_dp, 'NiAs screen_structure_shells: G(R1_anion) = G1')
     call check_close(wrs(2), sn2%w1, 1.0e-12_dp, 'NiAs screen_structure_shells: W(R1_anion) = W1')
