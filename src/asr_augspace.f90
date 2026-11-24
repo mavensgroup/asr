@@ -128,7 +128,7 @@ contains
       r = queue(qh); qh = qh + 1
       do k = g%nbr_ptr(r), g%nbr_ptr(r + 1) - 1
         j = g%nbr(k)
-        if (j == 0) cycle                                    ! a slot without a neighbour (asr_crystal_graph)
+        if (j <= 0) cycle                                    ! no neighbour on the slot, or beyond the cluster (asr_crystal_graph)
         if (dist(j) < 0) then; dist(j) = dist(r) + 1; qt = qt + 1; queue(qt) = j; end if
       end do
     end do

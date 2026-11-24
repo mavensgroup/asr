@@ -1,14 +1,16 @@
 !> Structure constants per basis site (asr_lmto_alloy::structure_blocks) and the class operator with per-type tables
 !> (asr_augcls, asr_augblk), step 3 of notes/DESIGN_structures.md.
 !>  (A) sc, bcc, fcc and B2 (both basis sites) through the structure: the blocks of build_lmto_alloy, bit for bit.
-!>  (B) bcc and B2 class operators built from the structure graph, its site operations and the per-type tables: the same node
-!>      set, tables and products H x, h x (asr_augcls and asr_augblk) as today's operators, bit for bit.
+!>  (B) bcc and B2 class operators on the site cluster of the structure, with its site operations and per-type tables, against
+!>      today's operators on a periodic box of 10 cubes (large enough not to wrap at 2 levels): today's reduction group and
+!>      orbital matrices bit for bit, the same number of nodes and the same moments for every start orbital.  A box of 4 cubes
+!>      wraps around at 2 levels and gives another node set.
 !>  (S) every space-group operation g of hcp and NiAs maps the blocks of basis site b onto those of g(b):
 !>      block0(g b) = D block0(b) D^T, block(g k, g b) = D block(k, b) D^T; the reverse bond holds the transpose.  hcp: the two
 !>      sites are related by inversion, so their on-site p-d blocks are nonzero and opposite, the d-d blocks equal.
 !>  (G) gate G2 on small hcp and NiAs maps with disorder on every sublattice: the reduced operator (monomial reduction group)
 !>      gives the moments of the unreduced one for every start orbital; partners of an orbital group give equal moments; the
-!>      unreduced operator is symmetric.
+!>      unreduced operator is symmetric; the block kernel (asr_augblk) gives h x of asr_augcls with distinct site types.
 program test_structure_blocks
   use asr_kinds, only: dp
   use asr_crystal, only: structure_t
@@ -38,14 +40,14 @@ program test_structure_blocks
   call cubic_blocks('bcc', 'bcc', 3, 1.2_dp, 1.75_dp)
   call cubic_blocks('fcc', 'fcc', 3, 1.2_dp, 1.5_dp)
   call cubic_blocks('b2', 'bcc', 3, 1.2_dp, 1.75_dp)
-  call cubic_operator('bcc', 4)
-  call cubic_operator('b2', 4)
+  call cubic_operator('bcc')
+  call cubic_operator('b2')
   call sym_blocks('hcp', 0.0_dp, 1.05_dp, 1.6_dp)
   call sym_blocks('hcp', 1.7_dp, 1.05_dp, 1.6_dp)
   call sym_blocks('nias', 1.617_dp, 1.0_dp, 1.5_dp)
-  call g2_case('hcp', 0.0_dp, [4, 4, 3], 1.05_dp, 1)
-  call g2_case('nias', 1.617_dp, [3, 3, 2], 0.9_dp, 1)
-  call g2_case('nias', 1.617_dp, [3, 3, 2], 0.9_dp, 3)
+  call g2_case('hcp', 0.0_dp, 1.05_dp, 1)
+  call g2_case('nias', 1.617_dp, 0.9_dp, 1)
+  call g2_case('nias', 1.617_dp, 0.9_dp, 3)
   call report()
 contains
 
@@ -64,34 +66,17 @@ contains
     call space_group(s, ops)
   end subroutine proto
 
-  subroutine graph(s, ops, msc, rcl, cg, start)
+  subroutine graph(s, ops, rcl, levels, cg, start)
     type(structure_t), intent(in) :: s
     type(symop_t), intent(in) :: ops(:)
-    integer, intent(in) :: msc(3, 3)
     real(dp), intent(in) :: rcl
+    integer, intent(in) :: levels
     type(crystal_graph_t), intent(out) :: cg
     integer, intent(in), optional :: start
     character(len=:), allocatable :: msg
-    call crystal_graph(s, ops, msc, rcl, cg, msg, start)
+    call crystal_graph(s, ops, rcl, levels, cg, msg, start)
     if (len(msg) > 0) error stop msg
   end subroutine graph
-
-  function cubes(s, l) result(msc)
-    type(structure_t), intent(in) :: s
-    integer, intent(in) :: l
-    integer :: msc(3, 3), i
-    real(dp) :: c(3, 3)
-    character(len=:), allocatable :: msg
-    c = 0.0_dp; do i = 1, 3; c(i, i) = real(l, dp); end do
-    call supercell_from_cart(s, c, msc, msg)
-    if (len(msg) > 0) error stop msg
-  end function cubes
-
-  function diag3(n) result(msc)
-    integer, intent(in) :: n(3)
-    integer :: msc(3, 3), i
-    msc = 0; do i = 1, 3; msc(i, i) = n(i); end do
-  end function diag3
 
   ! ---------------------------------------------------------------- (A)
   subroutine cubic_blocks(name, kind, l, rcl, rinv)
@@ -108,7 +93,7 @@ contains
     integer :: b
     real(dp) :: e1, e0
     call proto(name, 0.0_dp, s, ops)
-    call graph(s, ops, cubes(s, l), rcl, cg)
+    call graph(s, ops, rcl, 1, cg)
     call structure_blocks(s, cg, rinv, alpha, blk, blk0)
     call build_lmto_alloy(kind, l, rcl, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, rinv, alpha)
     call check(size(blk, 3) == size(m0%block, 3) .and. size(blk, 4) == s%nb, name//': one table per basis site, slots as today')
@@ -121,37 +106,24 @@ contains
   end subroutine cubic_blocks
 
   ! ---------------------------------------------------------------- (B)
-  subroutine cubic_operator(name, l)
+  subroutine cubic_operator(name)
     character(len=*), intent(in) :: name
-    integer, intent(in) :: l
     real(dp), parameter :: rcl = 1.2_dp, rinv = 1.75_dp
+    integer, parameter :: nlev = 2, lbig = 10, lsmall = 4, nmom = 8
     type(structure_t) :: s
     type(symop_t), allocatable :: ops(:)
     type(crystal_graph_t) :: cg
-    type(graph_t) :: g
-    type(orb_alloy_t) :: m0
-    type(class_alloy_t) :: mo, mn
-    type(augcls_op) :: opo, opn
-    type(blk_work_t) :: bwo, bwn
-    integer, allocatable :: coord(:, :), cls(:), perm(:, :), mats(:, :, :), dist(:), gperm(:, :), gidx(:), red(:)
-    real(dp), allocatable :: d(:, :, :), rot(:, :, :), dg(:, :, :), blk(:, :, :, :), blk0(:, :, :), x(:), yo(:), yn(:)
-    complex(dp), allocatable :: zx(:, :), zo(:, :), zn(:, :)
+    type(class_alloy_t) :: mn
+    type(augcls_op) :: opo, opn, ops4
+    integer, allocatable :: perm(:, :), mats(:, :, :), gperm(:, :), gidx(:), red(:)
+    real(dp), allocatable :: d(:, :, :), rot(:, :, :), dg(:, :, :), blk(:, :, :, :), blk0(:, :, :)
     logical, allocatable :: fl(:), mono(:)
-    integer :: i, k, grp(9), ngrp, rep(9), wgt(9)
+    real(dp) :: mo_(0:nmom), mn_(0:nmom), sc(0:nmom), err
+    integer :: k, grp(9), ngrp, rep(9), wgt(9), nn4
     call proto(name, 0.0_dp, s, ops)
-    call graph(s, ops, cubes(s, l), rcl, cg)
+    call graph(s, ops, rcl, nlev, cg)
     call structure_blocks(s, cg, rinv, alpha, blk, blk0)
-    call build_lmto_alloy('bcc', l, rcl, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, rinv, alpha)
-    ! today: classes from the half-lattice coordinates, D4h subset of the class-preserving cubic operations
-    allocate (cls(g%n))
-    if (s%nb == 1) then
-      cls = 1
-    else
-      do i = 1, g%n; cls(i) = 1 + modulo(coord(1, i), 2); end do
-    end if
-    call class_ops(coord, 2 * l, cls, perm, mats)
-    call orbital_rep(mats, d)
-    ! new: site operations of the graph, orbital groups and the reduction group from the structure
+    ! new: site operations of the cluster, orbital groups and the reduction group from the structure
     call graph_site_ops(cg, s, ops, gperm, rot, gidx)
     allocate (dg(9, 9, size(gperm, 2)), mono(size(gperm, 2)))
     do k = 1, size(gperm, 2)
@@ -159,41 +131,67 @@ contains
     end do
     call orbital_groups(dg, mono, grp, ngrp, rep, wgt)
     call reduction_ops(dg, mono, rep(1:ngrp), red)
-    call check(all(cls == s%label(cg%basis)), name//': classes from the basis labels equal today''s')
+    call model(mn, s%nb)
+    mn%block = blk; mn%block0 = blk0
+    allocate (fl(cg%n)); fl = .true.; fl(1) = .false.
+    call build_augcls_operator(cg%g, mn, s%label(cg%basis), gperm(:, red), dg(:, :, red), 1, nlev, opn, maxrank=1, flippable=fl, &
+                               stype=cg%basis)
+    ! today: a periodic box of lbig cubes, classes from the half-lattice coordinates, class_ops
+    call torus_operator(s%nb, lbig, nlev, rcl, rinv, opo, perm, mats, d)
     call check(size(red) == size(perm, 2), name//': reduction group of the structure has today''s order')
     if (size(red) /= size(perm, 2)) return
-    call check(all(gperm(:, red) == perm), name//': reduction group permutations equal class_ops, in order')
+    call check(all(nint(rot(:, :, red)) == mats), name//': reduction group rotations equal class_ops, in order')
     call check(all(dg(:, :, red) == d), name//': orbital matrices equal orbital_rep, bit for bit')
-    ! models: two species on class 1, one on class 2 (B2: partial order)
-    call model(mo, s%nb); call model(mn, s%nb)
-    call augcls_set_blocks(mo, m0%block, m0%block0)
-    mn%block = blk; mn%block0 = blk0
-    call graph_distances(g, 1, dist)
-    allocate (fl(g%n)); fl = dist <= 2; fl(1) = .false.
-    call build_augcls_operator(g, mo, cls, perm, d, 1, 2, opo, maxrank=1, flippable=fl)
-    call build_augcls_operator(cg%g, mn, s%label(cg%basis), gperm(:, red), dg(:, :, red), 1, 2, opn, maxrank=1, flippable=fl, &
-                               stype=cg%basis)
-    call check(opn%nn == opo%nn .and. all(opn%hopr == opo%hopr) .and. all(opn%hopg == opo%hopg) .and. &
-               all(opn%flipr == opo%flipr) .and. all(opn%site == opo%site), name//': node set and link tables as today')
     call check(opn%ntype == s%nb, name//': one site type per basis site')
-    do k = 1, opn%ntype
-      call check(all(opn%btab(:, :, :, :, k) == opo%btab(:, :, :, :, 1)) .and. all(opn%block0(:, :, k) == opo%block0(:, :, 1)), &
-                 name//': tables of every site type equal today''s')
+    call check(opn%nn == opo%nn, name//': the cluster gives the node set of a box that does not wrap')
+    err = 0.0_dp
+    do k = 1, ngrp
+      call moments(opo, d, rep(k), mo_, sc)
+      call moments(opn, dg(:, :, red), rep(k), mn_)
+      err = max(err, maxval(abs(mn_ - mo_) / sc))
     end do
-    allocate (x(opo%dim()), yo(opo%dim()), yn(opo%dim()))
-    call lcg(x)
-    call opo%apply(x, yo); call opn%apply(x, yn)
-    call check(all(yo == yn), name//': H x of the structure operator equals today''s bit for bit (asr_augcls)')
-    allocate (zx(3, opo%dim()), zo(3, opo%dim()), zn(3, opo%dim()))
-    do k = 1, 3
-      call lcg(x); zx(k, :) = cmplx(x, 0.0_dp, dp); call lcg(x); zx(k, :) = zx(k, :) + cmplx(0.0_dp, x, dp)
-    end do
-    call blk_work_init(bwo, 3, opo%dim()); call blk_work_init(bwn, 3, opn%dim())
-    call blk_hp(opo, bwo, zx, zo); call blk_hp(opn, bwn, zx, zn)
-    call check(all(zo == zn), name//': h x of a block of three equals today''s bit for bit (asr_augblk)')
-    print '(2x,a,a,i0,a,i0)', name, ': nodes ', opn%nn, ', reduction group order ', size(red)
-    call augcls_free(opo); call augcls_free(opn)
+    call check(err < 1.0e-13_dp, name//': moments of every start orbital equal those of the box (1e-13)')
+    call torus_operator(s%nb, lsmall, nlev, rcl, rinv, ops4)
+    nn4 = ops4%nn
+    print '(2x,a,a,i0,a,i0,a,i0,a,i0,a,es9.2)', name, ': cluster sites ', cg%n, ', nodes ', opn%nn, ' (box of ', lbig, &
+      ' cubes ', opo%nn, '), moments error ', err
+    print '(2x,a,a,i0,a,i0)', name, ': box of ', lsmall, ' cubes wraps around at 2 levels, nodes ', nn4
+    call check(nn4 /= opn%nn, name//': a box of 4 cubes wraps around at 2 levels (another node set)')
+    call augcls_free(opo); call augcls_free(opn); call augcls_free(ops4)
   end subroutine cubic_operator
+
+  !> Today's operator: a periodic bcc box of l cubes (build_lmto_alloy), classes from the half-lattice coordinates (nb = 2: B2),
+  !> class_ops and orbital_rep, the model of cubic_operator, nlev levels.
+  subroutine torus_operator(nb, l, nlev, rcl, rinv, op, pm, mt, dd)
+    integer, intent(in) :: nb, l, nlev
+    real(dp), intent(in) :: rcl, rinv
+    type(augcls_op), intent(out) :: op
+    integer, allocatable, intent(out), optional :: pm(:, :), mt(:, :, :)
+    real(dp), allocatable, intent(out), optional :: dd(:, :, :)
+    type(graph_t) :: g
+    type(orb_alloy_t) :: m0
+    type(class_alloy_t) :: mo
+    integer, allocatable :: coord(:, :), cls(:), p_(:, :), m_(:, :, :)
+    real(dp), allocatable :: d_(:, :, :)
+    logical, allocatable :: f_(:)
+    integer :: i
+    call build_lmto_alloy('bcc', l, rcl, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, rinv, alpha)
+    allocate (cls(g%n))
+    if (nb == 1) then
+      cls = 1
+    else
+      do i = 1, g%n; cls(i) = 1 + modulo(coord(1, i), 2); end do
+    end if
+    call class_ops(coord, 2 * l, cls, p_, m_)
+    call orbital_rep(m_, d_)
+    call model(mo, nb)
+    call augcls_set_blocks(mo, m0%block, m0%block0)
+    allocate (f_(g%n)); f_ = .true.; f_(1) = .false.
+    call build_augcls_operator(g, mo, cls, p_, d_, 1, nlev, op, maxrank=1, flippable=f_)
+    if (present(pm)) pm = p_
+    if (present(mt)) mt = m_
+    if (present(dd)) dd = d_
+  end subroutine torus_operator
 
   !> Two species on class 1 (x = 0.35), one species (the second) on class 2 if there are two classes; l-dependent parameters.
   subroutine model(m, ncls)
@@ -237,7 +235,7 @@ contains
     character(len=24) :: tag
     write (tag, '(a,a,f5.3)') name, ' c/a ', ca
     call proto(name, ca, s, ops)
-    call graph(s, ops, diag3([4, 4, 3]), rcl, cg)
+    call graph(s, ops, rcl, 1, cg)
     call structure_blocks(s, cg, rinv, alpha, blk, blk0)
     big = maxval(abs(blk))
     e0 = 0.0_dp; e1 = 0.0_dp; et = 0.0_dp
@@ -288,10 +286,10 @@ contains
   end function slot_of
 
   ! ---------------------------------------------------------------- (G)
-  subroutine g2_case(name, ca, nsc, rcl, start)
+  subroutine g2_case(name, ca, rcl, start)
     character(len=*), intent(in) :: name
     real(dp), intent(in) :: ca, rcl
-    integer, intent(in) :: nsc(3), start
+    integer, intent(in) :: start
     integer, parameter :: nmom = 8
     type(structure_t) :: s
     type(symop_t), allocatable :: ops(:)
@@ -301,13 +299,13 @@ contains
     integer, allocatable :: perm(:, :), gidx(:), red(:), cls(:), sidx(:), perm1(:, :)
     real(dp), allocatable :: rot(:, :, :), dg(:, :, :), dcr(:, :, :), blk(:, :, :, :), blk0(:, :, :), x(:), y(:), hy(:), hx(:)
     logical, allocatable :: fl(:), mono(:), mcr(:)
-    real(dp) :: d1(9, 9, 1), mr(0:nmom), mu(0:nmom), sc(0:nmom), err, errp, asym
+    real(dp) :: d1(9, 9, 1), mr(0:nmom), mu(0:nmom), sc(0:nmom), err, errp, asym, eb(2)
     real(dp), allocatable :: mall(:, :)
     integer :: k, i, l, grp(9), ngrp, rep(9), wgt(9), cgrp(9), cngrp, crep(9), cwgt(9)
     character(len=24) :: tag
     write (tag, '(a,a,i0)') name, ' start ', start
     call proto(name, ca, s, ops)
-    call graph(s, ops, diag3(nsc), rcl, cg, start)
+    call graph(s, ops, rcl, 2, cg, start)
     call structure_blocks(s, cg, 1.5_dp, alpha, blk, blk0)
     ! orbital groups from the crystal site group, reduction group from the graph operations
     call site_ops(ops, start, sidx)
@@ -365,8 +363,32 @@ contains
     call opu%apply(x, hx); call opu%apply(y, hy)
     asym = abs(dot_product(y, hx) - dot_product(hy, x)) / (norm2(hx) * norm2(y))
     call check(asym < 1.0e-13_dp, trim(tag)//': the unreduced operator is symmetric')
+    call block_kernel(opu, eb(1)); call block_kernel(opr, eb(2))
+    print '(2x,a,a,es9.2,a,2es10.2)', trim(tag), ': asymmetry ', asym, ', block kernel - augcls (unreduced, reduced) ', eb
+    call check(maxval(eb) < 1.0e-14_dp, trim(tag)//': asr_augblk h x equals asr_augcls h x with distinct site types')
     call augcls_free(opr); call augcls_free(opu)
   end subroutine g2_case
+
+  !> Relative difference of h x from asr_augblk (a block of three complex vectors) and from asr_augcls (one vector at a time).
+  subroutine block_kernel(op, e)
+    type(augcls_op), intent(inout) :: op
+    real(dp), intent(out) :: e
+    type(blk_work_t) :: bw
+    complex(dp), allocatable :: zx(:, :), zb(:, :), zc(:)
+    real(dp), allocatable :: x(:)
+    integer :: k
+    allocate (zx(3, op%dim()), zb(3, op%dim()), zc(op%dim()), x(op%dim()))
+    do k = 1, 3
+      call lcg(x); zx(k, :) = cmplx(x, 0.0_dp, dp); call lcg(x); zx(k, :) = zx(k, :) + cmplx(0.0_dp, x, dp)
+    end do
+    call blk_work_init(bw, 3, op%dim())
+    call blk_hp(op, bw, zx, zb)
+    e = 0.0_dp
+    do k = 1, 3
+      call augcls_hp_c(op, zx(k, :), zc)
+      e = max(e, maxval(abs(zb(k, :) - zc)) / maxval(abs(zc)))
+    end do
+  end subroutine block_kernel
 
   !> mu(n) = <e_l0 | H^n | e_l0> on the start node; sc(n) = |H^n e_l0| (scale of the error)
   subroutine moments(op, dm, l0, mu, sc)

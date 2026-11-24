@@ -16,8 +16,10 @@
 !> and the start orbital must have chi(g) = D(g)[L0,L0] = +-1.  A group of the identity alone gives the unreduced operator.
 !> Bond blocks: one common S for all species (asr_lmto_alloy), tabulated per site type: block(:, :, k, t) = S_{R, R + bvec(k)}
 !> and block0(:, :, t) = S_{R, R} for a site R of type t (stype, default 1; asr_lmto_alloy::structure_blocks gives one type per
-!> basis site).  Slot k of a site is the k-th entry of its neighbour list; an entry 0 (a site without that bond) is skipped.
-!> On a Bravais graph there is one type and every site has every slot.
+!> basis site).  Slot k of a site is the k-th entry of its neighbour list.  An entry 0 (a site without that bond) is skipped.
+!> An entry -1 is a neighbour outside the site cluster (asr_crystal_graph): the closure stops with an error if it needs one, and
+!> a link to it is left out (the node beyond the edge cannot be in the node set).  On a Bravais graph there is one type and every
+!> site has every slot.
 module asr_augcls
   use asr_kinds, only: dp
   use asr_operator, only: linop
@@ -667,9 +669,11 @@ contains
           do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
             if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
             if (r1 == 0) cycle                                         ! a slot that this site does not have
+            if (r1 < 0) error stop 'build_augcls_operator: the closure reaches the edge of the site cluster'
             do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
               if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
               if (r2 == 0) cycle
+              if (r2 < 0) error stop 'build_augcls_operator: the closure reaches the edge of the site cluster'
               call uniq3(r, r1, r2, sites, nsit)
               ncomb = product(nst(sites))
               do f = 0, ncomb - 1
@@ -794,7 +798,7 @@ contains
         end if
       end do
       do k = 1, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
-        if (g%nbr(g%nbr_ptr(r) + k - 1) == 0) cycle                    ! no neighbour on this slot: hopr stays 0
+        if (g%nbr(g%nbr_ptr(r) + k - 1) <= 0) cycle                    ! no neighbour, or beyond the cluster: hopr stays 0
         call canon_node(perm, nop, nsm, g%nbr(g%nbr_ptr(r) + k - 1), c0, cs, ccf, osz, gb)
         j = find_state(st, cs, ccf)
         if (j > 0) then; op%hopr(k, i) = j; op%hopg(k, i) = gb; end if
