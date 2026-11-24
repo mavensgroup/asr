@@ -80,7 +80,7 @@ program test_spectral
     call prototype_structure('hcp', st, msg)
     call check(spectral_structure_ok(st), 'spectral_structure_ok: hcp accepted (two sites related by inversion)')
     call prototype_structure('nias', st, msg, c_over_a=1.62_dp)
-    call check(spectral_structure_ok(st), 'spectral_structure_ok: NiAs accepted (each sublattice related by inversion)')
+    call check(.not. spectral_structure_ok(st), 'spectral_structure_ok: NiAs refused (cations related by screw and glide only)')
     call decoration_structure(dec, st, msg)
     call check(.not. spectral_structure_ok(st), 'spectral_structure_ok: L1_2 refused')
   end block
