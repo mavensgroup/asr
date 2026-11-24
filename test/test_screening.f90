@@ -217,6 +217,12 @@ program test_screening
     call check(len(msg) == 0 .and. shcp%z == 12 .and. abs(shcp%r1 - alat) < 1.0e-10_dp, 'hcp ideal: z = 12, R1 = a')
     call check_close(-shcp%w00 * shcp%r1 / (2.0_dp * shcp%g00), 1.0_dp, 1.0e-10_dp, 'hcp: beta round trip')
     call check_close(shcp%w00, shcp%a * (1.0_dp - shcp%g00), 1.0e-12_dp, 'hcp: W00 = a (1 - G00)')
+    call check_close(sum(shcp%c1k**2) / real(size(shcp%c1k), dp), 1.0_dp / 12.0_dp, 1.0e-12_dp, &
+                     'hcp branches: <c1_m^2> = 1 / z (no branch mixing)')
+    call check_close(shcp%c1_ord, -1.0_dp / 3.0_dp, 1.0e-12_dp, 'hcp ideal ordering branch: c1_ord = -1/3')
+    call check_close(screen_gamma(shcp, 0.0_dp), shcp%g00, 1.0e-14_dp, 'hcp closure: random limit Gamma(0) = G00')
+    call check_close(screen_gamma(shcp, 12.0_dp), 0.0_dp, 1.0e-14_dp, 'hcp closure: complete clustering Gamma(z) = 0')
+    call check_close(screen_gamma(shcp, -4.0_dp), shcp%g_ord, 1.0e-12_dp, 'hcp closure: ordering limit Gamma(z c1_ord) = g_ord')
     call check_positive_decreasing(shcp, 'hcp beta 1.0')
 
     call prototype_structure('nias', st, msg, c_over_a=1.6_dp)
@@ -224,11 +230,36 @@ program test_screening
     call check(len(msg) == 0 .and. sn1%z == 6, 'NiAs c/a 1.6 anion SRO shell: z = 6 out of plane')
     call check_close(sn1%r1, alat * sqrt(1.0_dp / 3.0_dp + 0.4_dp**2), 1.0e-10_dp, 'NiAs: R1_nn is the cation-anion bond')
     call check_close(-sn1%w00 * sn1%r1 / (2.0_dp * sn1%g00), 1.0_dp, 1.0e-10_dp, 'NiAs anion: beta round trip')
-    call check_positive_decreasing(sn1, 'nias anion beta 1.0')
+    call check_close(sum(sn1%c1k**2) / real(size(sn1%c1k), dp), 1.0_dp / 6.0_dp, 1.0e-12_dp, &
+                     'NiAs c/a 1.6 anion branches: <c1_m^2> = 1 / z')
+    call check_close(sn1%c1_ord, -1.0_dp, 1.0e-12_dp, 'NiAs c/a 1.6 bipartite anion shell: c1_ord = -1 at k = 0')
+    call check_close(screen_gamma(sn1, 0.0_dp), sn1%g00, 1.0e-14_dp, 'NiAs c/a 1.6 closure: Gamma(0) = G00')
+    call check_close(screen_gamma(sn1, 6.0_dp), 0.0_dp, 1.0e-14_dp, 'NiAs c/a 1.6 closure: Gamma(z) = 0')
+    call check_close(screen_gamma(sn1, -6.0_dp), sn1%g_ord, 1.0e-12_dp, 'NiAs c/a 1.6 closure: Gamma(-z) = g_ord')
+    ! At c/a = 1.6 < sqrt(8/3) the out-of-plane shell (0.9866 a) is nearly degenerate with the in-plane shell (1.0000 a).
+    ! Alternating out-of-plane layers at k = 0 force like in-plane neighbours, so Gamma turns over below lambda = -2 while
+    ! staying strictly positive on [-6, 6) and strictly decreasing on [-1, 6] (notes/DERIVATION_closure_basis.md).
+    call check_range_positive_decreasing(sn1, -1.0_dp, 6.0_dp, 'nias c/a 1.6 [-1, z]')
+    call check(screen_gamma(sn1, -6.0_dp) > 0.0_dp .and. screen_gamma(sn1, -6.0_dp) < screen_gamma(sn1, -2.0_dp), &
+               'NiAs c/a 1.6: positive ordering turnover when in-plane shell is frustrated')
+    block
+      real(dp) :: rvo(3, 6), gro(6), wro(6)
+      rvo(:, 1) = st%tau(:, 4) - st%tau(:, 3) - st%avec(:, 3)
+      rvo(:, 2) = rvo(:, 1) + st%avec(:, 2)
+      rvo(:, 3) = rvo(:, 1) - st%avec(:, 1)
+      rvo(:, 4) = st%tau(:, 4) - st%tau(:, 3)
+      rvo(:, 5) = rvo(:, 4) + st%avec(:, 2)
+      rvo(:, 6) = rvo(:, 4) - st%avec(:, 1)
+      rvo = rvo * alat
+      call screen_structure_shells(st, alat, sn1, rvo, gro, wro, b0=3, b2=[4, 4, 4, 4, 4, 4], nk=10)
+      call check_close(sum(gro) / 6.0_dp, sn1%g1, 1.0e-12_dp, 'NiAs c/a 1.6 inter-site shell: <G(R1_anion)> = G1')
+    end block
 
     call prototype_structure('nias', st, msg, c_over_a=1.7_dp)
     call screen_structure(st, alat, 1.0_dp, sn2, msg, nk=10, sub_sro=2)
     call check(len(msg) == 0 .and. sn2%z == 6, 'NiAs c/a 1.7 anion SRO shell: z = 6 in plane')
+    call check_close(sn2%c1_ord, -0.5_dp, 1.0e-12_dp, 'NiAs c/a 1.7 in-plane anion shell: c1_ord = -1/2 at K')
+    call check_positive_decreasing(sn2, 'nias c/a 1.7 anion beta 1.0')
     rvs(:, 1) = 0.0_dp; rvs(:, 2) = [alat, 0.0_dp, 0.0_dp]
     call screen_structure_shells(st, alat, sn2, rvs, grs, wrs, b0=3, b2=[3, 3], nk=10)
     call screen_structure_shells(st, alat, sn2, rvs(:, 1:1), gr4, wr4, b0=4, b2=[4], nk=10)
@@ -263,18 +294,25 @@ contains
   subroutine check_positive_decreasing(sc, label)
     type(screen_t), intent(in) :: sc
     character(len=*), intent(in) :: label
+    call check_range_positive_decreasing(sc, sc%z * sc%c1_ord, real(sc%z, dp), label)
+  end subroutine check_positive_decreasing
+
+  subroutine check_range_positive_decreasing(sc, lmin, lmax, label)
+    type(screen_t), intent(in) :: sc
+    real(dp), intent(in) :: lmin, lmax
+    character(len=*), intent(in) :: label
     logical :: pos, dec
     pos = .true.; dec = .true.; gprev = huge(1.0_dp)
     do k = 0, 400
-      lam = sc%z * (sc%c1_ord + (1.0_dp - sc%c1_ord) * k / 400.0_dp)
+      lam = lmin + (lmax - lmin) * k / 400.0_dp
       gnow = screen_gamma(sc, lam)
-      if (k < 400 .and. gnow <= 0.0_dp) pos = .false.
+      if (lam < real(sc%z, dp) - 1.0e-12_dp .and. gnow <= 0.0_dp) pos = .false.
       if (gnow > gprev + 1.0e-12_dp) dec = .false.
       gprev = gnow
     end do
     call check(pos, 'closure '//label//': Gamma > 0 on the realizable range (no pole)')
     call check(dec, 'closure '//label//': Gamma decreases with lambda')
-  end subroutine check_positive_decreasing
+  end subroutine check_range_positive_decreasing
 
   !> Damped iteration of u with dq = P (c - chi W u) (the potential implied by u acts on a linear model response), then
   !> u_out = screen_update.  ok: converged.  dmax: |v - F dq| if fref is given, else |Gamma Gamma^+ dq - dq| (dq in the range

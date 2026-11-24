@@ -117,19 +117,24 @@ contains
     end do
   end subroutine coulomb_k
 
-  !> Basis-resolved lattice Coulomb matrix M_bb'(k) in Ry/e (Ewald; k in 1/Bohr, not a reciprocal lattice vector) for a crystal
-  !> structure with primitive vectors p (columns, Bohr) and Cartesian basis positions tau(3, nb) (Bohr):
+  !> Basis-resolved lattice Coulomb matrix M_bb'(k) in Ry/e (Ewald; k in 1/Bohr, not a reciprocal lattice vector unless
+  !> gamma_neutral is true) for a crystal structure with primitive vectors p (columns, Bohr) and Cartesian basis positions
+  !> tau(3, nb) (Bohr):
   !>     M_bb'(k) = sum_T (2 / |T + tau_b' - tau_b|) exp(i k . (T + tau_b' - tau_b))   (T = 0 excluded when b = b').
   !> M(k) is Hermitian.  For a single-site Bravais cell (nb = 1, tau = 0) it equals coulomb_k.  eta (optional, 1/Bohr) overrides
-  !> the default Ewald splitting parameter so tests can check eta independence.
-  subroutine coulomb_k_basis(p, tau, kv, mb, eta)
+  !> the default Ewald splitting parameter.  When gamma_neutral is true and k = 0, the G = 0 term is replaced by the Ewald
+  !> neutralising background plus a large positive penalty on the cell-uniform mode so neutral optical modes get 2 Phi.
+  subroutine coulomb_k_basis(p, tau, kv, mb, eta, gamma_neutral)
     real(dp), intent(in) :: p(3, 3), tau(:, :), kv(:, :)
     complex(dp), intent(out) :: mb(size(tau, 2), size(tau, 2), size(kv, 2))
     real(dp), intent(in), optional :: eta
+    logical, intent(in), optional :: gamma_neutral
     real(dp), allocatable :: tv(:, :), gv(:, :)
     real(dp) :: b(3, 3), omega, et, rmax, gmax, v(3), d(3), r, q2, dtmax, ph
     complex(dp) :: s, sr
     integer :: nb, n(3), i1, i2, i3, nt, ng, ik, j, b1, b2
+    logical :: gneut, kzero
+    gneut = .false.; if (present(gamma_neutral)) gneut = gamma_neutral
     nb = size(tau, 2)
     omega = abs(det3(p))
     b(:, 1) = cross(p(:, 2), p(:, 3)); b(:, 2) = cross(p(:, 3), p(:, 1)); b(:, 3) = cross(p(:, 1), p(:, 2))
@@ -159,19 +164,24 @@ contains
     end do; end do; end do
     mb = (0.0_dp, 0.0_dp)
     do ik = 1, size(kv, 2)
+      kzero = gneut .and. norm2(kv(:, ik)) < 1.0e-12_dp
       do b1 = 1, nb
         do b2 = b1, nb
           d = tau(:, b2) - tau(:, b1)
           s = (0.0_dp, 0.0_dp)
           do j = 1, ng
             v = kv(:, ik) + gv(:, j); q2 = dot_product(v, v)
-            if (q2 < 1.0e-14_dp) error stop 'coulomb_k_basis: k is a reciprocal lattice vector'
+            if (q2 < 1.0e-14_dp) then
+              if (kzero) cycle
+              error stop 'coulomb_k_basis: k is a reciprocal lattice vector'
+            end if
             ! sum_T erf(eta |T + d|) / |T + d| exp(i k.(T + d)) is a lattice-periodic function of d: its Fourier series has the
             ! phases exp(-i G.d), not exp(i (k + G).d).  With the latter the result depends on eta off the diagonal.
             ph = -dot_product(gv(:, j), d)
             s = s + exp(-q2 / (4.0_dp * et**2)) / q2 * cmplx(cos(ph), sin(ph), dp)
           end do
           s = 4.0_dp * pi / omega * s
+          if (kzero) s = s - pi / (omega * et**2)
           sr = (0.0_dp, 0.0_dp)
           do j = 1, nt
             v = tv(:, j) + d; r = norm2(v)
@@ -185,6 +195,7 @@ contains
           if (b2 > b1) mb(b2, b1, ik) = conjg(mb(b1, b2, ik))
         end do
       end do
+      if (kzero) mb(:, :, ik) = mb(:, :, ik) + 1.0e12_dp / real(nb, dp)
     end do
   end subroutine coulomb_k_basis
 
@@ -202,13 +213,12 @@ contains
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk, sub_sro
     character(len=8) :: lat
-    real(dp) :: al_brav, p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, r1_nn, r1_sh, ev(st%nb), rwork(3 * st%nb), ph
-    real(dp), allocatable :: tau(:, :), kv(:, :), ksp(:, :), sh(:, :), c1(:), msp_min(:), c1sp(:)
-    real(dp), allocatable :: meig(:, :), w0_eig(:, :), w1_eig(:, :)
-    complex(dp), allocatable :: mb(:, :, :), msp(:, :, :), cw(:)
-    integer, allocatable :: sb1(:), sb2(:)
-    integer :: n, nb, i1, i2, i3, ik, j, m, nsh, nsp, ksro, nb_sro, info
-    complex(dp) :: acc
+    real(dp) :: al_brav, p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, r1_nn, r1_sh, ev(st%nb), rwork(3 * st%nb), ph, gsp
+    real(dp), allocatable :: tau(:, :), kv(:, :), ksp(:, :), sh(:, :), ec(:), rw_c(:)
+    real(dp), allocatable :: meig(:, :), w0_eig(:, :), c1_br(:, :), ov(:, :, :), sp_ev(:, :), sp_c1(:, :), sp_ov(:, :, :)
+    complex(dp), allocatable :: mb(:, :, :), msp(:, :, :), cw(:), ck(:, :), cw_c(:)
+    integer, allocatable :: sb1(:), sb2(:), sro_sites(:)
+    integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
     msg = ''
     ksro = 0; if (present(sub_sro)) ksro = sub_sro
     if ((ksro == 0 .or. st%nlabel == 1) .and. bravais_kind(st, lat, al_brav)) then
@@ -230,7 +240,15 @@ contains
       s%unscreened = .true.; s%a = huge(1.0_dp); s%g00 = 1.0_dp; s%g1 = 0.0_dp; s%w00 = 0.0_dp; s%w1 = 2.0_dp / r1_sh
       s%lambda = 1.0_dp; return
     end if
-    allocate (kv(3, n**3), mb(nb, nb, n**3), c1(n**3), cw(max(1, 2 * nb)), meig(nb, n**3), w0_eig(nb, n**3), w1_eig(nb, n**3))
+    allocate (sro_sites(nb_sro)); smap = 0; r = 0
+    do j = 1, nb
+      if (ksro == 0 .or. st%label(j) == ksro) then
+        r = r + 1; sro_sites(r) = j; smap(j) = r
+      end if
+    end do
+    allocate (kv(3, n**3), mb(nb, nb, n**3), cw(max(1, 2 * nb)), meig(nb, n**3), w0_eig(nb, n**3))
+    allocate (ck(nb_sro, nb_sro), ec(nb_sro), rw_c(max(1, 3 * nb_sro)), cw_c(max(1, 2 * nb_sro)))
+    allocate (c1_br(nb_sro, n**3), ov(nb_sro, nb, n**3))
     ik = 0
     do i1 = 0, n - 1; do i2 = 0, n - 1; do i3 = 0, n - 1
       ik = ik + 1; f = ([i1, i2, i3] + 0.5_dp) / n; kv(:, ik) = matmul(b, f)
@@ -238,37 +256,47 @@ contains
     call coulomb_k_basis(p, tau, kv, mb)
     s%a_min = 0.0_dp
     do ik = 1, n**3
-      c1(ik) = 0.0_dp
-      do j = 1, nsh; c1(ik) = c1(ik) + cos(dot_product(kv(:, ik), sh(:, j))); end do
-      c1(ik) = c1(ik) / max(nsh, 1)
       call zheev('V', 'U', nb, mb(:, :, ik), nb, ev, cw, size(cw), rwork, info)
       if (info /= 0) error stop 'screen_structure: zheev failed'
       meig(:, ik) = ev
       s%a_min = max(s%a_min, -minval(ev))
+      ck = (0.0_dp, 0.0_dp)
+      do j = 1, nsh
+        ph = dot_product(kv(:, ik), sh(:, j))
+        ck(smap(sb1(j)), smap(sb2(j))) = ck(smap(sb1(j)), smap(sb2(j))) + cmplx(cos(ph), sin(ph), dp) / real(max(s%z, 1), dp)
+      end do
+      call zheev('V', 'U', nb_sro, ck, nb_sro, ec, cw_c, size(cw_c), rw_c, info)
+      if (info /= 0) error stop 'screen_structure: shell zheev failed'
+      c1_br(:, ik) = ec
       do m = 1, nb
-        if (ksro > 0) then
-          w0_eig(m, ik) = sum(abs(mb(:, m, ik))**2, mask=st%label == ksro) / real(max(nb_sro, 1), dp)
-        else
-          w0_eig(m, ik) = 1.0_dp / real(nb, dp)
-        end if
-        acc = (0.0_dp, 0.0_dp)
-        do j = 1, nsh
-          ph = dot_product(kv(:, ik), sh(:, j) - (tau(:, sb2(j)) - tau(:, sb1(j))))
-          acc = acc + mb(sb1(j), m, ik) * conjg(mb(sb2(j), m, ik)) * cmplx(cos(ph), -sin(ph), dp)
+        do r = 1, nb_sro
+          ov(r, m, ik) = abs(dot_product(ck(:, r), mb(sro_sites, m, ik)))**2
         end do
-        w1_eig(m, ik) = real(acc, dp) / real(max(nsh, 1), dp)
+        w0_eig(m, ik) = sum(ov(:, m, ik)) / real(nb_sro, dp)
       end do
     end do
-    ! high-symmetry zone-boundary points (non-zero combinations of 0 and 1/2 in reciprocal coordinates, plus hexagonal K and H)
-    call zone_special_k(b, ksp, nsp)
-    allocate (msp(nb, nb, nsp), msp_min(nsp), c1sp(nsp))
-    call coulomb_k_basis(p, tau, ksp, msp)
+    ! high-symmetry points (zone-boundary points, hexagonal K and H, and for nb > 1 also neutral optical modes at k = 0)
+    call zone_special_k(b, nb > 1, ksp, nsp)
+    allocate (msp(nb, nb, nsp), sp_ev(nb, nsp), sp_c1(nb_sro, nsp), sp_ov(nb_sro, nb, nsp))
+    call coulomb_k_basis(p, tau, ksp, msp, gamma_neutral=.true.)
     do ik = 1, nsp
-      call zheev('N', 'U', nb, msp(:, :, ik), nb, ev, cw, size(cw), rwork, info)
+      call zheev('V', 'U', nb, msp(:, :, ik), nb, ev, cw, size(cw), rwork, info)
       if (info /= 0) error stop 'screen_structure: zheev failed on special k'
-      msp_min(ik) = minval(ev)
-      s%a_min = max(s%a_min, -msp_min(ik))
-      c1sp(ik) = sum(cos(matmul(ksp(:, ik), sh))) / max(nsh, 1)
+      sp_ev(:, ik) = ev
+      s%a_min = max(s%a_min, -minval(ev))
+      ck = (0.0_dp, 0.0_dp)
+      do j = 1, nsh
+        ph = dot_product(ksp(:, ik), sh(:, j))
+        ck(smap(sb1(j)), smap(sb2(j))) = ck(smap(sb1(j)), smap(sb2(j))) + cmplx(cos(ph), sin(ph), dp) / real(max(s%z, 1), dp)
+      end do
+      call zheev('V', 'U', nb_sro, ck, nb_sro, ec, cw_c, size(cw_c), rw_c, info)
+      if (info /= 0) error stop 'screen_structure: shell zheev failed on special k'
+      sp_c1(:, ik) = ec
+      do m = 1, nb
+        do r = 1, nb_sro
+          sp_ov(r, m, ik) = abs(dot_product(ck(:, r), msp(sro_sites, m, ik)))**2
+        end do
+      end do
     end do
     s%beta_max = beta_of_st(s%a_min * (1.0_dp + 1.0e-9_dp))
     if (beta >= s%beta_max) then
@@ -281,20 +309,35 @@ contains
       if (hi - lo < 1.0e-13_dp) exit
     end do
     s%a = s%a_min + exp(0.5_dp * (lo + hi)); s%unscreened = .false.
-    allocate (s%gk(n**3))
+    allocate (s%gk(nb_sro * n**3), s%c1k(nb_sro * n**3))
+    idx = 0
     do ik = 1, n**3
-      s%gk(ik) = sum(w0_eig(:, ik) * (s%a / (s%a + meig(:, ik))))
+      do r = 1, nb_sro
+        idx = idx + 1
+        s%c1k(idx) = c1_br(r, ik)
+        s%gk(idx) = sum(ov(r, :, ik) * (s%a / (s%a + meig(:, ik))))
+      end do
     end do
-    s%g00 = sum(s%gk) / real(n**3, dp)
-    s%g1 = sum(w1_eig * (s%a / (s%a + meig))) / real(n**3, dp)
+    s%g00 = sum(s%gk) / real(size(s%gk), dp)
+    s%g1 = sum(s%gk * s%c1k) / real(size(s%gk), dp)
     s%w00 = s%a * (1.0_dp - s%g00)
     s%w1 = -s%a * s%g1
     s%lambda = -s%a * s%g1 * r1_sh / (2.0_dp * s%g00**2)
-    s%c1k = c1
-    s%c1_ord = minval(c1sp)
-    s%g_ord = s%a / (s%a + minval(msp_min, mask=c1sp < s%c1_ord + 1.0e-10_dp))
-    s%c0_cl = maxval(c1, mask=c1 < maxval(c1) - 1.0e-12_dp)
-    s%c0_ord = minval(c1, mask=c1 > minval(c1) + 1.0e-12_dp)
+    s%c1_ord = min(minval(s%c1k), minval(sp_c1))
+    s%g_ord = 0.0_dp
+    do ik = 1, nsp
+      do r = 1, nb_sro
+        if (sp_c1(r, ik) < s%c1_ord + 1.0e-10_dp) then
+          gsp = sum(sp_ov(r, :, ik) * (s%a / (s%a + sp_ev(:, ik))))
+          s%g_ord = max(s%g_ord, gsp)
+        end if
+      end do
+    end do
+    do idx = 1, size(s%c1k)
+      if (s%c1k(idx) < s%c1_ord + 1.0e-10_dp) s%g_ord = max(s%g_ord, s%gk(idx))
+    end do
+    s%c0_cl = maxval(s%c1k, mask=s%c1k < maxval(s%c1k) - 1.0e-12_dp)
+    s%c0_ord = minval(s%c1k, mask=s%c1k > minval(s%c1k) + 1.0e-12_dp)
     call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
     call clip_point(s, s%c0_ord, .false., s%alpha_ord, s%gam_ord)
   contains
@@ -473,7 +516,7 @@ contains
         do m = 1, nb
           gk_el = gk_el + mb(b_orig, m, ik) * conjg(mb(b_part, m, ik)) * (s%a / (s%a + ev(m)))
         end do
-        ph = dot_product(kv(:, ik), rv(:, j) - (tau(:, b_part) - tau(:, b_orig)))
+        ph = dot_product(kv(:, ik), rv(:, j))
         gr(j) = gr(j) + real(gk_el * cmplx(cos(ph), -sin(ph), dp), dp)
       end do
     end do
@@ -797,25 +840,43 @@ contains
     sh = buf(:, 1:nsh); sb1 = ib1(1:nsh); sb2 = ib2(1:nsh)
   end subroutine structure_sro_shell
 
-  !> Zone-boundary high-symmetry k points for a general reciprocal cell b (columns, 1/Bohr): the 7 non-zero combinations of
-  !> (0, 1/2)^3 in reciprocal coordinates (M, L, A, X, R, ...) plus the hexagonal K and H points (1/3, 1/3, 0) and (1/3, 1/3, 1/2).
-  subroutine zone_special_k(b, ksp, nsp)
+  !> High-symmetry k points for a general reciprocal cell b (columns, 1/Bohr).  Covers the inversion-inequivalent points of the
+  !> quarter-zone grid {0, 1/4, 1/2, 3/4}^3 (zone-boundary points M, L, A, X, R, H, N, plus quarter-zone ordering points such as
+  !> fcc W and close-packed (1/4, 1/4, 0)) and the hexagonal 1/3 points K and H for every axis orientation.  Includes k = 0 when
+  !> add_gamma is true so multi-site cells sample neutral optical modes.
+  subroutine zone_special_k(b, add_gamma, ksp, nsp)
     real(dp), intent(in) :: b(3, 3)
+    logical, intent(in) :: add_gamma
     real(dp), allocatable, intent(out) :: ksp(:, :)
     integer, intent(out) :: nsp
-    real(dp), parameter :: t1 = 1.0_dp / 3.0_dp, h = 0.5_dp
-    real(dp) :: f(3, 9)
-    integer :: i1, i2, i3, k
+    real(dp), parameter :: t1 = 1.0_dp / 3.0_dp, t2 = 2.0_dp / 3.0_dp, h = 0.5_dp
+    real(dp) :: f(3, 48), v(3)
+    integer :: i1, i2, i3, j1, j2, j3, id1, id2, ax, s2, s3, k
     k = 0
-    do i1 = 0, 1; do i2 = 0, 1; do i3 = 0, 1
-      if (i1 == 0 .and. i2 == 0 .and. i3 == 0) cycle
-      k = k + 1; f(:, k) = [i1, i2, i3] * h
+    do i1 = 0, 3; do i2 = 0, 3; do i3 = 0, 3
+      if (i1 == 0 .and. i2 == 0 .and. i3 == 0) then
+        if (add_gamma) then; k = k + 1; f(:, k) = 0.0_dp; end if
+        cycle
+      end if
+      j1 = modulo(-i1, 4); j2 = modulo(-i2, 4); j3 = modulo(-i3, 4)
+      id1 = 16 * i1 + 4 * i2 + i3; id2 = 16 * j1 + 4 * j2 + j3
+      if (id1 <= id2) then
+        k = k + 1; f(:, k) = 0.25_dp * real([i1, i2, i3], dp)
+      end if
     end do; end do; end do
-    f(:, 8) = [t1, t1, 0.0_dp]
-    f(:, 9) = [t1, t1, h]
-    nsp = 9
+    do ax = 1, 3
+      do s2 = 1, 2
+        do s3 = 0, 1
+          v(ax) = s3 * h
+          v(modulo(ax, 3) + 1) = t1
+          v(modulo(ax + 1, 3) + 1) = merge(t1, t2, s2 == 1)
+          k = k + 1; f(:, k) = v
+        end do
+      end do
+    end do
+    nsp = k
     allocate (ksp(3, nsp))
-    ksp = matmul(b, f)
+    ksp = matmul(b, f(:, 1:nsp))
   end subroutine zone_special_k
 
   pure function cross(a, b) result(c)
