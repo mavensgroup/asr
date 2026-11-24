@@ -29,7 +29,7 @@ module asr_crystal_symmetry
   use asr_lapack, only: dgesv
   implicit none
   private
-  public :: symop_t, space_group, site_ops, is_monomial, orbital_matrix, orbital_groups, reduction_ops
+  public :: symop_t, space_group, site_ops, basis_orbits, is_monomial, orbital_matrix, orbital_groups, reduction_ops
 
   type :: symop_t
     integer :: m(3, 3) = 0                !! rotation in lattice coordinates
@@ -118,6 +118,23 @@ contains
     integer :: k
     idx = pack([(k, k=1, size(ops))], [(ops(k)%perm(b) == b, k=1, size(ops))])
   end subroutine site_ops
+
+  !> Space-group orbits of the nb basis sites (symmetry-distinct sites): orbit(b) in 1 .. norbit, numbered by their first site.
+  subroutine basis_orbits(ops, nb, orbit, norbit)
+    type(symop_t), intent(in) :: ops(:)
+    integer, intent(in) :: nb
+    integer, allocatable, intent(out) :: orbit(:)
+    integer, intent(out) :: norbit
+    integer :: b, k
+    allocate (orbit(nb)); orbit = 0; norbit = 0
+    do b = 1, nb
+      if (orbit(b) > 0) cycle
+      norbit = norbit + 1
+      do k = 1, size(ops)
+        orbit(ops(k)%perm(b)) = norbit
+      end do
+    end do
+  end subroutine basis_orbits
 
   !> Is a Cartesian rotation a signed permutation (one entry +-1 per row and column, zeros elsewhere)?
   pure logical function is_monomial(rot)
