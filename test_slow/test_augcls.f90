@@ -94,15 +94,15 @@ contains
     g%nbr_ptr(n + 1) = 2 * n + 1
     perr = 0.0_dp
     call three_classes(mdl)
-    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    allocate (mdl%block(9, 9, 2, 1), mdl%block0(9, 9, 1))
     call random_seed(size=nseed); allocate (seed(nseed)); seed = 20261111 + 7 * [(i, i=1, nseed)]
     call random_seed(put=seed)                           ! fixed seed: a failure can be reproduced
     do l = 1, 9; do l2 = 1, 9
-      call random_number(u); mdl%block(l, l2, 1) = 0.5_dp * (u - 0.5_dp)
+      call random_number(u); mdl%block(l, l2, 1, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
-    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    mdl%block(:, :, 2, 1) = transpose(mdl%block(:, :, 1, 1))
     do l = 1, 9; do l2 = l, 9
-      call random_number(u); mdl%block0(l, l2) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l) = mdl%block0(l, l2)
+      call random_number(u); mdl%block0(l, l2, 1) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l, 1) = mdl%block0(l, l2, 1)
     end do; end do
     perm(:, 1) = [(i, i=1, n)]
     dmat = 0.0_dp; do l = 1, 9; dmat(l, l, 1) = 1.0_dp; end do
@@ -162,10 +162,10 @@ contains
     allocate (s(nd, nd), hm(nd, nd), hoh(nd, nd), dl(nd), cm(nd), en(nd), om(nd), dc(nd), tt(nd), ae(nd, nd), rhs(nd), ipiv(nd))
     s = 0.0_dp
     do ii = 1, n
-      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0
+      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0(:, :, 1)
       do kk = 1, g%nbr_ptr(ii + 1) - g%nbr_ptr(ii)
         jj = g%nbr(g%nbr_ptr(ii) + kk - 1)
-        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk)
+        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk, 1)
       end do
     end do
     do ii = 1, n
@@ -252,7 +252,7 @@ contains
     integer :: ish, ic, j, cen, io, kz, m1, m2, i
     call build_lmto_alloy('bcc', 4, 1.05_dp, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, alpha_in=alpha)
     call heusler_like(mdl)
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (fl(g%n)); fl = .true.; fl(1) = .false.
     allocate (pid(g%n, 1), did(9, 9, 1)); pid(:, 1) = [(i, i=1, g%n)]; did = 0.0_dp
     do i = 1, 9; did(i, i, 1) = 1.0_dp; end do
@@ -318,7 +318,7 @@ contains
     ! binary: A = species 1 (x = 0.4), B = species 2
     mb%nl = 9; mb%nsp = 2; mb%ncls = 1
     allocate (mb%nsc(1), mb%spc(2, 1), mb%conc(2, 1)); mb%nsc = 2; mb%spc(:, 1) = [1, 2]; mb%conc(:, 1) = [0.4_dp, 0.6_dp]
-    mb%block = m0%block; mb%block0 = m0%block0
+    call augcls_set_blocks(mb, m0%block, m0%block0)
     errb = 0.0_dp
     do cen = 1, 2
       call edc_setup(mb, pp(1:2), alpha, cen, ed)
@@ -344,7 +344,7 @@ contains
     ! ternary: species 2, 3, 4 with (0.3, 0.5, 0.2), reduced augcls vs unreduced augn
     mt%nl = 9; mt%nsp = 3; mt%ncls = 1
     allocate (mt%nsc(1), mt%spc(3, 1), mt%conc(3, 1)); mt%nsc = 3; mt%spc(:, 1) = [1, 2, 3]; mt%conc(:, 1) = [0.3_dp, 0.5_dp, 0.2_dp]
-    mt%block = m0%block; mt%block0 = m0%block0
+    call augcls_set_blocks(mt, m0%block, m0%block0)
     mn%nl = 9; mn%ns = 3; mn%conc = mt%conc(:, 1); mn%block = m0%block; mn%block0 = m0%block0
     p3 = pp(2:4)
     errt = 0.0_dp
@@ -403,13 +403,13 @@ contains
     mdl%nsc(1:3) = mb%nsc; mdl%spc(:, 1:3) = mb%spc; mdl%conc(:, 1:3) = mb%conc
     mdl%nsc(4) = mb%nsc(3); mdl%spc(:, 4) = mb%spc(:, 3); mdl%conc(:, 4) = mb%conc(:, 3)
     mdl%nsc(5) = mb%nsc(2); mdl%spc(:, 5) = mb%spc(:, 2); mdl%conc(:, 5) = mb%conc(:, 2)
-    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    allocate (mdl%block(9, 9, 2, 1), mdl%block0(9, 9, 1))
     do l = 1, 9; do l2 = 1, 9
-      call random_number(u); mdl%block(l, l2, 1) = 0.5_dp * (u - 0.5_dp)
+      call random_number(u); mdl%block(l, l2, 1, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
-    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    mdl%block(:, :, 2, 1) = transpose(mdl%block(:, :, 1, 1))
     do l = 1, 9; do l2 = l, 9
-      call random_number(u); mdl%block0(l, l2) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l) = mdl%block0(l, l2)
+      call random_number(u); mdl%block0(l, l2, 1) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l, 1) = mdl%block0(l, l2, 1)
     end do; end do
     perm(:, 1) = [(i, i=1, n)]
     dmat = 0.0_dp; do l = 1, 9; dmat(l, l, 1) = 1.0_dp; end do
@@ -473,7 +473,7 @@ contains
     allocate (mdl%nsc(2), mdl%spc(3, 2), mdl%conc(3, 2))
     mdl%nsc = 3; mdl%spc(:, 1) = [2, 3, 4]; mdl%spc(:, 2) = [2, 3, 4]
     mdl%conc(:, 1) = [0.3_dp, 0.5_dp, 0.2_dp]; mdl%conc(:, 2) = mdl%conc(:, 1)
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (fl(g%n)); fl = .true.; fl(1) = .false.
     allocate (cls0(g%n)); cls0 = 1; cls = cls0
     r2min = huge(1)

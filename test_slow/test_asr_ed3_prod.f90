@@ -69,10 +69,10 @@ contains
     allocate (s(nd, nd), dl(nd), cm(nd), en(nd), ov(nd), pv(nd))
     s = 0.0_dp
     do ii = 1, n
-      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0
+      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0(:, :, 1)
       do kk = 1, g%nbr_ptr(ii + 1) - g%nbr_ptr(ii)
         jj = g%nbr(g%nbr_ptr(ii) + kk - 1)
-        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk)
+        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk, 1)
       end do
     end do
     do ii = 1, n
@@ -150,13 +150,13 @@ contains
     type(class_alloy_t), intent(inout) :: mdl
     real(dp) :: u
     integer :: i, j
-    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    allocate (mdl%block(9, 9, 2, 1), mdl%block0(9, 9, 1))
     do i = 1, 9; do j = 1, 9
-      call random_number(u); mdl%block(i, j, 1) = 0.5_dp * (u - 0.5_dp)
+      call random_number(u); mdl%block(i, j, 1, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
-    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    mdl%block(:, :, 2, 1) = transpose(mdl%block(:, :, 1, 1))
     do i = 1, 9; do j = i, 9
-      call random_number(u); mdl%block0(i, j) = 0.6_dp * (u - 0.5_dp); mdl%block0(j, i) = mdl%block0(i, j)
+      call random_number(u); mdl%block0(i, j, 1) = 0.6_dp * (u - 0.5_dp); mdl%block0(j, i, 1) = mdl%block0(i, j, 1)
     end do; end do
   end subroutine random_blocks
 
@@ -348,7 +348,7 @@ contains
     mdl%nl = 9; mdl%nsp = 2; mdl%ncls = 2
     allocate (mdl%nsc(2), mdl%spc(2, 2), mdl%conc(2, 2))
     mdl%nsc = 2; mdl%spc(:, 1) = [1, 2]; mdl%spc(:, 2) = [1, 2]; mdl%conc = 0.5_dp
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (fl(g%n), cls(g%n)); fl = .true.; fl(1) = .false.; cls = 1
     r2min = huge(1)
     do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + 4, 8) - 4)**2)); end do

@@ -14,8 +14,10 @@
 !> w = sqrt(n_node) psi, links store (representative, operation).  The group is supplied by the caller: every operation must map
 !> each site onto a site of the same class and fix the start site (asr_symmetry::class_ops), operation 1 must be the identity,
 !> and the start orbital must have chi(g) = D(g)[L0,L0] = +-1.  A group of the identity alone gives the unreduced operator.
-!> The bond blocks are those of a Bravais graph (one block per neighbour slot, the same for every site): one common S for all
-!> species, as in asr_lmto_alloy.
+!> Bond blocks: one common S for all species (asr_lmto_alloy), tabulated per site type: block(:, :, k, t) = S_{R, R + bvec(k)}
+!> and block0(:, :, t) = S_{R, R} for a site R of type t (stype, default 1; asr_lmto_alloy::structure_blocks gives one type per
+!> basis site).  Slot k of a site is the k-th entry of its neighbour list; an entry 0 (a site without that bond) is skipped.
+!> On a Bravais graph there is one type and every site has every slot.
 module asr_augcls
   use asr_kinds, only: dp
   use asr_operator, only: linop
@@ -25,6 +27,7 @@ module asr_augcls
   implicit none
   private
   public :: augn_basis, class_alloy_t, augcls_op, build_augcls_operator, augcls_set_start, augcls_set_params, augcls_freeze_site, &
+            augcls_set_blocks, &
             augcls_rand, augcls_rand_c, augcls_set_class_conc, augcls_hp_c, augcls_project_c, augcls_leak_c, augcls_amp_c, augcls_free, &
             augcls_freeze_any, augcls_set_chi
 
@@ -33,15 +36,17 @@ module asr_augcls
     integer, allocatable :: nsc(:), spc(:, :)                    !! species per class; global species index spc(k, class)
     real(dp), allocatable :: conc(:, :)                           !! conc(k, class), sum_k = 1
     real(dp), allocatable :: c(:, :), d(:, :), o(:, :), e(:, :)   !! (nl, nsp): c = C - E_nu, d = sqrt(Delta), o, E_nu per species
-    real(dp), allocatable :: block(:, :, :), block0(:, :)
+    real(dp), allocatable :: block(:, :, :, :)                    !! block(l, l', slot, type) = S_{R, R + bvec(slot)}, R of the type
+    real(dp), allocatable :: block0(:, :, :)                      !! block0(l, l', type) = S_{R, R} (zero if not allocated)
   end type class_alloy_t
 
   type, extends(linop) :: augcls_op
-    integer :: nn = 0, nl = 9, nslot = 0, nop = 1, nsmax = 1, ncls = 0, nsp = 0, start_l = 1
+    integer :: nn = 0, nl = 9, nslot = 0, nop = 1, nsmax = 1, ncls = 0, nsp = 0, start_l = 1, ntype = 1
     integer, allocatable :: nsc(:), spc(:, :)
+    integer, allocatable :: stype(:)                              !! site type of every graph site (index of block0, btab)
     real(dp), allocatable :: mt(:, :, :, :)                       !! mt(l+1, k+1, k', class) = x_k' phi_l(k') phi_k(k')
-    real(dp), allocatable :: c(:, :), d(:, :), o(:, :), e(:, :), block0(:, :)
-    real(dp), allocatable :: btab(:, :, :, :)                     !! btab(l, l2, slot, g): S block times D(g)^T
+    real(dp), allocatable :: c(:, :), d(:, :), o(:, :), e(:, :), block0(:, :, :)
+    real(dp), allocatable :: btab(:, :, :, :, :)                  !! btab(l, l2, slot, g, type): S block times D(g)^T
     !> The node tables below never change after build_augcls_operator.  They are pointers, so that a copy of the operator (one
     !> per thread in the chain loops of asr_class_scf) shares them instead of duplicating them; only the small parameter arrays,
     !> frozen and the work space wk are per copy.  augcls_free releases them (on the original, never on a copy).
@@ -87,6 +92,14 @@ contains
     class(augcls_op), intent(in) :: self
     augcls_dim = self%nl * self%nn
   end function augcls_dim
+
+  !> Bond tables of a graph with one site type (asr_lmto_alloy::build_lmto_alloy): block(9, 9, slot), block0(9, 9).
+  subroutine augcls_set_blocks(mdl, block, block0)
+    type(class_alloy_t), intent(inout) :: mdl
+    real(dp), intent(in) :: block(:, :, :), block0(:, :)
+    mdl%block = reshape(block, [size(block, 1), size(block, 2), size(block, 3), 1])
+    mdl%block0 = reshape(block0, [size(block0, 1), size(block0, 2), 1])
+  end subroutine augcls_set_blocks
 
   !> start orbital l0: chi(g) = D(g)[l0,l0], which must be +-1 for every operation of the group
   subroutine augcls_set_start(op, l0, dmat)
@@ -435,17 +448,18 @@ contains
     class(augcls_op), intent(in) :: self
     real(dp), intent(in) :: x(:)
     real(dp), intent(out) :: hx(:), t1(:), t2(:), t3(:)
-    integer :: i, k, l, l2, g, r
+    integer :: i, k, l, l2, g, r, t
     real(dp) :: acc(9), tl
     call apply_rand(self, self%d, x, t1)                               ! t1 = D x
     ! t2 = S t1.  The inner loop runs over the contiguous first index of block0 and btab.  Each acc(l) still sums its terms in
     ! the order l2, then slot, and chi(g) = +-1 multiplies t1 exactly, so the result has the same bits as the l-outer form.
-    !$omp parallel do private(k, l, l2, g, r, acc, tl)
+    !$omp parallel do private(k, l, l2, g, r, t, acc, tl)
     do i = 1, self%nn
+      t = self%stype(self%site(i))
       acc = 0.0_dp
       do l2 = 1, 9
         tl = t1(9 * (i - 1) + l2)
-        do l = 1, 9; acc(l) = acc(l) + self%block0(l, l2) * tl; end do
+        do l = 1, 9; acc(l) = acc(l) + self%block0(l, l2, t) * tl; end do
       end do
       do k = 1, self%nslot
         r = self%hopr(k, i)
@@ -453,7 +467,7 @@ contains
         g = self%hopg(k, i)
         do l2 = 1, 9
           tl = self%chi(g) * t1(9 * (r - 1) + l2)
-          do l = 1, 9; acc(l) = acc(l) + self%btab(l, l2, k, g) * tl; end do
+          do l = 1, 9; acc(l) = acc(l) + self%btab(l, l2, k, g, t) * tl; end do
         end do
       end do
       t2(9 * (i - 1) + 1:9 * i) = acc
@@ -575,7 +589,9 @@ contains
   !> other site in its reference state) tnode(k + 1, t) returns the representative node and tgop(k + 1, t) the operation that
   !> maps the node onto it (augcls_amp_c).  tnode = 0: the node is not in the node set (or the site cannot flip).  The node store
   !> exists only inside this routine, so the lookup is done here (asr_spectral).
-  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable, tsite, tnode, tgop)
+  !> stype (optional): site type of every graph site, the last index of mdl%block and mdl%block0 (default: one type).  The
+  !> operations may permute the types (a site operation of a cation site can exchange two anion sites).
+  subroutine build_augcls_operator(g, mdl, cls, perm, dmat, start, maxlevel, op, maxrank, flippable, tsite, tnode, tgop, stype)
     type(graph_t), intent(in) :: g
     type(class_alloy_t), intent(in) :: mdl
     integer, intent(in) :: cls(:), perm(:, :), start, maxlevel
@@ -585,6 +601,7 @@ contains
     logical, intent(in), optional :: flippable(:)
     integer, intent(in), optional :: tsite(:)
     integer, allocatable, intent(out), optional :: tnode(:, :), tgop(:, :)
+    integer, intent(in), optional :: stype(:)
     type(store_t) :: st
     logical, allocatable :: canflip(:)
     integer, allocatable :: c0(:), cfg0(:), sites(:), cc(:), tmp(:), ccf(:), nst(:), c2(:), nstbn(:)
@@ -595,6 +612,7 @@ contains
     end type cand_t
     type(cand_t), allocatable :: cb(:)
     integer :: nop, nsm, i, lev, r, r1, r2, k1, k2, nsit, f, j, idx, rkmax, cs, osz, gb, ns, k, l, gg, jj, kap, ncomb, q, dgt
+    integer :: t, nty
     logical :: isnew
 
     nop = size(perm, 2)
@@ -604,6 +622,17 @@ contains
       if (perm(start, gg) /= start) error stop 'build_augcls_operator: the group does not fix the start site'
       if (any(cls(perm(:, gg)) /= cls)) error stop 'build_augcls_operator: an operation does not preserve the site classes'
     end do
+    allocate (op%stype(g%n)); op%stype = 1
+    if (present(stype)) then
+      if (size(stype) /= g%n) error stop 'build_augcls_operator: stype needs one entry per graph site'
+      op%stype = stype
+    end if
+    nty = maxval(op%stype)
+    if (minval(op%stype) < 1 .or. nty > size(mdl%block, 4)) error stop 'build_augcls_operator: site type without a bond table'
+    if (allocated(mdl%block0)) then
+      if (nty > size(mdl%block0, 3)) error stop 'build_augcls_operator: site type without an on-site block'
+    end if
+    op%ntype = nty
     nsm = maxval(mdl%nsc)
     rkmax = huge(1); if (present(maxrank)) rkmax = maxrank
     allocate (canflip(g%n)); canflip = .true.
@@ -637,8 +666,10 @@ contains
           c0 = st%data(st%start(ii):st%start(ii) + st%len(ii) - 1)
           do k1 = 0, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
             if (k1 == 0) then; r1 = r; else; r1 = g%nbr(g%nbr_ptr(r) + k1 - 1); end if
+            if (r1 == 0) cycle                                         ! a slot that this site does not have
             do k2 = 0, g%nbr_ptr(r1 + 1) - g%nbr_ptr(r1)
               if (k2 == 0) then; r2 = r1; else; r2 = g%nbr(g%nbr_ptr(r1) + k2 - 1); end if
+              if (r2 == 0) cycle
               call uniq3(r, r1, r2, sites, nsit)
               ncomb = product(nst(sites))
               do f = 0, ncomb - 1
@@ -687,8 +718,8 @@ contains
     if (allocated(mdl%d)) op%d = mdl%d
     if (allocated(mdl%o)) op%o = mdl%o
     if (allocated(mdl%e)) op%e = mdl%e
-    allocate (op%block0(9, 9)); op%block0 = 0.0_dp
-    if (allocated(mdl%block0)) op%block0 = mdl%block0
+    allocate (op%block0(9, 9, nty)); op%block0 = 0.0_dp
+    if (allocated(mdl%block0)) op%block0 = mdl%block0(:, :, 1:nty)
     allocate (op%pi(9, nop), op%sg(9, nop), op%chi(nop), op%csg(9, nop))
     do gg = 1, nop                                                     ! orbital operation tables: D[pi(l),l] = sg(l)
       do l = 1, 9
@@ -699,12 +730,16 @@ contains
         if (op%pi(l, gg) == 0) error stop 'build_augcls_operator: orbital operation is not monomial'
       end do
     end do
-    allocate (op%btab(9, 9, ns, nop)); op%btab = 0.0_dp                ! btab(l, l2, slot, g) = sum_l' B[l,l'] sg(l',g) delta(l2, pi(l',g))
-    do gg = 1, nop
-      do k = 1, ns
-        do l = 1, 9
-          do jj = 1, 9
-            op%btab(l, op%pi(jj, gg), k, gg) = op%btab(l, op%pi(jj, gg), k, gg) + mdl%block(l, jj, k) * op%sg(jj, gg)
+    if (size(mdl%block, 3) < ns) error stop 'build_augcls_operator: fewer bond blocks than neighbour slots'
+    ! btab(l, l2, slot, g, t) = sum_l' B_t[l,l'] sg(l',g) delta(l2, pi(l',g))
+    allocate (op%btab(9, 9, ns, nop, nty)); op%btab = 0.0_dp
+    do t = 1, nty
+      do gg = 1, nop
+        do k = 1, ns
+          do l = 1, 9
+            do jj = 1, 9
+              op%btab(l, op%pi(jj, gg), k, gg, t) = op%btab(l, op%pi(jj, gg), k, gg, t) + mdl%block(l, jj, k, t) * op%sg(jj, gg)
+            end do
           end do
         end do
       end do
@@ -759,6 +794,7 @@ contains
         end if
       end do
       do k = 1, g%nbr_ptr(r + 1) - g%nbr_ptr(r)
+        if (g%nbr(g%nbr_ptr(r) + k - 1) == 0) cycle                    ! no neighbour on this slot: hopr stays 0
         call canon_node(perm, nop, nsm, g%nbr(g%nbr_ptr(r) + k - 1), c0, cs, ccf, osz, gb)
         j = find_state(st, cs, ccf)
         if (j > 0) then; op%hopr(k, i) = j; op%hopg(k, i) = gb; end if

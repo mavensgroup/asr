@@ -48,7 +48,7 @@ program test_augcls_threads
   mdl%nl = 9; mdl%nsp = 2; mdl%ncls = 1
   allocate (mdl%nsc(1), mdl%spc(2, 1), mdl%conc(2, 1))
   mdl%nsc = 2; mdl%spc(:, 1) = [1, 2]; mdl%conc(:, 1) = [0.5_dp, 0.5_dp]
-  mdl%block = m0%block; mdl%block0 = m0%block0
+  call augcls_set_blocks(mdl, m0%block, m0%block0)
   allocate (fl(g%n), cls(g%n)); fl = .true.; fl(1) = .false.; cls = 1
   call class_ops(coord, 2 * lsup, cls, perm, mats)
   call orbital_rep(mats, d)

@@ -300,7 +300,7 @@ contains
     ! ---- graph, S blocks, one class operator per sublattice (origin on it)
     call build_lmto_alloy(trim(inp%lattice), inp%lsuper, inp%rcl, 0.7_dp, pps(1, 1), pps(1, 1), 0.5_dp, g, coord, m0, &
                           max(inp%rcl, inp%rinv), alpha)
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (mdl%c(9, ncomp), mdl%d(9, ncomp), mdl%o(9, ncomp), mdl%e(9, ncomp))
     call edc_setup(mdl, pps(:, 1), alpha, 1, ed)
     mg = 2 * inp%lsuper
@@ -1576,10 +1576,10 @@ contains
       allocate (res%spec_bands(9, nkp, nsp))
       do gg = 1, nsp
         do ik = 1, nkp
-          sk = ms(1, gg)%block0
+          sk = ms(1, gg)%block0(:, :, 1)
           do ks_ = 1, ns_
             dsl = 0.5_dp * real(modulo(coord(:, g%nbr(g%nbr_ptr(1) + ks_ - 1)) + mg / 2, mg) - mg / 2, dp)
-            sk = sk + ms(1, gg)%block(:, :, ks_) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
+            sk = sk + ms(1, gg)%block(:, :, ks_, 1) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
           end do
           sk = 0.5_dp * (sk + conjg(transpose(sk)))
           do n_ = 1, 9

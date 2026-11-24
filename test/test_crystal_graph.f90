@@ -97,7 +97,8 @@ contains
     call check(cg%nslot == size(bv, 2), trim(tag)//': number of slots as asr_lattices')
     if (cg%n /= g%n .or. cg%nslot /= size(bv, 2)) return
     call check(all(cg%bvec == 0.5_dp * real(bv, dp)), trim(tag)//': bond vectors as asr_lattices, in order')
-    call check(all(cg%g%nbr_ptr == g%nbr_ptr) .and. all(cg%g%nbr == g%nbr), trim(tag)//': neighbour lists as asr_lattices, site by site')
+    call check(all(cg%g%nbr_ptr == g%nbr_ptr) .and. all(cg%g%nbr == g%nbr), &
+               trim(tag)//': neighbour lists as asr_lattices, site by site')
     err = 0.0_dp
     do i = 1, cg%n
       err = max(err, maxval(abs(cg%disp(:, i) - 0.5_dp * real(modulo(coord(:, i) + mg / 2, mg) - mg / 2, dp))))

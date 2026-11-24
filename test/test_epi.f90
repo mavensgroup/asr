@@ -149,7 +149,7 @@ contains
     integer :: s, k, n
     md%nl = 9; md%nsp = 4; md%ncls = 3
     allocate (md%nsc(3), md%spc(1, 3), md%conc(1, 3)); md%nsc = 1; md%spc(1, :) = [1, 2, 3]; md%conc = 1.0_dp
-    md%block = m0%block; md%block0 = m0%block0
+    call augcls_set_blocks(md, m0%block, m0%block0)
     allocate (md%c(9, 4), md%d(9, 4), md%o(9, 4), md%e(9, 4))
     do s = 1, 3
       md%c(:, s) = par(s)%c; md%d(:, s) = par(s)%d; md%o(:, s) = par(s)%o; md%e(:, s) = par(s)%e
@@ -248,7 +248,7 @@ contains
     allocate (mdl%nsc(3), mdl%spc(3, 3), mdl%conc(3, 3)); mdl%spc = 0; mdl%conc = 0.0_dp
     mdl%nsc = [1, 3, 1]; mdl%spc(1, 1) = 1; mdl%spc(:, 2) = [1, 2, 3]; mdl%spc(1, 3) = 1
     mdl%conc(1, 1) = 1.0_dp; mdl%conc(:, 2) = xc; mdl%conc(1, 3) = 1.0_dp
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     call epi_pair_ops(coord, mg, cls, perm, mats)
     call orbital_rep(mats, d)
     call check(size(perm, 2) == 2, 'pair group with two random sites related by the mirror: order 2')
@@ -370,7 +370,7 @@ contains
     fl = .false.; spsite = 1
     mdl%nl = 9; mdl%nsp = 4; mdl%ncls = 2
     allocate (mdl%nsc(2), mdl%spc(1, 2), mdl%conc(1, 2)); mdl%nsc = 1; mdl%spc = 1; mdl%conc = 1.0_dp
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     call epi_pair_ops(coord, mg, cls, perm, mats)
     call orbital_rep(mats, d)
     call build_augcls_operator(g, mdl, cls, perm, d, 1, 6, op, maxrank=1, flippable=fl)
@@ -546,7 +546,7 @@ contains
     integer :: s, k, n, sp, l
     md%nl = 9; md%nsp = 4; md%ncls = 3
     allocate (md%nsc(3), md%spc(1, 3), md%conc(1, 3)); md%nsc = 1; md%spc(1, :) = [1, 2, 3]; md%conc = 1.0_dp
-    md%block = m0%block; md%block0 = m0%block0
+    call augcls_set_blocks(md, m0%block, m0%block0)
     allocate (md%c(9, 4), md%d(9, 4), md%o(9, 4), md%e(9, 4)); md%o = 0.0_dp; md%e = 0.0_dp
     do s = 1, 3
       md%c(:, s) = par(s)%c; md%d(:, s) = par(s)%d
@@ -682,7 +682,7 @@ contains
     allocate (mdl%nsc(3), mdl%spc(3, 3), mdl%conc(3, 3)); mdl%spc = 0; mdl%conc = 0.0_dp
     mdl%nsc = [1, 3, 1]; mdl%spc(1, 1) = 1; mdl%spc(:, 2) = [1, 2, 3]; mdl%spc(1, 3) = 1
     mdl%conc(1, 1) = 1.0_dp; mdl%conc(:, 2) = xc; mdl%conc(1, 3) = 1.0_dp
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     call epi_pair_ops(coord, mg, cls, perm, mats)
     call orbital_rep(mats, d)
     call build_augcls_operator(g, mdl, cls, perm, d, 1, 8, op, maxrank=2, flippable=fl)

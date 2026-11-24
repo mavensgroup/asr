@@ -71,7 +71,7 @@ program test_spectral_scf
   call build_lmto_alloy('fcc', inp%ci%lsuper, inp%ci%rcl, 0.7_dp, pp(1), pp(1), 0.5_dp, g, coord, m0, max(inp%ci%rcl, inp%ci%rinv), alpha)
   mdl%nl = 9; mdl%nsp = 1; mdl%ncls = 1
   allocate (mdl%nsc(1), mdl%spc(1, 1), mdl%conc(1, 1)); mdl%nsc = 1; mdl%spc = 1; mdl%conc = 1.0_dp
-  mdl%block = m0%block; mdl%block0 = m0%block0
+  call augcls_set_blocks(mdl, m0%block, m0%block0)
   call edc_setup(mdl, pp, alpha, 1, en)
   allocate (cls(g%n), fl(g%n)); cls = 1; fl = .true.; fl(1) = .false.
   allocate (perm1(g%n, 1)); perm1(:, 1) = [(i, i=1, g%n)]

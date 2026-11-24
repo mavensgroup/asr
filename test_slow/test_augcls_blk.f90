@@ -102,7 +102,7 @@ contains
     allocate (mdl%nsc(2), mdl%spc(3, 2), mdl%conc(3, 2))
     mdl%nsc = 3; mdl%spc(:, 1) = [2, 3, 4]; mdl%spc(:, 2) = [2, 3, 4]
     mdl%conc(:, 1) = [0.3_dp, 0.5_dp, 0.2_dp]; mdl%conc(:, 2) = mdl%conc(:, 1)
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (fl(g%n), cls(g%n)); fl = .true.; fl(1) = .false.; cls = 1
     r2min = huge(1)
     do i = 2, g%n; r2min = min(r2min, sum((modulo(coord(:, i) + 4, 8) - 4)**2)); end do
@@ -231,13 +231,13 @@ contains
     type(class_alloy_t), intent(inout) :: mdl
     real(dp) :: u
     integer :: i, k
-    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    allocate (mdl%block(9, 9, 2, 1), mdl%block0(9, 9, 1))
     do i = 1, 9; do k = 1, 9
-      call random_number(u); mdl%block(i, k, 1) = 0.5_dp * (u - 0.5_dp)
+      call random_number(u); mdl%block(i, k, 1, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
-    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    mdl%block(:, :, 2, 1) = transpose(mdl%block(:, :, 1, 1))
     do i = 1, 9; do k = i, 9
-      call random_number(u); mdl%block0(i, k) = 0.6_dp * (u - 0.5_dp); mdl%block0(k, i) = mdl%block0(i, k)
+      call random_number(u); mdl%block0(i, k, 1) = 0.6_dp * (u - 0.5_dp); mdl%block0(k, i, 1) = mdl%block0(i, k, 1)
     end do; end do
   end subroutine random_blocks
 end program test_augcls_blk

@@ -2,15 +2,18 @@
 !> periodic multi-shell graph, screened structure-constant bond blocks S^alpha (one COMMON screening for
 !> both species, so S does not depend on the local composition), and species parameters mapped onto the
 !> random operators  X(n) = X_B + (X_A - X_B) n   (n = 1: species A).
+!> structure_blocks gives the bond blocks of any crystal structure (asr_crystal_graph): one screened cluster per basis site.
 module asr_lmto_alloy
   use asr_kinds, only: dp
   use asr_augspace, only: graph_t
   use asr_lattices, only: periodic_graph_shells
   use asr_strconst, only: lattice_cluster, screened_cluster, avg_ws_radius, hardcore_alpha
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
+  use asr_crystal, only: structure_t, ws_radius
+  use asr_crystal_graph, only: crystal_graph_t, structure_cluster
   implicit none
   private
-  public :: build_lmto_alloy, set_alloy_params, orb_alloy_t
+  public :: build_lmto_alloy, set_alloy_params, orb_alloy_t, structure_blocks
 
   integer, parameter :: orb_l(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
 
@@ -71,6 +74,47 @@ contains
     mdl%block0 = 0.5_dp * (blk(:, :, 1) + transpose(blk(:, :, 1)))       ! on-site S^alpha (origin is cluster site 1)
     call set_alloy_params(mdl, ppA, ppB, alpha)
   end subroutine build_lmto_alloy
+
+  !> Screened structure constants S^alpha of structure s on the slots of its graph cg, per basis site:
+  !>     block(:, :, k, b) = S_{R, R + bvec(k)},   block0(:, :, b) = S_{R, R}   for R on basis site b.
+  !> On a structure with a basis, S depends on the site and not only on the bond vector (an hcp site has no inversion centre, so
+  !> p and d mix on site, with opposite signs on the two sites).  So every basis site gets its own screened cluster of radius
+  !> rinv (alat units, at least the longest bond of cg), centred on it.  Equal spheres of the average Wigner-Seitz radius and one
+  !> common alpha (s, p, d), as in build_lmto_alloy.  The block of a bond is the mean of the two clusters that hold it,
+  !>     block(k, b) = (S_b'(-v) + S_b(v)^T) / 2,   b' = btgt(k, b),   S_c(u) = S_{c + u, c} from the cluster of c,
+  !> so that block(k', b') = block(k, b)^T for the reverse bond exactly.  With one basis site this is the formula of
+  !> build_lmto_alloy, and the clusters of asr_crystal_graph are those of lattice_cluster: cubic blocks are bit-identical.
+  !> Slots that basis site b does not have are zero.
+  subroutine structure_blocks(s, cg, rinv, alpha, block, block0)
+    type(structure_t), intent(in) :: s
+    type(crystal_graph_t), intent(in) :: cg
+    real(dp), intent(in) :: rinv, alpha(0:2)
+    real(dp), allocatable, intent(out) :: block(:, :, :, :), block0(:, :, :)
+    type :: clu_t
+      real(dp), allocatable :: vec(:, :), blk(:, :, :)
+    end type clu_t
+    type(clu_t), allocatable :: cl(:)
+    real(dp) :: w, u(3)
+    integer :: b, k, t, ia, ib
+    w = ws_radius(s)
+    allocate (cl(s%nb))
+    do b = 1, s%nb
+      call structure_cluster(s, b, rinv, cl(b)%vec)
+      call screened_cluster(cl(b)%vec, w, alpha, cl(b)%blk)
+    end do
+    allocate (block(9, 9, cg%nslot, s%nb), block0(9, 9, s%nb)); block = 0.0_dp
+    do b = 1, s%nb
+      block0(:, :, b) = 0.5_dp * (cl(b)%blk(:, :, 1) + transpose(cl(b)%blk(:, :, 1)))
+      do k = 1, cg%nslot
+        t = cg%btgt(k, b)
+        if (t == 0) cycle
+        u = cg%bvec(:, k)
+        ia = find_vec(cl(t)%vec, -u); ib = find_vec(cl(b)%vec, u)
+        if (ia == 0 .or. ib == 0) error stop 'structure_blocks: a bond is longer than the screened cluster radius rinv'
+        block(:, :, k, b) = 0.5_dp * (cl(t)%blk(:, :, ia) + transpose(cl(b)%blk(:, :, ib)))
+      end do
+    end do
+  end subroutine structure_blocks
 
   !> (Re)map the species parameters onto the random operators X(n) = X_B + (X_A - X_B) n.
   subroutine set_alloy_params(mdl, ppA, ppB, alpha)

@@ -55,7 +55,7 @@ program test_augcls_project
   mdl%nl = 9; mdl%nsp = 2; mdl%ncls = 2
   allocate (mdl%nsc(2), mdl%spc(1, 2), mdl%conc(1, 2))
   mdl%nsc = 1; mdl%spc(1, 1) = 1; mdl%spc(1, 2) = 2; mdl%conc = 1.0_dp
-  mdl%block = m0%block; mdl%block0 = m0%block0
+  call augcls_set_blocks(mdl, m0%block, m0%block0)
   allocate (fl(g%n), cls(g%n)); fl = .false.
   do i = 1, g%n; cls(i) = 1 + modulo(coord(1, i), 2); end do
   call class_ops(coord, 2 * lsup, cls, perm, mats)

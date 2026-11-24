@@ -194,10 +194,10 @@ contains
               r(nd, 2), a2(nd, nd), r2(nd), ip(nd))
     s = 0.0_dp
     do ii = 1, n
-      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0
+      s(9 * (ii - 1) + 1:9 * ii, 9 * (ii - 1) + 1:9 * ii) = mdl%block0(:, :, 1)
       do kk = 1, g%nbr_ptr(ii + 1) - g%nbr_ptr(ii)
         jj = g%nbr(g%nbr_ptr(ii) + kk - 1)
-        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk)
+        s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) = s(9 * (ii - 1) + 1:9 * ii, 9 * (jj - 1) + 1:9 * jj) + mdl%block(:, :, kk, 1)
       end do
     end do
     do ii = 1, n
@@ -278,13 +278,13 @@ contains
     mdl%spc(1:3, 3) = [1, 3, 4]; mdl%conc(1:3, 3) = [0.3_dp, 0.5_dp, 0.2_dp]
     mdl%spc(:, 4) = mdl%spc(:, 3); mdl%conc(:, 4) = mdl%conc(:, 3)
     mdl%spc(:, 5) = mdl%spc(:, 2); mdl%conc(:, 5) = mdl%conc(:, 2)
-    allocate (mdl%block(9, 9, 2), mdl%block0(9, 9))
+    allocate (mdl%block(9, 9, 2, 1), mdl%block0(9, 9, 1))
     do l = 1, 9; do l2 = 1, 9
-      call random_number(u); mdl%block(l, l2, 1) = 0.5_dp * (u - 0.5_dp)
+      call random_number(u); mdl%block(l, l2, 1, 1) = 0.5_dp * (u - 0.5_dp)
     end do; end do
-    mdl%block(:, :, 2) = transpose(mdl%block(:, :, 1))
+    mdl%block(:, :, 2, 1) = transpose(mdl%block(:, :, 1, 1))
     do l = 1, 9; do l2 = l, 9
-      call random_number(u); mdl%block0(l, l2) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l) = mdl%block0(l, l2)
+      call random_number(u); mdl%block0(l, l2, 1) = 0.6_dp * (u - 0.5_dp); mdl%block0(l2, l, 1) = mdl%block0(l, l2, 1)
     end do; end do
     perm(:, 1) = [(i, i=1, n)]
     dmat = 0.0_dp; do l = 1, 9; dmat(l, l, 1) = 1.0_dp; end do
@@ -403,7 +403,7 @@ contains
     allocate (mdl%nsc(2), mdl%spc(3, 2), mdl%conc(3, 2))
     mdl%nsc = 3; mdl%spc(:, 1) = [2, 3, 4]; mdl%spc(:, 2) = [2, 3, 4]
     mdl%conc(:, 1) = [0.3_dp, 0.5_dp, 0.2_dp]; mdl%conc(:, 2) = mdl%conc(:, 1)
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     allocate (fl(g%n)); fl = .true.; fl(1) = .false.
     allocate (cls0(g%n)); cls0 = 1; cls = cls0
     r2min = huge(1)

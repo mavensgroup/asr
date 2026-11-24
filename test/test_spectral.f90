@@ -139,7 +139,7 @@ contains
     mdl%nl = 9; mdl%nsp = 2; mdl%ncls = 1
     allocate (mdl%nsc(1), mdl%spc(2, 1), mdl%conc(2, 1))
     mdl%nsc = 2; mdl%spc(:, 1) = [1, 2]; mdl%conc(:, 1) = [0.6_dp, 0.4_dp]
-    mdl%block = m0%block; mdl%block0 = m0%block0
+    call augcls_set_blocks(mdl, m0%block, m0%block0)
     call edc_setup(mdl, pp, alpha, 1, en)
     allocate (cls(g%n), fl(g%n)); cls = 1; fl = .true.; fl(1) = .false.
     call class_ops(coord, 2 * lsup, cls, perm, mats)

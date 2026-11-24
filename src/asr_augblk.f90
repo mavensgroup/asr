@@ -164,25 +164,26 @@ contains
     !$omp end parallel do
   end subroutine rand_lin_amp
 
-  !> t2 = S t1 (amplitude coordinates): on-site block and one 9 x 9 bond block per neighbour slot.  The accumulator is (orbital,
-  !> member), so the innermost loop runs over the 9 orbitals of one member, as in asr_augcls; the sums over (slot, l2) keep the
-  !> order of asr_augcls.
+  !> t2 = S t1 (amplitude coordinates): on-site block and one 9 x 9 bond block per neighbour slot, both of the site type of the
+  !> node.  The accumulator is (orbital, member), so the innermost loop runs over the 9 orbitals of one member, as in asr_augcls;
+  !> the sums over (slot, l2) keep the order of asr_augcls.
   subroutine smul(op, t1, t2)
     type(augcls_op), intent(in) :: op
     complex(dp), intent(in), contiguous :: t1(:, :)
     complex(dp), intent(out), contiguous :: t2(:, :)
     complex(dp) :: acc(9, size(t1, 1)), s
     real(dp) :: fc(9)
-    integer :: i, k, l, l2, g, r, j0, jr, j, nb
+    integer :: i, k, l, l2, g, r, j0, jr, j, nb, t
     nb = size(t1, 1)
-    !$omp parallel do private(k, l, l2, g, r, j0, jr, j, s, fc, acc)
+    !$omp parallel do private(k, l, l2, g, r, j0, jr, j, s, fc, acc, t)
     do i = 1, op%nn
       j0 = 9 * (i - 1)
+      t = op%stype(op%site(i))
       acc = (0.0_dp, 0.0_dp)
       do j = 1, nb
         do l2 = 1, 9
           s = t1(j, j0 + l2)
-          acc(:, j) = acc(:, j) + op%block0(:, l2) * s
+          acc(:, j) = acc(:, j) + op%block0(:, l2, t) * s
         end do
       end do
       do k = 1, op%nslot
@@ -190,7 +191,7 @@ contains
         if (r == 0) cycle
         g = op%hopg(k, i); jr = 9 * (r - 1)
         do l2 = 1, 9
-          fc = op%chi(g) * op%btab(:, l2, k, g)
+          fc = op%chi(g) * op%btab(:, l2, k, g, t)
           do j = 1, nb
             acc(:, j) = acc(:, j) + fc * t1(j, jr + l2)
           end do
