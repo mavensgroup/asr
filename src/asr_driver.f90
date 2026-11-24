@@ -59,9 +59,11 @@ module asr_driver
   use asr_input_lmto, only: lmto_species_t, lmto_input_t
   use asr_asa, only: core_shells_for, asa_class_result_t
   use asr_lmto_driver, only: run_lmto, atom_shells
-  use asr_sublattice, only: decoration_t, decoration_build
+  use asr_crystal, only: structure_t, structure_init, ws_radius
+  use asr_prototypes, only: prototype_structure, prototype_names
+  use asr_sublattice, only: decoration_t, decoration_build, decoration_structure
   use asr_sro, only: sro_conditional
-  use asr_screening, only: screen_t, screen_lattice, mode_f
+  use asr_screening, only: screen_t, screen_structure, mode_f
   use asr_class_scf
   use asr_report
   use asr_mpi, only: par_root, par_size
@@ -96,11 +98,12 @@ contains
     type(toml_array), pointer :: arr, ka, kb
     type(toml_error), allocatable :: perr
     integer :: i, j, k, slash, nsp, nsub, npos, nsc, period, nmax
-    real(dp) :: x, alat, ratio
+    real(dp) :: x, alat, ratio, coa, c_ang, vec3(3, 3)
     real(dp), allocatable :: pos(:, :), tpos(:, :)
     integer, allocatable :: owner(:), towner(:)
     character(len=:), allocatable :: lat, xcs, edt, cen, str
-    logical :: kspace, cell, decor
+    logical :: kspace, cell, decor, has_coa, has_pos, has_vec, is_cubic_dec
+    type(structure_t) :: proto_st
 
     msg = ''
     call toml_load(table, filename, error=perr)
@@ -125,43 +128,79 @@ contains
     kspace = inp%method == 'kspace'
 
     call section(table, 'structure', child)
-    call check_keys(child, ['lattice     ', 'alat        ', 'period      ', 'centering   ', 'vectors     ', 'site_classes'], &
-                    '[structure]', msg)
+    call check_keys(child, ['lattice     ', 'alat        ', 'c           ', 'c_over_a    ', 'coa         ', 'period      ', &
+                            'centering   ', 'vectors     ', 'site_classes'], '[structure]', msg)
     if (len(msg) > 0) return
     decor = child%has_key('period') .or. child%has_key('centering')      ! (get_value with a default adds the key)
+    has_coa = child%has_key('c') .or. child%has_key('c_over_a') .or. child%has_key('coa')
+    has_vec = child%has_key('vectors')
     call get_value(child, 'lattice', lat, 'bcc')
     call get_value(child, 'alat', alat, 0.0_dp)
-    call get_value(child, 'period', period, 1)
-    call get_value(child, 'centering', cen, 'P')
-    cell = lat == 'cell'
-    if (lat /= 'sc' .and. lat /= 'bcc' .and. lat /= 'fcc' .and. .not. cell) then
-      msg = '[structure] lattice must be sc|bcc|fcc (decorated, [[sublattice]]) or cell ([[site]])'; return
-    end if
     if (alat <= 0.0_dp) then; msg = '[structure] alat (Angstrom) must be > 0'; return; end if
+    coa = 0.0_dp
+    if (child%has_key('c_over_a')) then
+      call get_value(child, 'c_over_a', coa, 0.0_dp)
+      if (coa <= 0.0_dp) then; msg = '[structure] c_over_a must be > 0'; return; end if
+    else if (child%has_key('coa')) then
+      call get_value(child, 'coa', coa, 0.0_dp)
+      if (coa <= 0.0_dp) then; msg = '[structure] coa must be > 0'; return; end if
+    else if (child%has_key('c')) then
+      call get_value(child, 'c', c_ang, 0.0_dp)
+      if (c_ang <= 0.0_dp) then; msg = '[structure] c (Angstrom) must be > 0'; return; end if
+      coa = c_ang / alat
+    end if
+    cell = lat == 'cell' .and. table%has_key('site')
+    is_cubic_dec = (lat == 'sc' .or. lat == 'bcc' .or. lat == 'fcc') .and. .not. has_vec
+    if (is_cubic_dec .or. decor) then
+      call get_value(child, 'period', period, 1)
+      call get_value(child, 'centering', cen, 'P')
+    else
+      period = 1; cen = 'P'
+    end if
     if (period < 1) then; msg = '[structure] period must be >= 1'; return; end if
-    if (cell) then
+    if (has_vec) then
       if (decor) then
-        msg = '[structure] period / centering belong to a decorated lattice, not to lattice = "cell"'; return
-      end if
-      if (.not. kspace) then
-        msg = 'lattice = "cell" (explicit sites) runs with [calculation] method = "kspace" only: the recursion needs a decorated '// &
-              'sc|bcc|fcc lattice with [[sublattice]] entries'
-        return
+        msg = '[structure] period / centering belong to a decorated lattice, not to explicit vectors'; return
       end if
       nullify (arr)
       call get_value(child, 'vectors', arr, requested=.false.)
-      if (.not. associated(arr)) then; msg = 'lattice "cell" needs [structure] vectors = [[a1], [a2], [a3]]'; return; end if
+      if (.not. associated(arr)) then; msg = '[structure] vectors must be [[a1], [a2], [a3]]'; return; end if
       if (len(arr) /= 3) then; msg = '[structure] vectors needs three vectors'; return; end if
       do i = 1, 3
         nullify (ka); call get_value(arr, i, ka)
         if (.not. associated(ka)) then; msg = '[structure] vectors: each vector is an array of 3 numbers'; return; end if
         if (len(ka) /= 3) then; msg = '[structure] vectors: each vector is an array of 3 numbers'; return; end if
-        do j = 1, 3; call get_value(ka, j, x); inp%li%cell_vec(j, i) = x; end do
+        do j = 1, 3; call get_value(ka, j, x); vec3(j, i) = x; end do
       end do
+      inp%li%cell_vec = vec3
+    end if
+    if (cell) then
+      if (.not. kspace) then
+        msg = 'lattice = "cell" with [[site]] entries runs with [calculation] method = "kspace" only: the recursion takes '// &
+              '[[sublattice]] entries'
+        return
+      end if
+      if (.not. has_vec) then; msg = 'lattice "cell" needs [structure] vectors = [[a1], [a2], [a3]]'; return; end if
       call get_value(child, 'site_classes', inp%li%site_classes, .false.)
     else
-      if (child%has_key('vectors') .or. child%has_key('site_classes')) then
-        msg = '[structure] vectors / site_classes need lattice = "cell"'; return
+      if (child%has_key('site_classes')) then
+        msg = '[structure] site_classes needs lattice = "cell" with [[site]] entries'; return
+      end if
+      if (lat == 'cell' .and. .not. has_vec) then
+        msg = 'lattice "cell" needs [structure] vectors = [[a1], [a2], [a3]]'; return
+      end if
+      if (.not. is_cubic_dec .and. lat /= 'cell') then
+        if (decor) then
+          msg = '[structure] period / centering belong to a decorated sc|bcc|fcc lattice'; return
+        end if
+        if (has_coa) then
+          call prototype_structure(lat, proto_st, msg, c_over_a=coa)
+        else
+          call prototype_structure(lat, proto_st, msg)
+        end if
+        if (len(msg) > 0) then; msg = '[structure] '//msg; return; end if
+      else if (is_cubic_dec .and. has_coa) then
+        msg = '[structure] c / c_over_a belongs to a hexagonal prototype, not to '//lat; return
       end if
     end if
     inp%ci%lattice = lat; inp%ci%alat = alat * bohr_per_angstrom
@@ -203,7 +242,7 @@ contains
     end do
 
     if (cell) then
-      if (table%has_key('sublattice')) then; msg = 'lattice = "cell" takes [[site]] entries, not [[sublattice]]'; return; end if
+      if (table%has_key('sublattice')) then; msg = 'lattice = "cell" with [[site]] entries cannot also have [[sublattice]]'; return; end if
       nullify (arr)
       call get_value(table, 'site', arr, requested=.false.)
       if (.not. associated(arr)) then; msg = 'lattice "cell" needs [[site]] entries'; return; end if
@@ -223,7 +262,7 @@ contains
         if (inp%li%site_sp(i) == 0) then; msg = '[[site]] species "'//str//'" is not a [[species]] symbol'; return; end if
       end do
     else
-      if (table%has_key('site')) then; msg = '[[site]] entries need lattice = "cell"; a decorated lattice takes [[sublattice]]'; return; end if
+      if (table%has_key('site')) then; msg = '[[site]] entries need lattice = "cell"; a structure with sublattices takes [[sublattice]]'; return; end if
       nullify (arr)
       call get_value(table, 'sublattice', arr, requested=.false.)
       if (.not. associated(arr)) then; msg = 'no [[sublattice]] given'; return; end if
@@ -237,19 +276,28 @@ contains
         call get_value(sp, 'name', str, 'S'); inp%subname(i) = str
         nullify (ka)
         call get_value(sp, 'positions', ka, requested=.false.)
-        if (.not. associated(ka)) then; msg = '[[sublattice]] needs positions'; return; end if
-        npos = len(ka)
-        do j = 1, npos
-          nullify (kb)
-          call get_value(ka, j, kb)
-          if (.not. associated(kb)) then; msg = '[[sublattice]] positions must be [[x, y, z], ...]'; return; end if
-          if (len(kb) /= 3) then; msg = '[[sublattice]] positions must be [[x, y, z], ...]'; return; end if
-          allocate (tpos(3, size(pos, 2) + 1), towner(size(owner) + 1))
-          tpos(:, 1:size(pos, 2)) = pos; towner(1:size(owner)) = owner
-          do k = 1, 3; call get_value(kb, k, x); tpos(k, size(tpos, 2)) = x; end do
-          towner(size(towner)) = i
-          call move_alloc(tpos, pos); call move_alloc(towner, owner)
-        end do
+        has_pos = associated(ka)
+        if (i == 1 .and. (is_cubic_dec .or. has_vec) .and. .not. has_pos) then
+          msg = '[[sublattice]] needs positions'; return
+        end if
+        if (i > 1 .and. (has_pos .neqv. (size(pos, 2) > 0))) then
+          msg = '[[sublattice]] positions must be given on every sublattice or on none (prototype default)'; return
+        end if
+        if (has_pos) then
+          npos = len(ka)
+          if (npos < 1) then; msg = '[[sublattice]] positions must not be empty'; return; end if
+          do j = 1, npos
+            nullify (kb)
+            call get_value(ka, j, kb)
+            if (.not. associated(kb)) then; msg = '[[sublattice]] positions must be [[x, y, z], ...]'; return; end if
+            if (len(kb) /= 3) then; msg = '[[sublattice]] positions must be [[x, y, z], ...]'; return; end if
+            allocate (tpos(3, size(pos, 2) + 1), towner(size(owner) + 1))
+            tpos(:, 1:size(pos, 2)) = pos; towner(1:size(owner)) = owner
+            do k = 1, 3; call get_value(kb, k, x); tpos(k, size(tpos, 2)) = x; end do
+            towner(size(towner)) = i
+            call move_alloc(tpos, pos); call move_alloc(towner, owner)
+          end do
+        end if
         nullify (ka)
         call get_value(sp, 'species', ka, requested=.false.)
         if (.not. associated(ka)) then; msg = '[[sublattice]] needs species'; return; end if
@@ -280,14 +328,39 @@ contains
       end do
       nmax = maxval(inp%ci%nsc)
       inp%ci%spc = inp%ci%spc(1:nmax, :); inp%ci%conc = inp%ci%conc(1:nmax, :)
-      call decoration_build(lat, period, cen, pos, owner, nsub, inp%ci%dec, msg)
-      if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
+      if (is_cubic_dec) then
+        call decoration_build(lat, period, cen, pos, owner, nsub, inp%ci%dec, msg)
+        if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
+        call decoration_structure(inp%ci%dec, inp%ci%st, msg)
+        if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
+      else if (has_vec) then
+        call structure_init(inp%ci%st, vec3, pos, owner, msg)
+        if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
+        call fill_dec_from_st(inp%ci%st, lat, inp%ci%dec)
+      else
+        if (size(pos, 2) == 0) then
+          if (nsub == proto_st%nlabel) then
+            inp%ci%st = proto_st
+          else if (nsub == proto_st%nb) then
+            call structure_init(inp%ci%st, proto_st%avec, proto_st%frac, [(i, i=1, nsub)], msg)
+            if (len(msg) > 0) return
+          else
+            msg = '[[sublattice]]: prototype '//trim(lat)//' has '//trim(itoa_d(proto_st%nlabel))//' sublattice(s) ('// &
+                  trim(itoa_d(proto_st%nb))//' basis sites); give positions explicitly to define another split'
+            return
+          end if
+        else
+          call match_prototype_positions(proto_st, pos, owner, nsub, inp%ci%st, msg)
+          if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
+        end if
+        call fill_dec_from_st(inp%ci%st, lat, inp%ci%dec)
+      end if
       if (kspace .and. nmax > 1) then
         msg = 'method = "kspace" needs an ordered structure (one species per sublattice); disorder runs with method = "asr"'; return
       end if
     end if
     if (table%has_key('sro')) then
-      if (kspace .or. cell) then; msg = '[[sro]] needs method = "asr" on a decorated lattice'; return; end if
+      if (kspace .or. cell) then; msg = '[[sro]] needs method = "asr" on a structure with [[sublattice]]'; return; end if
       call read_sro(table, inp, msg); if (len(msg) > 0) return
     end if
 
@@ -306,7 +379,7 @@ contains
     if (.not. kspace) then                         ! sim_beta fixes the hardness of the screening model; it has a lattice maximum
       block
         type(screen_t) :: scr
-        call screen_lattice(trim(inp%ci%lattice), inp%ci%alat, inp%ci%sim_beta, scr, msg)
+        call screen_structure(inp%ci%st, inp%ci%alat, inp%ci%sim_beta, scr, msg)
         if (len(msg) > 0) then; msg = '[scf] sim_beta: '//msg; return; end if
       end block
     end if
@@ -462,8 +535,10 @@ contains
       if (cell) then
         if (abs(ratio - 1.0_dp) > 1.0e-12_dp) then; msg = '[kspace] sphere_ratio needs a decorated B2 structure'; return; end if
         inp%li%lattice = 'cell'; inp%li%species = inp%species
-      else
+      else if (is_cubic_dec) then
         call kspace_cell(inp%ci%dec, inp%species, inp%ci%spc(1, :), inp%subname, ratio, inp%li, msg)
+      else
+        call kspace_structure_cell(inp%ci%st, inp%species, inp%ci%spc(1, :), inp%subname, ratio, inp%li, msg)
       end if
     end if
   end subroutine read_run_input
@@ -615,6 +690,84 @@ contains
     end function invariant
   end subroutine kspace_cell
 
+  !> An ordered structure st (prototype or explicit vectors with [[sublattice]]) as a k-space cell.
+  subroutine kspace_structure_cell(st, species, spc1, subname, ratio, li, msg)
+    type(structure_t), intent(in) :: st
+    type(lmto_species_t), intent(in) :: species(:)
+    integer, intent(in) :: spc1(:)
+    character(len=*), intent(in) :: subname(:)
+    real(dp), intent(in) :: ratio
+    type(lmto_input_t), intent(inout) :: li
+    character(len=:), allocatable, intent(inout) :: msg
+    integer :: k
+    if (abs(ratio - 1.0_dp) > 1.0e-12_dp) then
+      if (st%nlabel /= 2 .or. st%nb /= 2 .or. maxval(abs(st%avec - reshape([1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 3]) * 1.0_dp)) > 1.0e-9_dp) then
+        msg = '[kspace] sphere_ratio is implemented for B2 (two sublattices on the simple-cubic cell of the bcc graph) only'; return
+      end if
+      li%lattice = 'b2'; li%ratio = ratio
+    else
+      li%lattice = 'cell'
+    end if
+    li%cell_vec = st%avec
+    li%site_pos = st%tau
+    li%site_sp = st%label
+    li%site_classes = .false.
+    allocate (li%species(st%nlabel))
+    do k = 1, st%nlabel
+      li%species(k) = species(spc1(k))
+      if (count(spc1 == spc1(k)) > 1) li%species(k)%symbol = trim(species(spc1(k))%symbol)//'@'//trim(subname(k))
+    end do
+    if (li%lattice == 'b2') li%species = [li%species(li%site_sp(1)), li%species(li%site_sp(2))]
+  end subroutine kspace_structure_cell
+
+  !> Fill dec metadata (lattice, period, ncls, nsite, frac, pcls) from st for non-cubic prototypes and explicit cells.
+  subroutine fill_dec_from_st(st, lat, dec)
+    type(structure_t), intent(in) :: st
+    character(len=*), intent(in) :: lat
+    type(decoration_t), intent(out) :: dec
+    integer :: k
+    dec%lattice = lat; dec%period = 1; dec%m = 2; dec%ncls = st%nlabel; dec%nsite = st%nb
+    allocate (dec%pcls(st%nb), dec%frac(st%nlabel), dec%pts(3, st%nb))
+    dec%pcls = st%label; dec%pts = nint(2.0_dp * st%tau)
+    do k = 1, st%nlabel
+      dec%frac(k) = real(count(st%label == k), dp) / real(st%nb, dp)
+    end do
+  end subroutine fill_dec_from_st
+
+  !> Match explicit fractional positions pos(3, n) with sublattice labels owner(1:n) against a prototype structure p.
+  subroutine match_prototype_positions(p, pos, owner, nsub, s, msg)
+    use asr_crystal, only: same_frac
+    type(structure_t), intent(in) :: p
+    real(dp), intent(in) :: pos(:, :)
+    integer, intent(in) :: owner(:), nsub
+    type(structure_t), intent(out) :: s
+    character(len=:), allocatable, intent(out) :: msg
+    integer :: lab(p%nb), i, b
+    logical :: hit
+    msg = ''; lab = 0
+    do i = 1, size(pos, 2)
+      hit = .false.
+      do b = 1, p%nb
+        if (same_frac(pos(:, i), p%frac(:, b))) then
+          if (lab(b) /= 0 .and. lab(b) /= owner(i)) then; msg = 'two sublattices share a site'; return; end if
+          lab(b) = owner(i); hit = .true.; exit
+        end if
+      end do
+      if (.not. hit) then; msg = 'a sublattice position is not a basis site of the prototype'; return; end if
+    end do
+    if (any(lab == 0)) then; msg = 'a site of the prototype belongs to no sublattice'; return; end if
+    do i = 1, nsub
+      if (.not. any(lab == i)) then; msg = 'a sublattice has no site'; return; end if
+    end do
+    call structure_init(s, p%avec, p%frac, lab, msg)
+  end subroutine match_prototype_positions
+
+  function itoa_d(i) result(t)
+    integer, intent(in) :: i
+    character(len=12) :: t
+    write (t, '(i0)') i
+  end function itoa_d
+
   subroutine run_input(inp, ok, res_out)
     type(run_input_t), intent(inout) :: inp
     logical, intent(out) :: ok
@@ -676,7 +829,7 @@ contains
     if (present(res_out)) res_out = res
     ncomp = res%ncomp
     allocate (labels(ncomp), tsp(res%nspin))
-    avw = avg_ws(trim(inp%ci%lattice)) * inp%ci%alat
+    avw = ws_radius(inp%ci%st) * inp%ci%alat
     qcell = 0.0_dp; mcell = 0.0_dp
     do p = 1, ncomp
       labels(p) = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
@@ -868,14 +1021,25 @@ contains
       write (u, '(a,*(a))') 'species = [', ('"'//trim(inp%species(inp%ci%spc(c, kap))%symbol)//'"'//merge(', ', '  ', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap)), ']'
       write (u, '(a,*(es22.14,a))') 'concentrations = [', (inp%ci%conc(c, kap), merge(', ', ' ]', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap))
       ns = count(inp%ci%dec%pcls == kap); k = 0
-      write (u, '(a)', advance='no') 'sites = ['
-      do i = 1, size(inp%ci%dec%pcls)
-        if (inp%ci%dec%pcls(i) /= kap) cycle
-        k = k + 1
-        write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', inp%ci%dec%pts(1, i), ', ', inp%ci%dec%pts(2, i), ', ', inp%ci%dec%pts(3, i), ']', &
-          trim(merge(', ', '  ', k < ns))
-      end do
-      write (u, '(a)') ']'
+      if (maxval(abs(2.0_dp * inp%ci%st%tau - real(inp%ci%dec%pts, dp))) < 1.0e-6_dp) then
+        write (u, '(a)', advance='no') 'sites = ['
+        do i = 1, size(inp%ci%dec%pcls)
+          if (inp%ci%dec%pcls(i) /= kap) cycle
+          k = k + 1
+          write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', inp%ci%dec%pts(1, i), ', ', inp%ci%dec%pts(2, i), ', ', &
+            inp%ci%dec%pts(3, i), ']', trim(merge(', ', '  ', k < ns))
+        end do
+        write (u, '(a)') ']'
+      else
+        write (u, '(a)', advance='no') 'sites_alat = ['
+        do i = 1, inp%ci%st%nb
+          if (inp%ci%st%label(i) /= kap) cycle
+          k = k + 1
+          write (u, '(a,es22.14,a,es22.14,a,es22.14,a,a)', advance='no') '[', inp%ci%st%tau(1, i), ', ', &
+            inp%ci%st%tau(2, i), ', ', inp%ci%st%tau(3, i), ']', trim(merge(', ', '  ', k < ns))
+        end do
+        write (u, '(a)') ']'
+      end if
     end do
     do i = 1, size(res%epi)
       associate (t => res%epi(i))
@@ -883,16 +1047,30 @@ contains
         write (u, '(/,a)') '[[pair]]'
         write (u, '(a,a,a,a,a)') 'sublattices = ["', trim(inp%subname(t%kap)), '", "', trim(inp%subname(t%kap2)), '"]'
         write (u, '(a,i0)') 'shell = ', t%shell
-        write (u, '(a,i0,a,i0,a,i0,a)') 'vector = [', t%vec(1), ', ', t%vec(2), ', ', t%vec(3), ']'
+        if (maxval(abs(2.0_dp * t%rvec - real(t%vec, dp))) < 1.0e-6_dp) then
+          write (u, '(a,i0,a,i0,a,i0,a)') 'vector = [', t%vec(1), ', ', t%vec(2), ', ', t%vec(3), ']'
+        else
+          write (u, '(a,es22.14,a,es22.14,a,es22.14,a)') 'vector_alat = [', t%rvec(1), ', ', t%rvec(2), ', ', t%rvec(3), ']'
+        end if
         write (u, '(a,es22.14)') 'distance = ', t%dist
         write (u, '(a,i0)') 'multiplicity = ', t%mult
         write (u, '(a,es22.14)') 'kernel = ', t%wr
-        write (u, '(a)', advance='no') 'vectors = ['
-        do k = 1, size(t%orbit, 2)
-          write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', t%orbit(1, k), ', ', t%orbit(2, k), ', ', t%orbit(3, k), ']', &
-            trim(merge(', ', '  ', k < size(t%orbit, 2)))
-        end do
-        write (u, '(a)') ']'
+        if (maxval(abs(2.0_dp * t%rvec - real(t%vec, dp))) < 1.0e-6_dp) then
+          write (u, '(a)', advance='no') 'vectors = ['
+          do k = 1, size(t%orbit, 2)
+            write (u, '(a,i0,a,i0,a,i0,a,a)', advance='no') '[', t%orbit(1, k), ', ', t%orbit(2, k), ', ', t%orbit(3, k), ']', &
+              trim(merge(', ', '  ', k < size(t%orbit, 2)))
+          end do
+          write (u, '(a)') ']'
+        else
+          write (u, '(a)', advance='no') 'vectors_alat = ['
+          do k = 1, size(t%rorbit, 2)
+            write (u, '(a,es22.14,a,es22.14,a,es22.14,a,a)', advance='no') &
+              '[', t%rorbit(1, k), ', ', t%rorbit(2, k), ', ', t%rorbit(3, k), ']', &
+              trim(merge(', ', '  ', k < size(t%rorbit, 2)))
+          end do
+          write (u, '(a)') ']'
+        end if
         write (u, '(a)') 'u_band = ['
         do c = 1, n1
           write (u, '(a,*(es22.14,a))') '  [', (t%uband(c, s), merge(', ', '],', s < n2), s=1, n2)
@@ -1077,7 +1255,7 @@ contains
     rep%alat = inp%ci%alat
     rep%period = inp%ci%dec%period
     rep%nsite = inp%ci%dec%nsite
-    avw = avg_ws_radius(trim(inp%ci%lattice)) * inp%ci%alat
+    avw = ws_radius(inp%ci%st) * inp%ci%alat
     rep%sws_avg = avw
     rep%cell_vol = (4.0_dp * pi / 3.0_dp) * avw**3 * inp%ci%dec%nsite
     rep%nsub = inp%ci%dec%ncls
@@ -1198,7 +1376,7 @@ contains
       do i = 1, size(res%epi)
         associate (t => res%epi(i), q => rep%epi%pair(i))
           q%sub1 = inp%subname(t%kap); q%sub2 = inp%subname(t%kap2)
-          q%shell = t%shell; q%mult = t%mult; q%nop = t%nop; q%nodes = t%nodes; q%vec = t%vec
+          q%shell = t%shell; q%mult = t%mult; q%nop = t%nop; q%nodes = t%nodes; q%vec = t%vec; q%rvec = t%rvec
           q%dist = t%dist; q%wr = t%wr; q%tail = t%tail
           q%uband = t%uband; q%ues = t%ues
           allocate (q%spec1(size(t%uband, 1)), q%spec2(size(t%uband, 2)))

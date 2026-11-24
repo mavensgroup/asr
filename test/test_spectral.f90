@@ -67,6 +67,23 @@ program test_spectral
   call check(spectral_translations_ok(dec), 'translations: B2 (two classes, one site each)')
   call set_dec(dec, reshape([0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1], [3, 4]), [1, 2, 2, 2], 2)
   call check(.not. spectral_translations_ok(dec), 'translations: L1_2 is refused (face sites related by rotations only)')
+  block
+    use asr_crystal, only: structure_t
+    use asr_prototypes, only: prototype_structure
+    use asr_sublattice, only: decoration_structure
+    type(structure_t) :: st
+    character(len=:), allocatable :: msg
+    call prototype_structure('fcc', st, msg)
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: fcc accepted')
+    call prototype_structure('b2', st, msg)
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: B2 accepted')
+    call prototype_structure('hcp', st, msg)
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: hcp accepted (two sites related by inversion)')
+    call prototype_structure('nias', st, msg, c_over_a=1.62_dp)
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: NiAs accepted (each sublattice related by inversion)')
+    call decoration_structure(dec, st, msg)
+    call check(.not. spectral_structure_ok(st), 'spectral_structure_ok: L1_2 refused')
+  end block
 
   ! ---- (A) the Fourier window
   call check(spectral_window('ball', 0.0_dp, 2.0_dp) == 1.0_dp .and. spectral_window('ball', 2.0_dp, 2.0_dp) == 0.0_dp .and. &

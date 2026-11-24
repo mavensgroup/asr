@@ -59,10 +59,10 @@ module asr_class_scf
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count, gauss_legendre
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
-  use asr_screening, only: screen_t, screen_lattice, screen_matrix, screen_update, screen_project, mode_f, screen_shells
+  use asr_screening, only: screen_t, screen_structure, screen_matrix, screen_update, screen_project, mode_f, screen_structure_shells
   use asr_epi
   use asr_mpi, only: par_rank, par_size, par_root, par_sum_z, par_sum_i8, par_sum_i
-  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, &
+  use asr_spectral, only: spectral_input_t, spectral_kpath, spectral_structure_ok, spectral_unfold, spectral_dressing, &
                           spectral_window
   implicit none
   private
@@ -70,7 +70,8 @@ module asr_class_scf
 
   type :: class_scf_input_t
     type(asa_class_t), allocatable :: spec(:)          !! chemical species
-    type(decoration_t) :: dec                          !! sublattices on the graph lattice
+    type(structure_t) :: st                            !! crystal structure (primitive vectors, basis sites, sublattice labels)
+    type(decoration_t) :: dec                          !! optional cubic decoration (used if st%nb == 0)
     integer, allocatable :: nsc(:), spc(:, :)           !! per sublattice: number of species, chemical species spc(k, sublattice)
     real(dp), allocatable :: conc(:, :)                 !! conc(k, sublattice)
     logical :: sro = .false.                            !! first-shell short-range order (asr_sro)
@@ -217,6 +218,8 @@ contains
     real(dp), allocatable :: worbk(:, :), dgo(:, :, :)          !! their weights (orbital group sizes); orbital matrices
     logical, allocatable :: mono(:)
     real(dp), allocatable :: y(:, :, :, :, :, :), enu(:, :, :), mom(:, :, :, :), dosef(:, :, :), w(:), xp(:), phimad(:, :), qbar(:)
+    real(dp), allocatable :: sfrac(:)
+    integer :: ksro
     complex(dp), allocatable :: dmp_a(:, :, :, :, :), dmp_b(:, :, :, :, :)   ! ef_scan_dump: chain coefficients (level, node, orb, comp, spin)
     integer, allocatable :: dmp_m(:, :, :, :)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), wmix(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:)
@@ -250,14 +253,28 @@ contains
     npsd = 0; nnode = 0
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
-    ncls = inp%dec%ncls
-    ! the decoration as a crystal structure (asr_sublattice): cell, basis sites, sublattice labels; its space group
-    call decoration_structure(inp%dec, st, smsg)
-    if (len(smsg) > 0) error stop smsg
+    if (inp%st%nb > 0) then
+      st = inp%st
+    else
+      call decoration_structure(inp%dec, st, smsg)
+      if (len(smsg) > 0) error stop smsg
+    end if
+    ncls = st%nlabel
+    allocate (sfrac(ncls))
+    do kap = 1, ncls
+      sfrac(kap) = real(count(st%label == kap), dp) / real(st%nb, dp)
+    end do
     call space_group(st, sops)
     avw = ws_radius(st) * inp%alat
     alpha = standard_alpha() * inp%alpha_scale
-    call screen_lattice(trim(inp%lattice), inp%alat, inp%sim_beta, res%screen, smsg)
+    ksro = 0
+    if (inp%sro) then
+      do kap = 1, ncls
+        if (any(abs(inp%sro_cond(1:inp%nsc(kap), 1:inp%nsc(kap), kap, kap) - &
+                    spread(inp%conc(1:inp%nsc(kap), kap), 1, inp%nsc(kap))) > 1.0e-12_dp)) ksro = kap
+      end do
+    end if
+    call screen_structure(st, inp%alat, inp%sim_beta, res%screen, smsg, sub_sro=ksro)
     if (len(smsg) > 0) error stop smsg
     ngen = inp%nlevels
     nlev = inp%nlevels; if (inp%nrec > 0) nlev = inp%nrec
@@ -270,7 +287,7 @@ contains
     do kap = 1, ncls
       do k = 1, inp%nsc(kap)
         p = p + 1; pcl(p) = kap; pk(p) = k; psp(p) = inp%spc(k, kap); xp(p) = inp%conc(k, kap)
-        w(p) = inp%dec%frac(kap) * inp%conc(k, kap)
+        w(p) = sfrac(kap) * inp%conc(k, kap)
       end do
     end do
     nelec = sum([(w(p) * real(inp%spec(psp(p))%nval, dp), p=1, ncomp)])
@@ -292,7 +309,7 @@ contains
     if (inp%sro) then
       mdl%nsc(ncls + 1:) = mdl%nsc(1:ncls); mdl%spc(:, ncls + 1:) = mdl%spc(:, 1:ncls); mdl%conc(:, ncls + 1:) = mdl%conc(:, 1:ncls)
     end if
-    call decoration_madelung(inp%dec, inp%alat, phimad)
+    call structure_madelung(st, inp%alat, phimad)
     allocate (qbar(ncls))
     call xc_init(xf, inp%xc)
     ! ---- meshes and atomic starts (equal spheres)
@@ -571,7 +588,7 @@ contains
       end do
       qbar = 0.0_dp
       do p = 1, ncomp; qbar(pcl(p)) = qbar(pcl(p)) + xp(p) * cr(p)%qnet; end do
-      qcell = sum(inp%dec%frac * qbar)            ! residual of the E_F search: the Madelung sum needs neutral charges
+      qcell = sum(sfrac * qbar)            ! residual of the E_F search: the Madelung sum needs neutral charges
       ! SRO: potential of the charge deviations from the drive u (screen_update).  u_out = dq + (I - Gamma) u_in is the bare
       ! charge deviation of the model, dq + v_in / a, if the input potential holds the SRO potential v_in = W u_in.  A start
       ! without u (free atoms, a potential of a run without SRO) holds none, so u starts at zero.  The first SRO potential is
@@ -1183,9 +1200,13 @@ contains
         call epi_pair_list_c(sgr(kp)%cg%disp, sgr(kp)%perm, sgr(kp)%rot, cl0, inp%epi_shells, prs, emsg)
         if (len(emsg) > 0) error stop emsg
         if (size(prs) == 0) cycle
-        allocate (rvs(3, size(prs)), gr(size(prs)), wr(size(prs)))
-        do ip = 1, size(prs); rvs(:, ip) = 0.5_dp * inp%alat * real(prs(ip)%vec, dp); end do
-        call screen_shells(trim(inp%lattice), inp%alat, res%screen, rvs, gr, wr)
+        allocate (rvs(3, size(prs)), gr(size(prs)), wr(size(prs)), pidx(size(prs)))
+        do ip = 1, size(prs)
+          rvs(:, ip) = inp%alat * prs(ip)%rvec
+          pidx(ip) = sgr(kp)%cg%basis(prs(ip)%site)
+        end do
+        call screen_structure_shells(st, inp%alat, res%screen, rvs, gr, wr, b0=sgr(kp)%cg%b0, b2=pidx)
+        deallocate (pidx)
         do ip = 1, size(prs)
           k2 = prs(ip)%cls2; jsite = prs(ip)%site
           n1 = inp%nsc(kp); n2 = inp%nsc(k2)
@@ -1230,7 +1251,8 @@ contains
           tab = [tab, epi_table_t()]
           associate (t => tab(ntab))
             t%kap = kp; t%kap2 = k2; t%shell = prs(ip)%shell; t%mult = prs(ip)%mult; t%nop = size(pidx); t%nodes = pop%nn
-            t%vec = prs(ip)%vec; t%orbit = prs(ip)%orbit; t%dist = norm2(rvs(:, ip)); t%wr = wr(ip); t%tail = tailmax
+            t%vec = prs(ip)%vec; t%orbit = prs(ip)%orbit; t%rvec = prs(ip)%rvec; t%rorbit = prs(ip)%rorbit
+            t%dist = norm2(rvs(:, ip)); t%wr = wr(ip); t%tail = tailmax
             allocate (t%uband(n1, n2), t%ues(n1, n2)); t%uband = 0.0_dp; t%ues = 0.0_dp
             do c = 2, n1
               do il = 1, nlam
@@ -1256,9 +1278,17 @@ contains
             end do
             if (inp%epi_sym .and. kp == k2) call epi_mirror(t%uband)
             if (vb) then
-              print '(a,i0,a,i0,a,i0,a,3i3,a,f8.4,a,i0,a,i0,a,i0,a,i0,a,es9.2)', '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, &
-                '  vector (a/2)', t%vec, '  R=', t%dist, ' Bohr  sites ', t%mult, '  group order ', t%nop, '  nodes ', t%nodes, &
-                '  energies per block ', max(1, min(nbe, nq)), '  X1 mismatch ', t%tail
+              if (maxval(abs(2.0_dp * t%rvec - real(t%vec, dp))) < 1.0e-6_dp) then
+                print '(a,i0,a,i0,a,i0,a,3i3,a,f8.4,a,i0,a,i0,a,i0,a,i0,a,es9.2)', &
+                  '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, '  vector (a/2)', t%vec, '  R=', t%dist, &
+                  ' Bohr  sites ', t%mult, '  group order ', t%nop, '  nodes ', t%nodes, &
+                  '  energies per block ', max(1, min(nbe, nq)), '  X1 mismatch ', t%tail
+              else
+                print '(a,i0,a,i0,a,i0,a,3f7.3,a,f8.4,a,i0,a,i0,a,i0,a,i0,a,es9.2)', &
+                  '  pair: sublattices ', kp, ' - ', k2, '  shell ', t%shell, '  vector (a)', t%rvec, '  R=', t%dist, &
+                  ' Bohr  sites ', t%mult, '  group order ', t%nop, '  nodes ', t%nodes, &
+                  '  energies per block ', max(1, min(nbe, nq)), '  X1 mismatch ', t%tail
+              end if
               do c = 2, n1
                 print '(a,i0,a,*(f10.4))', '    U(', c, ', s) band (mRy), s = 2..:', 1.0e3_dp * t%uband(c, 2:n2)
                 print '(a,i0,a,*(f10.4))', '    U(', c, ', s) screened Coulomb (mRy):', 1.0e3_dp * t%ues(c, 2:n2)
@@ -1419,18 +1449,38 @@ contains
       end do; end do; end do; end do
     end subroutine weight_below
 
-    !> SRO: the first shell of the start site of the cluster of sublattice kp goes to the classes ncls + kappa'
+    !> SRO: the first shell of the start site of the cluster of sublattice kp goes to the classes ncls + kappa'.
+    !> If SRO is given for specific sublattice pairs (kp, k), the nearest shell of sublattice k around kp is selected; otherwise
+    !> the nearest shell of any sublattice around kp is selected.
     subroutine shell_classes(kp, cl)
       integer, intent(in) :: kp
       integer, intent(inout) :: cl(:)
-      integer :: i_
+      integer :: i_, k_
       real(dp) :: r2m
+      logical :: has_k(ncls)
       associate (dsp => sgr(kp)%cg%disp)
-        r2m = huge(1.0_dp)
-        do i_ = 2, size(dsp, 2); r2m = min(r2m, sum(dsp(:, i_)**2)); end do
-        do i_ = 2, size(dsp, 2)
-          if (sum(dsp(:, i_)**2) <= r2m + 1.0e-9_dp) cl(i_) = ncls + cl(i_)
+        do k_ = 1, ncls
+          has_k(k_) = any(abs(inp%sro_cond(1:inp%nsc(kp), 1:inp%nsc(k_), kp, k_) - &
+                              spread(inp%conc(1:inp%nsc(k_), k_), 1, inp%nsc(kp))) > 1.0e-12_dp)
         end do
+        if (any(has_k)) then
+          do k_ = 1, ncls
+            if (.not. has_k(k_)) cycle
+            r2m = huge(1.0_dp)
+            do i_ = 2, size(dsp, 2)
+              if (sgr(kp)%cls(i_) == k_) r2m = min(r2m, sum(dsp(:, i_)**2))
+            end do
+            do i_ = 2, size(dsp, 2)
+              if (sgr(kp)%cls(i_) == k_ .and. sum(dsp(:, i_)**2) <= r2m + 1.0e-9_dp) cl(i_) = ncls + k_
+            end do
+          end do
+        else
+          r2m = huge(1.0_dp)
+          do i_ = 2, size(dsp, 2); r2m = min(r2m, sum(dsp(:, i_)**2)); end do
+          do i_ = 2, size(dsp, 2)
+            if (sum(dsp(:, i_)**2) <= r2m + 1.0e-9_dp) cl(i_) = ncls + cl(i_)
+          end do
+        end if
       end associate
     end subroutine shell_classes
 
@@ -1455,56 +1505,68 @@ contains
     !> Bloch spectral function A(k, E) at the final potential (asr_spectral, route edc).  Per origin class: the operator reduced
     !> with D2h, the target sites within rmax and their nodes; per spin, component, start orbital and energy one projected chain
     !> (edc_green_proj).  The diagonal elements <G_{0L, RL}> are averaged over the centre species, symmetrised between the two
-    !> origins of each pair, and summed over R with the Bloch phases of the graph lattice.
+    !> origins of each pair, and summed over R with the Bloch phases of the structure.
     subroutine spectral_final()
       type(class_op_t), allocatable :: sop(:)
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
-      integer, allocatable :: clsb(:), clsr(:), gix(:), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
-      integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:), kop(:)
-      real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:), wwin(:)
+      integer, allocatable :: clsb(:), clsr(:), gix(:), keep(:), ntk(:), tsite(:, :), tmir(:, :), tbase(:, :), tcls(:, :)
+      integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:, :), kop(:), t0(:)
+      real(dp), allocatable :: tdisp(:, :, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:), wwin(:, :)
       complex(dp), allocatable :: zs(:), gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
       real(dp) :: rmax2, gmax, gmax0, a_, de, amax
-      integer :: ne, nst, nt, nsm, ks, cl_, t_, kp, pp_, gg, i, j, l_, ik, nkp, nsh, t0, nopd, it_
+      integer :: ne, nst, nt, ntmax, nsm, ks, cl_, t_, kp, k2, pp_, gg, i, j, l_, ik, nkp, nsh, nopd, it_
       real(dp), allocatable :: dsp(:, :, :)
       logical, allocatable :: mn_(:)
       if (ed3) error stop 'class_scf: the spectral function needs route = edc'
-      if (.not. spectral_translations_ok(inp%dec)) error stop &
-        'class_scf: spectral function: a sublattice holds sites that no translation relates (for example L1_2); not supported'
+      if (.not. spectral_structure_ok(st)) error stop &
+        'class_scf: spectral function: a sublattice holds sites that no translation or inversion relates (for example L1_2); not supported'
       nst = inp%spectral%nsteps; if (nst <= 0) nst = nlev
       ne = inp%spectral%ne; nsm = maxval(inp%nsc)
       call all_params()
-      ! ---- targets: cluster sites within rmax of the origin (the same displacements for every origin class), their mirror
-      ! images.  The clusters hold the ball of rmax (crystal_graph, rmin).
-      rmax2 = 4.0_dp * inp%spectral%rmax**2                ! half-lattice units
-      associate (cg1 => sgr(1)%cg)
-        allocate (keep(cg1%n)); nt = 0
-        do i = 1, cg1%n
-          if (4.0_dp * sum(cg1%disp(:, i)**2) <= rmax2 + 1.0e-9_dp) then; nt = nt + 1; keep(nt) = i; end if
-        end do
-        tsite = keep(1:nt)
-        tdisp = cg1%disp(:, tsite)
-      end associate
-      do kp = 2, ncls
-        if (sgr(kp)%cg%n < maxval(tsite)) error stop 'class_scf: spectral function: the clusters of the origin classes differ'
-        if (maxval(abs(sgr(kp)%cg%disp(:, tsite) - tdisp)) > 1.0e-12_dp) &
-          error stop 'class_scf: spectral function: the origin classes see different target displacements; not supported'
-      end do
-      allocate (tmir(nt))
-      t0 = 0
-      do t_ = 1, nt
-        if (tsite(t_) == 1) t0 = t_
-        tmir(t_) = 0
-        do j = 1, nt
-          if (all(abs(tdisp(:, j) + tdisp(:, t_)) < 1.0e-9_dp)) then; tmir(t_) = j; exit; end if
-        end do
-        if (tmir(t_) == 0) error stop 'class_scf: spectral targets are not symmetric under inversion'
-      end do
-      if (t0 == 0) error stop 'class_scf: the origin is not a spectral target'
-      res%spec_nt = nt; res%spec_maxhop = maxval(sgr(1)%dist(tsite)); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
-      ! ---- per origin class: D2h-reduced operator with the target nodes
-      allocate (sop(ncls), tnode(nsm, nt, ncls), tgop(nsm, nt, ncls), tbase(nt, ncls), tcls(nt, ncls), res%spec_nodes(ncls))
+      ! ---- targets per origin class: cluster sites within rmax of the origin, and their partner (-R) in the target class's
+      ! cluster.  The clusters hold the ball of rmax (crystal_graph, rmin).
+      rmax2 = 4.0_dp * inp%spectral%rmax**2
+      allocate (ntk(ncls), t0(ncls)); ntk = 0; t0 = 0
       do kp = 1, ncls
+        ntk(kp) = count([(4.0_dp * sum(sgr(kp)%cg%disp(:, i)**2) <= rmax2 + 1.0e-9_dp, i=1, sgr(kp)%cg%n)])
+      end do
+      ntmax = maxval(ntk)
+      allocate (tsite(ntmax, ncls), tdisp(3, ntmax, ncls), tmir(ntmax, ncls), tbase(ntmax, ncls), tcls(ntmax, ncls))
+      tsite = 1; tdisp = 0.0_dp; tmir = 0; tbase = 1; tcls = 1
+      res%spec_maxhop = 0
+      do kp = 1, ncls
+        associate (cgk => sgr(kp)%cg)
+          nt = 0
+          do i = 1, cgk%n
+            if (4.0_dp * sum(cgk%disp(:, i)**2) <= rmax2 + 1.0e-9_dp) then
+              nt = nt + 1; tsite(nt, kp) = i; tdisp(:, nt, kp) = cgk%disp(:, i)
+              if (i == 1) t0(kp) = nt
+              res%spec_maxhop = max(res%spec_maxhop, sgr(kp)%dist(i))
+            end if
+          end do
+          tbase(1:nt, kp) = sgr(kp)%cls(tsite(1:nt, kp))
+        end associate
+      end do
+      if (any(t0 == 0)) error stop 'class_scf: the origin is not a spectral target'
+      do kp = 1, ncls
+        do t_ = 1, ntk(kp)
+          k2 = tbase(t_, kp)
+          tmir(t_, kp) = 0
+          do j = 1, ntk(k2)
+            if (tbase(j, k2) == kp .and. all(abs(tdisp(:, j, k2) + tdisp(:, t_, kp)) < 1.0e-9_dp)) then
+              tmir(t_, kp) = j; exit
+            end if
+          end do
+          if (tmir(t_, kp) == 0) tmir(t_, kp) = t_
+        end do
+      end do
+      res%spec_nt = ntk(1); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
+      ! ---- per origin class: D2h-reduced operator with the target nodes
+      allocate (sop(ncls), tnode(nsm, ntmax, ncls), tgop(nsm, ntmax, ncls), res%spec_nodes(ncls))
+      tnode = 0; tgop = 1
+      do kp = 1, ncls
+        nt = ntk(kp)
         clsb = sgr(kp)%cls
         clsr = clsb; if (inp%sro) call shell_classes(kp, clsr)
         call class_group(kp, clsr, gix, dsp, mn_)
@@ -1518,9 +1580,9 @@ contains
         end do
         sop(kp)%d = dsp(:, :, kop(1:nopd))
         call build_augcls_operator(sgr(kp)%cg%g, mdl, clsr, sgr(kp)%perm(:, gix(kop(1:nopd))), sop(kp)%d, 1, ngen, sop(kp)%op, &
-                                   inp%maxrank, sgr(kp)%flip, tsite=tsite, tnode=tn_, tgop=tg_, stype=sgr(kp)%stype)
-        if (any(tn_(1, :) == 0)) error stop 'class_scf: a spectral target lies outside the node set (lower rmax or raise levels)'
-        tnode(:, :, kp) = tn_; tgop(:, :, kp) = tg_; tbase(:, kp) = clsb(tsite); tcls(:, kp) = clsr(tsite)
+                                   inp%maxrank, sgr(kp)%flip, tsite=tsite(1:nt, kp), tnode=tn_, tgop=tg_, stype=sgr(kp)%stype)
+        if (any(tn_(1, 1:nt) == 0)) error stop 'class_scf: a spectral target lies outside the node set (lower rmax or raise levels)'
+        tnode(:, 1:nt, kp) = tn_; tgop(:, 1:nt, kp) = tg_; tcls(1:nt, kp) = clsr(tsite(1:nt, kp))
         res%spec_nodes(kp) = sop(kp)%op%nn
         if (vb) print '(a,i0,a,i0,a,i0,a,i0)', '  spectral: origin class ', kp, ', D2h operations ', nopd, ', nodes ', &
           sop(kp)%op%nn, ', target sites ', nt
@@ -1528,20 +1590,20 @@ contains
       if (vb .and. res%spec_maxhop > res%spec_hoplim) print '(a,i0,a,i0,a)', '  WARNING: spectral targets reach ', &
         res%spec_maxhop, ' graph hops; the interior of the node set ends at ', res%spec_hoplim, ' (lower rmax or raise levels)'
       ! ---- species parameters per (component, spin) and the dressing weights of every target
-      allocate (ms(ncomp, nsp), es(ncomp, nsp), tw(9, nsm, nt, ncomp, nsp)); tw = 0.0_dp
+      allocate (ms(ncomp, nsp), es(ncomp, nsp), tw(9, nsm, ntmax, ncomp, nsp)); tw = 0.0_dp
       do gg = 1, nsp
         do pp_ = 1, ncomp
           call edc_setup(mdl, pps(:, gg), alpha, pp_, es(pp_, gg)); ms(pp_, gg) = mdl
           kp = pcl(pp_)
-          do t_ = 1, nt
+          do t_ = 1, ntk(kp)
             cl_ = tcls(t_, kp)
             if (cl_ <= ncls) then
               call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(cl_), cl_), &
-                                     inp%conc(1:inp%nsc(cl_), cl_), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+                                     inp%conc(1:inp%nsc(cl_), cl_), tsite(t_, kp) == 1, tw(:, :, t_, pp_, gg))
             else
               ks = cl_ - ncls
               call spectral_dressing(es(pp_, gg)%dc, es(pp_, gg)%del, mdl%spc(1:inp%nsc(ks), cl_), &
-                                     inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks), tsite(t_) == 1, tw(:, :, t_, pp_, gg))
+                                     inp%sro_cond(pk(pp_), 1:inp%nsc(ks), kp, ks), tsite(t_, kp) == 1, tw(:, :, t_, pp_, gg))
             end if
           end do
         end do
@@ -1552,7 +1614,7 @@ contains
         ee(j) = inp%spectral%emin + (inp%spectral%emax - inp%spectral%emin) * real(j - 1, dp) / real(max(ne - 1, 1), dp)
       end do
       zs = cmplx(ee, inp%spectral%eta, dp)
-      allocate (gdg(9, nt, ne, nsp, ncls), gdg4(9, nt, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
+      allocate (gdg(9, ntmax, ne, nsp, ncls), gdg4(9, ntmax, ne, nsp, ncls)); gdg = (0.0_dp, 0.0_dp); gdg4 = (0.0_dp, 0.0_dp)
       chain_vec_par = .false.                                 ! one thread per chain (asr_chain::chain_vec_par)
       !$omp parallel
       call spectral_worker(sop, ms, es, zs, nst, tnode, tgop, tw, gdg, gdg4)
@@ -1562,58 +1624,72 @@ contains
         call par_sum_z(gdg, size(gdg)); call par_sum_z(gdg4, size(gdg4))
       end if
       ! ---- diagnostics on the averaged elements
-      gmax = maxval(abs(gdg)); gmax0 = maxval(abs(gdg(:, t0, :, :, :)))
-      res%spec_rdef = 0.0_dp
+      gmax = maxval(abs(gdg))
+      gmax0 = 0.0_dp
+      do kp = 1, ncls; gmax0 = max(gmax0, maxval(abs(gdg(:, t0(kp), :, :, kp)))); end do
+      res%spec_rdef = 0.0_dp; res%spec_spread0 = 0.0_dp; res%spec_spread = 0.0_dp
       do kp = 1, ncls
-        do t_ = 1, nt
-          res%spec_rdef = max(res%spec_rdef, maxval(abs(gdg(:, t_, :, :, kp) - gdg(:, tmir(t_), :, :, tbase(t_, kp)))))
+        res%spec_spread0 = max(res%spec_spread0, maxval(abs(gdg(:, t0(kp), :, :, kp) - gdg4(:, t0(kp), :, :, kp))))
+        do t_ = 1, ntk(kp)
+          if (tmir(t_, kp) /= t_) then
+            res%spec_rdef = max(res%spec_rdef, maxval(abs(gdg(:, t_, :, :, kp) - gdg(:, tmir(t_, kp), :, :, tbase(t_, kp)))))
+          end if
+          if (t_ /= t0(kp)) res%spec_spread = max(res%spec_spread, maxval(abs(gdg(:, t_, :, :, kp) - gdg4(:, t_, :, :, kp))))
         end do
       end do
       res%spec_rdef = res%spec_rdef / max(gmax, tiny(1.0_dp))
-      res%spec_spread0 = maxval(abs(gdg(:, t0, :, :, :) - gdg4(:, t0, :, :, :))) / max(gmax0, tiny(1.0_dp))
-      res%spec_spread = 0.0_dp
-      do t_ = 1, nt
-        if (t_ /= t0) res%spec_spread = max(res%spec_spread, maxval(abs(gdg(:, t_, :, :, :) - gdg4(:, t_, :, :, :))))
-      end do
+      res%spec_spread0 = res%spec_spread0 / max(gmax0, tiny(1.0_dp))
       res%spec_spread = res%spec_spread / max(gmax, tiny(1.0_dp))
       ! ---- symmetrise: G(kappa; L, R) <- (G(kappa; L, R) + G(kappa'; L, -R)) / 2, kappa' the class of the target
       gdg4 = gdg
       do kp = 1, ncls
-        do t_ = 1, nt
-          gdg(:, t_, :, :, kp) = 0.5_dp * (gdg4(:, t_, :, :, kp) + gdg4(:, tmir(t_), :, :, tbase(t_, kp)))
+        do t_ = 1, ntk(kp)
+          if (tmir(t_, kp) /= t_) then
+            gdg(:, t_, :, :, kp) = 0.5_dp * (gdg4(:, t_, :, :, kp) + gdg4(:, tmir(t_, kp), :, :, tbase(t_, kp)))
+          end if
         end do
       end do
       ! shell decay of Im G relative to the on-site element
-      allocate (r2sh(nt), shell(nt)); nsh = 0
-      do t_ = 1, nt
-        a_ = sum(tdisp(:, t_)**2); shell(t_) = 0
-        do j = 1, nsh
-          if (abs(r2sh(j) - a_) < 1.0e-9_dp) then; shell(t_) = j; exit; end if
+      allocate (r2sh(ntmax * ncls), shell(ntmax, ncls)); nsh = 0; shell = 0
+      do kp = 1, ncls
+        do t_ = 1, ntk(kp)
+          a_ = sum(tdisp(:, t_, kp)**2)
+          do j = 1, nsh
+            if (abs(r2sh(j) - a_) < 1.0e-9_dp) then; shell(t_, kp) = j; exit; end if
+          end do
+          if (shell(t_, kp) == 0) then; nsh = nsh + 1; r2sh(nsh) = a_; shell(t_, kp) = nsh; end if
         end do
-        if (shell(t_) == 0) then; nsh = nsh + 1; r2sh(nsh) = a_; shell(t_) = nsh; end if
       end do
       allocate (res%spec_rsh(nsh), res%spec_decay(nsh)); res%spec_rsh = sqrt(r2sh(1:nsh)); res%spec_decay = 0.0_dp
-      gmax0 = maxval(abs(aimag(gdg(:, t0, :, :, :))))
-      do t_ = 1, nt
-        res%spec_decay(shell(t_)) = max(res%spec_decay(shell(t_)), maxval(abs(aimag(gdg(:, t_, :, :, :)))) / max(gmax0, tiny(1.0_dp)))
+      gmax0 = 0.0_dp
+      do kp = 1, ncls; gmax0 = max(gmax0, maxval(abs(aimag(gdg(:, t0(kp), :, :, kp))))); end do
+      do kp = 1, ncls
+        do t_ = 1, ntk(kp)
+          res%spec_decay(shell(t_, kp)) = max(res%spec_decay(shell(t_, kp)), &
+                                              maxval(abs(aimag(gdg(:, t_, :, :, kp)))) / max(gmax0, tiny(1.0_dp)))
+        end do
       end do
       ! ---- Bloch sums along the path
       call spectral_kpath(inp%spectral%kpts, inp%spectral%nk, res%spec_k, res%spec_dist, res%spec_icorner)
       nkp = size(res%spec_dist)
-      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(nt), wwin(nt))
-      do t_ = 1, nt; wwin(t_) = spectral_window(inp%spectral%window, norm2(tdisp(:, t_)), inp%spectral%rmax); end do
+      allocate (res%spec_e(ne), res%spec_a(ne, nkp, 0:2, nsp), res%spec_ac(ne, nkp, ncls, nsp), v(ntmax), wwin(ntmax, ncls))
+      wwin = 0.0_dp
+      do kp = 1, ncls
+        do t_ = 1, ntk(kp); wwin(t_, kp) = spectral_window(inp%spectral%window, norm2(tdisp(:, t_, kp)), inp%spectral%rmax); end do
+      end do
       res%spec_e = ee; res%spec_a = 0.0_dp; res%spec_ac = 0.0_dp
       do gg = 1, nsp
         do kp = 1, ncls
+          nt = ntk(kp)
           do j = 1, ne
             do l_ = 0, 2
-              v = 0.0_dp
+              v(1:nt) = 0.0_dp
               do it_ = 1, 9
-                if (lorb9(it_) == l_) v = v - aimag(gdg(it_, :, j, gg, kp)) / pi
+                if (lorb9(it_) == l_) v(1:nt) = v(1:nt) - aimag(gdg(it_, 1:nt, j, gg, kp)) / pi
               end do
-              v = v * wwin
+              v(1:nt) = v(1:nt) * wwin(1:nt, kp)
               do ik = 1, nkp
-                a_ = inp%dec%frac(kp) * spectral_unfold(tdisp, v, res%spec_k(:, ik))
+                a_ = sfrac(kp) * spectral_unfold(tdisp(:, 1:nt, kp), v(1:nt), res%spec_k(:, ik))
                 res%spec_a(j, ik, l_, gg) = res%spec_a(j, ik, l_, gg) + a_
                 res%spec_ac(j, ik, kp, gg) = res%spec_ac(j, ik, kp, gg) + a_
               end do
@@ -1621,7 +1697,7 @@ contains
           end do
         end do
       end do
-      if (ncls == 1 .and. inp%nsc(1) == 1) call ordered_bands(ms, es)
+      if (ncls == 1 .and. inp%nsc(1) == 1 .and. maxval(sgr(1)%stype) == 1) call ordered_bands(ms, es)
       amax = maxval(sum(res%spec_a, dim=3))
       res%spec_nneg = count(sum(res%spec_a, dim=3) < -1.0e-9_dp * amax)
       res%spec_amin = minval(sum(res%spec_a, dim=3)) / max(amax, tiny(1.0_dp))

@@ -29,11 +29,14 @@
 !> so the BZ average (the on-site DOS) and the energy integral at each k are unchanged.  As rmax grows, w -> 1 and A -> the exact A.
 module asr_spectral
   use asr_kinds, only: dp, pi
-  use asr_sublattice, only: decoration_t
+  use asr_crystal, only: structure_t
+  use asr_crystal_symmetry, only: symop_t, space_group
+  use asr_sublattice, only: decoration_t, decoration_structure
   use asr_augcls, only: augn_basis
   implicit none
   private
-  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_unfold, spectral_dressing, spectral_window
+  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_structure_ok, spectral_unfold, spectral_dressing, &
+            spectral_window
 
   type :: spectral_input_t
     logical :: on = .false.
@@ -72,28 +75,69 @@ contains
     end do
   end subroutine spectral_kpath
 
+  !> .true. if every sublattice of the structure s is a single space-group orbit under the space group of s (with labels) AND all
+  !> basis sites of a sublattice share one reduction group / start site geometry so that the chain from one representative basis
+  !> site of each sublattice equals the sublattice average.  For a cubic decoration (every basis site has the same cubic geometry),
+  !> the reduction group is fixed to the z-axis D4h / D2h, so sites in a sublattice must be related by a translation of the
+  !> structure (or by a space-group operation whose rotation is in D2h, such as inversion in hcp and NiAs).
+  logical function spectral_structure_ok(s) result(ok)
+    type(structure_t), intent(in) :: s
+    type(symop_t), allocatable :: ops(:)
+    integer :: kap, b0, b, g
+    logical :: hit, d2h_rot
+    call space_group(s, ops)
+    ok = .true.
+    do kap = 1, s%nlabel
+      b0 = findloc(s%label, kap, 1)
+      if (b0 == 0) cycle
+      do b = 1, s%nb
+        if (s%label(b) /= kap) cycle
+        hit = .false.
+        do g = 1, size(ops)
+          if (ops(g)%perm(b0) /= b) cycle
+          ! A space-group operation mapping b0 to b keeps the real-orbital trace Tr_l[-Im G(0, R)] invariant with the same
+          ! Cartesian displacement d = R_target - R_origin when its point rotation is +/- I (pure translation or inversion)
+          d2h_rot = maxval(abs(ops(g)%rot - eye3())) < 1.0e-7_dp .or. maxval(abs(ops(g)%rot + eye3())) < 1.0e-7_dp
+          if (d2h_rot) then; hit = .true.; exit; end if
+        end do
+        if (.not. hit) then; ok = .false.; return; end if
+      end do
+    end do
+  contains
+    pure function eye3() result(e)
+      real(dp) :: e(3, 3)
+      integer :: i
+      e = 0.0_dp; do i = 1, 3; e(i, i) = 1.0_dp; end do
+    end function eye3
+  end function spectral_structure_ok
+
   !> .true. if every class of the decoration is one lattice of the translations that keep the decoration: then the Bloch sum
-  !> from one origin per class is the class average (asr_spectral header).  Translations: graph vectors v between two sites of
-  !> the cell with tab(h + v) = tab(h) for every site h of the cell.  Each class must hold as many sites per cell as there are
-  !> such translations.
+  !> from one origin per class is the class average (asr_spectral header).
   logical function spectral_translations_ok(dec) result(ok)
     type(decoration_t), intent(in) :: dec
+    type(structure_t) :: s
+    character(len=:), allocatable :: msg
     integer :: i, j, nt, v(3), h(3), m
     logical :: keep
-    m = dec%m; nt = 0
-    do i = 1, size(dec%pcls)
-      v = dec%pts(:, i) - dec%pts(:, 1)
-      keep = .true.
-      do j = 1, size(dec%pcls)
-        h = modulo(dec%pts(:, j) + v, m)
-        if (dec%tab(h(1), h(2), h(3)) /= dec%pcls(j)) then; keep = .false.; exit; end if
+    if (allocated(dec%tab)) then
+      m = dec%m; nt = 0
+      do i = 1, size(dec%pcls)
+        v = dec%pts(:, i) - dec%pts(:, 1)
+        keep = .true.
+        do j = 1, size(dec%pcls)
+          h = modulo(dec%pts(:, j) + v, m)
+          if (dec%tab(h(1), h(2), h(3)) /= dec%pcls(j)) then; keep = .false.; exit; end if
+        end do
+        if (keep) nt = nt + 1
       end do
-      if (keep) nt = nt + 1
-    end do
-    ok = .true.
-    do i = 1, dec%ncls
-      if (count(dec%pcls == i) /= nt) ok = .false.
-    end do
+      ok = .true.
+      do i = 1, dec%ncls
+        if (count(dec%pcls == i) /= nt) ok = .false.
+      end do
+    else
+      call decoration_structure(dec, s, msg)
+      ok = spectral_structure_ok(s)
+    end if
   end function spectral_translations_ok
 
   !> weight of a displacement of length r (units alat) in the Fourier sum: 'ball' (module header) or 'sharp'

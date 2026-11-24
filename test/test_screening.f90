@@ -176,6 +176,51 @@ program test_screening
   call screen_project(x, [1, 1, 1], u3)
   call screen_update(g3, w3, x, [1, 1, 1], [0.0_dp, 0.0_dp, 0.0_dp], u3, uo3, v3)
   call check(maxval(abs(v3)) > 2.0_dp, 'old start u = Gamma^+ dq: the first charges stay in the potential (> 2 Ry at dq = 0)')
+
+  ! ---- basis-resolved screening on general structures (hcp, NiAs, intra-sublattice SRO)
+  block
+    use asr_crystal, only: structure_t
+    use asr_prototypes, only: prototype_structure
+    type(structure_t) :: st
+    type(screen_t) :: sb, shcp, sn1, sn2
+    complex(dp) :: mb1(1, 1, 1)
+    real(dp) :: rvs(3, 2), grs(2), wrs(2)
+    p = reshape([-1, 1, 1, 1, -1, 1, 1, 1, -1], [3, 3]) * 0.5_dp * alat
+    kv(:, 1) = [0.37_dp, -0.21_dp, 0.53_dp]
+    call coulomb_k(p, kv, m)
+    call coulomb_k_basis(p, reshape([0.0_dp, 0.0_dp, 0.0_dp], [3, 1]), kv, mb1)
+    call check_close(real(mb1(1, 1, 1), dp), m(1), 1.0e-12_dp, 'coulomb_k_basis matches coulomb_k on a one-site lattice')
+    call check_close(aimag(mb1(1, 1, 1)), 0.0_dp, 1.0e-14_dp, 'coulomb_k_basis diagonal is real')
+
+    call prototype_structure('b2', st, msg)
+    call screen_structure(st, alat, 1.0_dp, sb, msg)
+    call screen_lattice('bcc', alat, 1.0_dp, s2, msg)
+    call check_close(abs(sb%a - s2%a) + abs(sb%g00 - s2%g00) + abs(sb%g1 - s2%g1), 0.0_dp, 1.0e-14_dp, &
+                     'screen_structure on B2 delegates to bcc screen_lattice')
+
+    call prototype_structure('hcp', st, msg)
+    call screen_structure(st, alat, 1.0_dp, shcp, msg, nk=12)
+    call check(len(msg) == 0 .and. shcp%z == 12 .and. abs(shcp%r1 - alat) < 1.0e-10_dp, 'hcp ideal: z = 12, R1 = a')
+    call check_close(-shcp%w00 * shcp%r1 / (2.0_dp * shcp%g00), 1.0_dp, 1.0e-10_dp, 'hcp: beta round trip')
+    call check_close(shcp%w00, shcp%a * (1.0_dp - shcp%g00), 1.0e-12_dp, 'hcp: W00 = a (1 - G00)')
+    call check_positive_decreasing(shcp, 'hcp beta 1.0')
+
+    call prototype_structure('nias', st, msg, c_over_a=1.6_dp)
+    call screen_structure(st, alat, 1.0_dp, sn1, msg, nk=10, sub_sro=2)
+    call check(len(msg) == 0 .and. sn1%z == 6, 'NiAs c/a 1.6 anion SRO shell: z = 6 out of plane')
+    call check_close(sn1%r1, alat * sqrt(1.0_dp / 3.0_dp + 0.4_dp**2), 1.0e-10_dp, 'NiAs: R1_nn is the cation-anion bond')
+    call check_close(-sn1%w00 * sn1%r1 / (2.0_dp * sn1%g00), 1.0_dp, 1.0e-10_dp, 'NiAs anion: beta round trip')
+    call check_positive_decreasing(sn1, 'nias anion beta 1.0')
+
+    call prototype_structure('nias', st, msg, c_over_a=1.7_dp)
+    call screen_structure(st, alat, 1.0_dp, sn2, msg, nk=10, sub_sro=2)
+    call check(len(msg) == 0 .and. sn2%z == 6, 'NiAs c/a 1.7 anion SRO shell: z = 6 in plane')
+    rvs(:, 1) = 0.0_dp; rvs(:, 2) = [alat, 0.0_dp, 0.0_dp]
+    call screen_structure_shells(st, alat, sn2, rvs, grs, wrs, b0=3, b2=[3, 3], nk=10)
+    call check_close(grs(1), sn2%g00, 1.0e-12_dp, 'NiAs screen_structure_shells: G(0) = G00 on anion sublattice')
+    call check_close(grs(2), sn2%g1, 1.0e-12_dp, 'NiAs screen_structure_shells: G(R1_anion) = G1')
+    call check_close(wrs(2), sn2%w1, 1.0e-12_dp, 'NiAs screen_structure_shells: W(R1_anion) = W1')
+  end block
   call report()
 
 contains

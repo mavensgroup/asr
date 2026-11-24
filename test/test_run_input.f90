@@ -164,6 +164,45 @@ program test_run_input
   call read_run_input(f, inp, msg)
   call check(index(msg, 'method = "asr"') > 0, '[[sro]] with method = kspace rejected')
 
+  ! hexagonal prototypes (hcp, nias) and explicit vectors with [[sublattice]]
+  call put('[structure]'//nl//'lattice = "hcp"'//nl//'alat = 2.51'//nl//fe//co// &
+           '[[sublattice]]'//nl//'name = "hcp"'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.5, 0.5]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%ci%st%nb == 2 .and. inp%ci%st%nlabel == 1 .and. &
+             abs(inp%ci%st%avec(3, 3) - sqrt(8.0_dp / 3.0_dp)) < 1.0e-12_dp, &
+             'hcp prototype with default c_over_a and omitted positions accepted')
+  call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//co//fe// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co"]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Fe"]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'c_over_a') > 0, 'nias prototype without c_over_a rejected')
+  call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c_over_a = 1.62'//nl//co//fe//al// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co"]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Fe", "Al"]'//nl//'concentrations = [0.6, 0.4]'//nl// &
+           '[[sro]]'//nl//'sublattices = ["an", "an"]'//nl//'pairs = [["Fe", "Al", -0.15]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%ci%st%nb == 4 .and. inp%ci%st%nlabel == 2 .and. inp%ci%sro, &
+             'nias prototype with anion disorder and intra-sublattice [[sro]] accepted')
+  call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c = 6.7068'//nl//co//al// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'positions = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5]]'//nl//'species = ["Co"]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'positions = [[0.333333333333, 0.666666666667, 0.25], '// &
+           '[0.666666666667, 0.333333333333, 0.75]]'//nl//'species = ["Al"]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%ci%st%nb == 4 .and. inp%ci%st%nlabel == 2, &
+             'nias prototype with explicit c and fractional positions accepted')
+  call put(kspace//'[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c_over_a = 1.62'//nl//co//al// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co"]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Al"]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%li%lattice == 'cell' .and. size(inp%li%site_sp) == 4 .and. size(inp%li%species) == 2, &
+             'ordered nias with method = kspace builds four-atom primitive cell')
+  call put('[structure]'//nl//'lattice = "cell"'//nl//'alat = 2.51'//nl// &
+           'vectors = [[1.0, 0.0, 0.0], [-0.5, 0.8660254037844386, 0.0], [0.0, 0.0, 1.6]]'//nl//fe// &
+           '[[sublattice]]'//nl//'name = "hex"'//nl//'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Fe"]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(len(msg) == 0 .and. inp%ci%st%nb == 1 .and. inp%ci%st%nlabel == 1, &
+             'explicit vectors with [[sublattice]] accepted for method = asr')
+
   ! every shipped example is a valid input (the spectral one lives in test/data, not shipped) (fpm test runs from the project root)
   call example('example/feco_b2_asr.toml', 'asr'); call example('example/cuzn_b2.toml', 'asr')
   call example('example/cuzn_alloy.toml', 'asr'); call example('example/co2fe04cr06al_l21.toml', 'asr')

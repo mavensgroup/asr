@@ -118,6 +118,7 @@ module asr_report
   type :: rep_epi_pair_t
     character(len=8) :: sub1 = '', sub2 = ''
     integer :: shell = 0, mult = 0, nop = 0, nodes = 0, vec(3) = 0   !! vec: partner - origin, units of alat / 2
+    real(dp) :: rvec(3) = 0.0_dp                                     !! rvec: partner - origin, units of alat (Cartesian)
     real(dp) :: dist = 0.0_dp, wr = 0.0_dp, tail = 0.0_dp            !! Bohr; W(R) Ry/e^2; X1 mismatch of the two chains
     character(len=8), allocatable :: spec1(:), spec2(:)
     real(dp), allocatable :: uband(:, :), ues(:, :)                  !! Ry
@@ -1702,8 +1703,13 @@ contains
         n1 = size(t%uband, 1); n2 = size(t%uband, 2)
         ut = t%uband + t%ues
         call wline(u, '')
-        write (line, '(a,a,a,a,a,i0,a,3i3,a,f9.5,a)') ' pair ', trim(t%sub1), ' - ', trim(t%sub2), '   shell ', t%shell, &
-          '   vector (a/2)', t%vec, '   R = ', t%dist, ' Bohr'
+        if (maxval(abs(2.0_dp * t%rvec - real(t%vec, dp))) < 1.0e-6_dp) then
+          write (line, '(a,a,a,a,a,i0,a,3i3,a,f9.5,a)') ' pair ', trim(t%sub1), ' - ', trim(t%sub2), '   shell ', t%shell, &
+            '   vector (a/2)', t%vec, '   R = ', t%dist, ' Bohr'
+        else
+          write (line, '(a,a,a,a,a,i0,a,3f7.3,a,f9.5,a)') ' pair ', trim(t%sub1), ' - ', trim(t%sub2), '   shell ', t%shell, &
+            '   vector (a)', t%rvec, '   R = ', t%dist, ' Bohr'
+        end if
         call wline(u, line)
         write (line, '(a,i0,a,i0,a,i0,a,a,a,a,a)') '   sites ', t%mult, '   group order ', t%nop, '   nodes ', t%nodes, &
           '   X1 mismatch ', trim(esf(t%tail, 1)), '   W(R) ', trim(ftoa(t%wr, 5)), ' Ry/e^2'
@@ -1773,8 +1779,13 @@ contains
         associate (t => e%pair(i))
           write (u, '(a)') '      {'
           write (u, '(a,a,a,a,a)') '        "sublattices": ["', trim(json_escape(t%sub1)), '", "', trim(json_escape(t%sub2)), '"],'
-          write (u, '(a,i0,a,i0,a,i0,a,i0,a)') '        "shell": ', t%shell, ', "vector_half_alat": [', t%vec(1), ', ', &
-            t%vec(2), ', ', t%vec(3), '],'
+          if (maxval(abs(2.0_dp * t%rvec - real(t%vec, dp))) < 1.0e-6_dp) then
+            write (u, '(a,i0,a,i0,a,i0,a,i0,a)') '        "shell": ', t%shell, ', "vector_half_alat": [', t%vec(1), ', ', &
+              t%vec(2), ', ', t%vec(3), '],'
+          else
+            write (u, '(a,i0,a,es24.16,a,es24.16,a,es24.16,a)') '        "shell": ', t%shell, ', "vector_alat": [', &
+              t%rvec(1), ', ', t%rvec(2), ', ', t%rvec(3), '],'
+          end if
           write (u, '(a,es24.16,a,i0,a)') '        "distance_bohr": ', t%dist, ', "multiplicity": ', t%mult, ','
           write (u, '(a,i0,a,i0,a)') '        "group_order": ', t%nop, ', "nodes": ', t%nodes, ','
           write (u, '(a,es24.16,a,es24.16,a)') '        "x1_mismatch": ', t%tail, ', "kernel_ry": ', t%wr, ','

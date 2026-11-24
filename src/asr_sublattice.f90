@@ -10,7 +10,7 @@ module asr_sublattice
   use asr_crystal, only: structure_t, structure_init
   implicit none
   private
-  public :: decoration_t, decoration_build, decoration_classes, decoration_madelung, decoration_structure
+  public :: decoration_t, decoration_build, decoration_classes, decoration_madelung, decoration_structure, structure_madelung
 
   type :: decoration_t
     character(len=8) :: lattice = 'bcc'
@@ -115,27 +115,36 @@ contains
     call structure_init(s, avec, real(dec%pts, dp) / real(dec%m, dp), dec%pcls, msg)
   end subroutine decoration_structure
 
-  !> Madelung shifts per class (Ry) of the class-average net charges qbar(class):  V_k = sum_k' phi(k, k') qbar(k'),
-  !> phi(k, k') = 2 <sum_{j in k'} Phi(i, j)>_{i in k}  over the sites of the decoration cell (Ewald, asr_ewald; alat = graph
-  !> lattice constant, Bohr).  The average over i is exact when a class is one Wyckoff orbit.  Charges must be neutral per cell.
+  !> Madelung shifts per sublattice (Ry) of the sublattice-average net charges qbar(sublattice) on a crystal structure s:
+  !> V_k = sum_k' phi(k, k') qbar(k'), phi(k, k') = 2 <sum_{j in k'} Phi(i, j)>_{i in k} over the basis sites of s (Ewald,
+  !> asr_ewald; alat in Bohr).  Charges must be neutral per cell.
+  subroutine structure_madelung(s, alat, phi)
+    type(structure_t), intent(in) :: s
+    real(dp), intent(in) :: alat
+    real(dp), allocatable, intent(out) :: phi(:, :)
+    real(dp), allocatable :: ph(:, :)
+    integer :: k, i, j, nk
+    allocate (ph(s%nb, s%nb), phi(s%nlabel, s%nlabel)); phi = 0.0_dp
+    call madelung_phi(s%avec, s%tau, alat, ph)
+    do i = 1, s%nb
+      do j = 1, s%nb
+        phi(s%label(i), s%label(j)) = phi(s%label(i), s%label(j)) + 2.0_dp * ph(i, j)
+      end do
+    end do
+    do k = 1, s%nlabel
+      nk = count(s%label == k)
+      if (nk > 0) phi(k, :) = phi(k, :) / real(nk, dp)
+    end do
+  end subroutine structure_madelung
+
+  !> Madelung shifts per class (Ry) of the class-average net charges qbar(class) on a decoration cell.
   subroutine decoration_madelung(dec, alat, phi)
     type(decoration_t), intent(in) :: dec
     real(dp), intent(in) :: alat
     real(dp), allocatable, intent(out) :: phi(:, :)
-    real(dp), allocatable :: tau(:, :), ph(:, :)
-    real(dp) :: avec(3, 3)
-    integer :: k, i, j
-    allocate (tau(3, dec%nsite), ph(dec%nsite, dec%nsite), phi(dec%ncls, dec%ncls)); phi = 0.0_dp
-    tau = 0.5_dp * real(dec%pts, dp)
-    avec = 0.0_dp; do k = 1, 3; avec(k, k) = real(dec%period, dp); end do
-    call madelung_phi(avec, tau, alat, ph)
-    do i = 1, dec%nsite
-      do j = 1, dec%nsite
-        phi(dec%pcls(i), dec%pcls(j)) = phi(dec%pcls(i), dec%pcls(j)) + 2.0_dp * ph(i, j)
-      end do
-    end do
-    do k = 1, dec%ncls
-      phi(k, :) = phi(k, :) / (dec%frac(k) * dec%nsite)
-    end do
+    type(structure_t) :: s
+    character(len=:), allocatable :: msg
+    call decoration_structure(dec, s, msg)
+    call structure_madelung(s, alat, phi)
   end subroutine decoration_madelung
 end module asr_sublattice

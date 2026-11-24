@@ -134,6 +134,54 @@ contains
     call epi_pair_list(c3, 6, cl3, 2, pairs, msg)
     call check(size(pairs) == 2, 'B2: two pair types in two shells')
     if (size(pairs) == 2) call check(all(pairs%cls2 == [2, 1]), 'B2: first shell on the other sublattice, second on the own')
+
+    ! hcp and NiAs clusters via epi_pair_list_c and epi_pair_ops_c
+    block
+      use asr_crystal, only: structure_t
+      use asr_prototypes, only: prototype_structure
+      use asr_crystal_symmetry, only: symop_t, space_group, orbital_matrix
+      use asr_crystal_graph, only: crystal_graph_t, crystal_graph, graph_site_ops
+      type(structure_t) :: st
+      type(symop_t), allocatable :: ops(:)
+      type(crystal_graph_t) :: cg
+      integer, allocatable :: clc(:), pidx(:), perm_c(:, :), sidx(:)
+      real(dp), allocatable :: rot_c(:, :, :), pd(:, :, :), ch(:, :)
+      call prototype_structure('hcp', st, msg)
+      call space_group(st, ops)
+      call crystal_graph(st, ops, 1.1_dp, 2, cg, msg, start=1)
+      call graph_site_ops(cg, st, ops, perm_c, rot_c, sidx)
+      allocate (clc(cg%n)); clc = st%label(cg%basis)
+      call epi_pair_list_c(cg%disp, perm_c, rot_c, clc, 1, pairs, msg)
+      call check(len(msg) == 0 .and. size(pairs) == 2, 'hcp ideal first shell: two symmetry-distinct pair types (in and out of plane)')
+      if (size(pairs) == 2) then
+        call check(all(pairs%mult == [6, 6]) .and. maxval(abs([norm2(pairs(1)%rvec), norm2(pairs(2)%rvec)] - 1.0_dp)) < 1.0e-10_dp, &
+                   'hcp ideal first shell: 6 + 6 sites at distance a')
+      end if
+      deallocate (clc)
+      call prototype_structure('nias', st, msg, c_over_a=1.62_dp)
+      call space_group(st, ops)
+      call crystal_graph(st, ops, 1.1_dp, 2, cg, msg, start=3)
+      call graph_site_ops(cg, st, ops, perm_c, rot_c, sidx)
+      allocate (clc(cg%n)); clc = st%label(cg%basis)
+      call epi_pair_list_c(cg%disp, perm_c, rot_c, clc, 3, pairs, msg)
+      call check(len(msg) == 0 .and. size(pairs) == 3, 'NiAs anion origin: three pair types in the first three shells')
+      if (size(pairs) == 3) then
+        call check(all(pairs%cls2 == [1, 2, 2]) .and. all(pairs%mult == [6, 6, 6]), &
+                   'NiAs anion shells: 6 cations, 6 out-of-plane anions, 6 in-plane anions')
+        call check_close(norm2(pairs(2)%rvec), sqrt(1.0_dp / 3.0_dp + (0.5_dp * 1.62_dp)**2), 1.0e-10_dp, &
+                         'NiAs second shell from anion: out-of-plane anion vector length')
+        call check_close(norm2(pairs(3)%rvec), 1.0_dp, 1.0e-10_dp, &
+                         'NiAs third shell from anion: in-plane anion vector length a')
+        clc(pairs(2)%site) = 3
+        call epi_pair_ops_c(perm_c, rot_c, clc, pidx)
+        allocate (pd(9, 9, size(pidx)), ch(size(pidx), 9))
+        do k = 1, size(pidx); call orbital_matrix(rot_c(:, :, pidx(k)), pd(:, :, k)); end do
+        call epi_adapted(pd, vec, ch, lo)
+        e9 = matmul(transpose(vec), vec)
+        do a = 1, 9; e9(a, a) = e9(a, a) - 1.0_dp; end do
+        call check_close(maxval(abs(e9)), 0.0_dp, 1.0e-13_dp, 'NiAs anion pair group: adapted start vectors orthonormal')
+      end if
+    end block
   end subroutine part_groups
 
   ! ---------------------------------------------------------------- dense unscaled H^(2)

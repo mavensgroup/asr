@@ -8,7 +8,7 @@
 !> charge.  Run with REF=print as the first argument to print the numbers instead.
 program test_cluster_scf
   use asr_kinds, only: dp
-  use asr_driver, only: run_input_t, read_run_input, class_species
+  use asr_driver, only: run_input_t, read_run_input, class_species, run_input
   use asr_class_scf, only: class_scf, class_scf_result_t
   use asr_testing
   implicit none
@@ -66,8 +66,63 @@ program test_cluster_scf
   call run_case('B2 CuZn ed3', cuzn, [652, 652], -1.6865670580707279e-01_dp, -3.4397395544299511e+03_dp, &
                 [0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp], &
                 [2.0783556868894948e-01_dp, -1.8163836123302701e-01_dp, -2.2353607061289793e-01_dp, 1.5084347073269555e-01_dp])
+  if (.not. prt) call run_nias_pipeline()
   call report()
 contains
+
+  subroutine run_nias_pipeline()
+    character(len=*), parameter :: fn = 'build/test_nias_scf_tmp.toml'
+    character(len=*), parameter :: nias_txt = &
+      '[calculation]'//nl//'name = "NiAs pipeline test"'//nl// &
+      '[structure]'//nl//'lattice = "nias"'//nl//'alat = 3.90'//nl//'c_over_a = 1.62'//nl// &
+      sp_co//sp_cu//sp_zn// &
+      '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co"]'//nl// &
+      '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Cu", "Zn"]'//nl//'concentrations = [0.6, 0.4]'//nl// &
+      '[[sro]]'//nl//'sublattices = ["an", "an"]'//nl//'pairs = [["Cu", "Zn", -0.15]]'//nl// &
+      '[scf]'//nl//'spin = 1'//nl//'xc = "vbh"'//nl//'mixing = 0.2'//nl//'max_iterations = 1'//nl//'tolerance = 1.0e3'//nl// &
+      '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 6'//nl//'contour_points = 8'//nl//'fermi_kt = 0.008'//nl// &
+      'cluster_radius = 1.05'//nl// &
+      '[spectral]'//nl//'kpath = [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]'//nl//'labels = ["G", "M"]'//nl// &
+      'nk = 2'//nl//'npoints = 5'//nl//'rmax = 1.1'//nl//'file = "test_nias_spec.dat"'//nl// &
+      '[epi]'//nl//'shells = 2'//nl//'lambda_points = 1'//nl//'file = "test_nias_epi.toml"'//nl// &
+      '[dos]'//nl//'npoints = 3'//nl// &
+      '[output]'//nl//'dos_file = "test_nias_dos.dat"'//nl//'out_file = "test_nias.out"'//nl
+    type(run_input_t) :: inp
+    type(class_scf_result_t) :: r
+    character(len=:), allocatable :: msg
+    character(len=256) :: line
+    integer :: u, ios
+    logical :: ok, all_le_90, has_vec_a
+    open (newunit=u, file=fn, status='replace'); write (u, '(a)') nias_txt; close (u)
+    call read_run_input(fn, inp, msg)
+    call check(len(msg) == 0, 'NiAs pipeline: input accepted')
+    if (len(msg) > 0) then; print '(2x,a)', msg; return; end if
+    call run_input(inp, ok, r)
+    call check(r%ncomp == 3 .and. size(r%nodes) == 2, 'NiAs pipeline: 3 components, 2 sublattices')
+    call check(r%screen%z == 6, 'NiAs pipeline: intra-sublattice anion SRO uses z = 6 shell')
+    call check(allocated(r%spec_a) .and. all(r%spec_a >= 0.0_dp), 'NiAs pipeline: ball-window spectral function non-negative')
+    call check(allocated(r%epi) .and. size(r%epi) == 1, 'NiAs pipeline: one anion-anion EPI pair type in first two shells')
+    if (allocated(r%epi) .and. size(r%epi) == 1) then
+      call check(r%epi(1)%kap == 2 .and. r%epi(1)%kap2 == 2 .and. r%epi(1)%mult == 6 .and. abs(r%epi(1)%uband(2, 2)) > 1.0e-6_dp, &
+                 'NiAs pipeline: non-zero anion-anion EPI on shell 2 (6 sites)')
+    end if
+    open (newunit=u, file='build/test_nias.out', status='old', action='read', iostat=ios)
+    all_le_90 = (ios == 0)
+    do while (ios == 0)
+      read (u, '(a)', iostat=ios) line
+      if (ios == 0 .and. len_trim(line) > 90) all_le_90 = .false.
+    end do
+    if (all_le_90 .or. ios /= 0) close (u)
+    call check(all_le_90, 'NiAs pipeline: all lines of report <= 90 columns')
+    open (newunit=u, file='build/test_nias_epi.toml', status='old', action='read', iostat=ios)
+    has_vec_a = .false.
+    do while (ios == 0)
+      read (u, '(a)', iostat=ios) line
+      if (ios == 0 .and. index(line, 'vector_alat =') > 0) has_vec_a = .true.
+    end do
+    close (u)
+    call check(has_vec_a, 'NiAs pipeline: pair file writes vector_alat for non-cubic pair')
+  end subroutine run_nias_pipeline
 
   subroutine run_case(tag, txt, nodes, ef, etot, mom, qnet)
     character(len=*), intent(in) :: tag, txt

@@ -99,15 +99,19 @@ module asr_epi
   !> one pair type: site 0 (origin) and a representative partner site
   type :: epi_pair_t
     integer :: shell = 0, site = 0, mult = 0, r2 = 0, cls2 = 0, nop = 0
-    integer :: vec(3) = 0                                  !! partner - origin, half-lattice units
-    integer, allocatable :: orbit(:, :)                    !! orbit(:, 1:mult): the vectors of all sites of the pair type
+    integer :: vec(3) = 0                                  !! partner - origin, half-lattice units (cubic lattices)
+    integer, allocatable :: orbit(:, :)                    !! orbit(:, 1:mult): half-lattice vectors (cubic lattices)
+    real(dp) :: rvec(3) = 0.0_dp                           !! partner - origin, Cartesian, alat units
+    real(dp), allocatable :: rorbit(:, :)                  !! (3, 1:mult) Cartesian vectors, alat units
   end type epi_pair_t
 
   !> result of one pair type: origin on sublattice kap, partner on kap2
   type :: epi_table_t
     integer :: kap = 0, kap2 = 0, shell = 0, mult = 0, nop = 0, nodes = 0
-    integer :: vec(3) = 0                                  !! partner - origin, half-lattice units
-    integer, allocatable :: orbit(:, :)                    !! the vectors of all sites of the pair type
+    integer :: vec(3) = 0                                  !! partner - origin, half-lattice units (cubic lattices)
+    integer, allocatable :: orbit(:, :)                    !! the vectors of all sites of the pair type (cubic lattices)
+    real(dp) :: rvec(3) = 0.0_dp                           !! partner - origin, Cartesian, alat units
+    real(dp), allocatable :: rorbit(:, :)                  !! (3, 1:mult) Cartesian vectors, alat units
     real(dp) :: dist = 0.0_dp                              !! Bohr
     real(dp) :: wr = 0.0_dp                                !! screening kernel W(R) (Ry / e^2)
     real(dp) :: tail = 0.0_dp                              !! largest relative mismatch of X1 between the two chains
@@ -465,11 +469,10 @@ contains
   !> Pair types of site 1 with the sites of its first nshell coordination shells on the site cluster, as epi_pair_list: a shell
   !> is one distance; it is split into the orbits of the class-preserving site operations (perm, rot; cls: classes seen from
   !> site 1); each orbit is one pair type with the orbit size as multiplicity; its representative is the member with the largest
-  !> group of epi_pair_ops_c.  disp: displacements of the cluster sites from site 1 (alat units).  The pair vectors are kept in
-  !> half-lattice units (the pair file and the report), so every member must lie on the half-lattice of a cubic graph lattice.
-  !> Members, orbits and ties follow the site order of the periodic box of earlier versions: by z, then y, then x, each
-  !> component 0, 1, 2, ... before the negative values in increasing order; so the pair files do not change.  msg is empty on
-  !> success.
+  !> group of epi_pair_ops_c.  disp: displacements of the cluster sites from site 1 (alat units).  Pairs carry rvec / rorbit in
+  !> alat units, and on cubic half-lattices also vec / orbit in integer half-lattice units.  Members, orbits and ties follow the
+  !> site order of the periodic box of earlier versions: by z, then y, then x, each component >= 0 increasing before the negative
+  !> values increasing; so cubic pair files do not change.  msg is empty on success.
   subroutine epi_pair_list_c(disp, perm, rot, cls, nshell, pairs, msg)
     real(dp), intent(in) :: disp(:, :), rot(:, :, :)
     integer, intent(in) :: perm(:, :), cls(:), nshell
@@ -497,14 +500,8 @@ contains
       end if
       shells(ish) = minval(r2, mask=r2 > rcur + tol); rcur = shells(ish)
     end do
-    do i = 2, n
-      if (r2(i) > rcur + tol) cycle
-      if (maxval(abs(2.0_dp * disp(:, i) - real(h(:, i), dp))) > 1.0e-6_dp) then
-        msg = 'epi: pair vectors need the half-lattice of a cubic graph lattice'; allocate (pairs(0)); return
-      end if
-    end do
     sub = pack([(i, i=1, n)], r2 <= rcur + tol)          ! the sites of the requested shells (and site 1)
-    call box_order(h(:, sub), ord); ord = sub(ord)
+    call box_order(2.0_dp * disp(:, sub), ord); ord = sub(ord)
     do k = 1, size(perm, 2); keep(k) = all(cls(perm(:, k)) == cls); end do
     np = 0; done = .false.
     do ish = 1, nshell
@@ -523,15 +520,16 @@ contains
           cl2 = cls; cl2(j) = maxval(cls) + 1
           call epi_pair_ops_c(perm, rot, cl2, pidx)
           if (size(pidx) > cand%nop) then
-            cand%nop = size(pidx); cand%site = j; cand%vec = h(:, j)
+            cand%nop = size(pidx); cand%site = j; cand%vec = h(:, j); cand%rvec = disp(:, j)
           end if
         end do
-        cand%shell = ish; cand%r2 = sum(cand%vec**2); cand%mult = count(inorb); cand%cls2 = cls(cand%site)
+        cand%shell = ish; cand%r2 = nint(4.0_dp * shells(ish)); cand%mult = count(inorb); cand%cls2 = cls(cand%site)
         if (allocated(cand%orbit)) deallocate (cand%orbit)
-        allocate (cand%orbit(3, cand%mult)); k = 0
+        if (allocated(cand%rorbit)) deallocate (cand%rorbit)
+        allocate (cand%orbit(3, cand%mult), cand%rorbit(3, cand%mult)); k = 0
         do jj = 1, size(ord)
           j = ord(jj)
-          if (inorb(j)) then; k = k + 1; cand%orbit(:, k) = h(:, j); end if
+          if (inorb(j)) then; k = k + 1; cand%orbit(:, k) = h(:, j); cand%rorbit(:, k) = disp(:, j); end if
         end do
         np = np + 1
         buf = [buf, cand]
@@ -539,9 +537,9 @@ contains
     end do
     pairs = buf(1:np)
   contains
-    !> sites in the order of the periodic box: (z, y, x), each component 0, 1, 2, ... then the negative values increasing
+    !> sites in the order of the periodic box: (z, y, x), each component >= 0 increasing, then the negative values increasing
     subroutine box_order(hv, o)
-      integer, intent(in) :: hv(:, :)
+      real(dp), intent(in) :: hv(:, :)
       integer, allocatable, intent(out) :: o(:)
       integer :: a, b, t
       o = [(a, a=1, size(hv, 2))]
@@ -555,17 +553,17 @@ contains
       end do
     end subroutine box_order
     pure logical function before(p, q)
-      integer, intent(in) :: p(3), q(3)
+      real(dp), intent(in) :: p(3), q(3)
       integer :: c
       before = .false.
       do c = 3, 1, -1
-        if (key(p(c)) < key(q(c))) then; before = .true.; return; end if
-        if (key(p(c)) > key(q(c))) return
+        if (key(p(c)) < key(q(c)) - 1.0e-7_dp) then; before = .true.; return; end if
+        if (key(p(c)) > key(q(c)) + 1.0e-7_dp) return
       end do
     end function before
-    pure integer function key(x)
-      integer, intent(in) :: x
-      key = x; if (x < 0) key = x + 1000000
+    pure real(dp) function key(x)
+      real(dp), intent(in) :: x
+      key = x; if (x < -1.0e-7_dp) key = x + 1000000.0_dp
     end function key
   end subroutine epi_pair_list_c
 
