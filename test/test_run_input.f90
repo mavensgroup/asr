@@ -60,7 +60,7 @@ program test_run_input
   call check(index(msg, 'one label per kpath point') > 0, '[spectral] labels of the wrong length rejected')
   call put(bccfe//'[asr]'//nl//'supercell = 4'//nl//'[spectral]'//nl//'kpath = [[0, 0, 0], [1, 0, 0]]'//nl//'rmax = 2.0'//nl)
   call read_run_input(f, inp, msg)
-  call check(index(msg, 'rmax must be below') > 0, '[spectral] rmax >= supercell / 2 rejected at input (before the SCF)')
+  call check(len(msg) == 0, 'an old input with [asr] supercell is still read (the key is ignored; the cluster holds rmax)')
   call put(kspace//bccfe//'[spectral]'//nl//'kpath = [[0, 0, 0], [1, 0, 0]]'//nl)
   call read_run_input(f, inp, msg)
   call check(index(msg, '[spectral] is read with method = "asr" only') > 0, '[spectral] with method = kspace rejected')

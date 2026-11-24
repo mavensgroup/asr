@@ -10,6 +10,7 @@ module asr_lmto_alloy
   use asr_strconst, only: lattice_cluster, screened_cluster, avg_ws_radius, hardcore_alpha
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_crystal, only: structure_t, ws_radius
+  use asr_crystal_symmetry, only: translation_types
   use asr_crystal_graph, only: crystal_graph_t, structure_cluster
   implicit none
   private
@@ -75,43 +76,51 @@ contains
     call set_alloy_params(mdl, ppA, ppB, alpha)
   end subroutine build_lmto_alloy
 
-  !> Screened structure constants S^alpha of structure s on the slots of its graph cg, per basis site:
-  !>     block(:, :, k, b) = S_{R, R + bvec(k)},   block0(:, :, b) = S_{R, R}   for R on basis site b.
+  !> Screened structure constants S^alpha of structure s on the slots of its graph cg, per translation type t of the basis sites
+  !> (asr_crystal_symmetry::translation_types; typ(b) = type of basis site b):
+  !>     block(:, :, k, t) = S_{R, R + bvec(k)},   block0(:, :, t) = S_{R, R}   for R on a basis site of type t.
   !> On a structure with a basis, S depends on the site and not only on the bond vector (an hcp site has no inversion centre, so
-  !> p and d mix on site, with opposite signs on the two sites).  So every basis site gets its own screened cluster of radius
-  !> rinv (alat units, at least the longest bond of cg), centred on it.  Equal spheres of the average Wigner-Seitz radius and one
-  !> common alpha (s, p, d), as in build_lmto_alloy.  The block of a bond is the mean of the two clusters that hold it,
-  !>     block(k, b) = (S_b'(-v) + S_b(v)^T) / 2,   b' = btgt(k, b),   S_c(u) = S_{c + u, c} from the cluster of c,
-  !> so that block(k', b') = block(k, b)^T for the reverse bond exactly.  With one basis site this is the formula of
-  !> build_lmto_alloy, and the clusters of asr_crystal_graph are those of lattice_cluster: cubic blocks are bit-identical.
-  !> Slots that basis site b does not have are zero.
-  subroutine structure_blocks(s, cg, rinv, alpha, block, block0)
+  !> p and d mix on site, with opposite signs on the two sites).  So every type gets its own screened cluster of radius rinv (alat
+  !> units, at least the longest bond of cg), centred on its first basis site.  Sites related by a pure translation have the same
+  !> geometry and share the table (one table for every site of a decorated cubic lattice).  Equal spheres of the average
+  !> Wigner-Seitz radius and one common alpha (s, p, d), as in build_lmto_alloy.  The block of a bond is the mean of the two
+  !> clusters that hold it,
+  !>     block(k, t) = (S_t'(-v) + S_t(v)^T) / 2,   t' = type of btgt(k, b),   S_c(u) = S_{c + u, c} from the cluster of c,
+  !> so that the reverse bond holds the transpose exactly.  With one basis site this is the formula of build_lmto_alloy, and the
+  !> clusters of asr_crystal_graph are those of lattice_cluster: cubic blocks are bit-identical.  Slots that the type does not
+  !> have are zero.  The graph site i has the table typ(cg%basis(i)) (build_augcls_operator, stype).
+  subroutine structure_blocks(s, cg, rinv, alpha, block, block0, typ)
     type(structure_t), intent(in) :: s
     type(crystal_graph_t), intent(in) :: cg
     real(dp), intent(in) :: rinv, alpha(0:2)
     real(dp), allocatable, intent(out) :: block(:, :, :, :), block0(:, :, :)
+    integer, allocatable, intent(out) :: typ(:)
     type :: clu_t
       real(dp), allocatable :: vec(:, :), blk(:, :, :)
     end type clu_t
     type(clu_t), allocatable :: cl(:)
     real(dp) :: w, u(3)
-    integer :: b, k, t, ia, ib
+    integer :: b, k, t, tt, ia, ib, ntyp
+    integer, allocatable :: rep(:)
     w = ws_radius(s)
-    allocate (cl(s%nb))
-    do b = 1, s%nb
-      call structure_cluster(s, b, rinv, cl(b)%vec)
-      call screened_cluster(cl(b)%vec, w, alpha, cl(b)%blk)
+    call translation_types(s, typ, ntyp)
+    allocate (cl(ntyp), rep(ntyp))
+    do t = 1, ntyp
+      rep(t) = findloc(typ, t, 1)
+      call structure_cluster(s, rep(t), rinv, cl(t)%vec)
+      call screened_cluster(cl(t)%vec, w, alpha, cl(t)%blk)
     end do
-    allocate (block(9, 9, cg%nslot, s%nb), block0(9, 9, s%nb)); block = 0.0_dp
-    do b = 1, s%nb
-      block0(:, :, b) = 0.5_dp * (cl(b)%blk(:, :, 1) + transpose(cl(b)%blk(:, :, 1)))
+    allocate (block(9, 9, cg%nslot, ntyp), block0(9, 9, ntyp)); block = 0.0_dp
+    do t = 1, ntyp
+      b = rep(t)
+      block0(:, :, t) = 0.5_dp * (cl(t)%blk(:, :, 1) + transpose(cl(t)%blk(:, :, 1)))
       do k = 1, cg%nslot
-        t = cg%btgt(k, b)
-        if (t == 0) cycle
+        if (cg%btgt(k, b) == 0) cycle
+        tt = typ(cg%btgt(k, b))
         u = cg%bvec(:, k)
-        ia = find_vec(cl(t)%vec, -u); ib = find_vec(cl(b)%vec, u)
+        ia = find_vec(cl(tt)%vec, -u); ib = find_vec(cl(t)%vec, u)
         if (ia == 0 .or. ib == 0) error stop 'structure_blocks: a bond is longer than the screened cluster radius rinv'
-        block(:, :, k, b) = 0.5_dp * (cl(t)%blk(:, :, ia) + transpose(cl(b)%blk(:, :, ib)))
+        block(:, :, k, t) = 0.5_dp * (cl(tt)%blk(:, :, ia) + transpose(cl(t)%blk(:, :, ib)))
       end do
     end do
   end subroutine structure_blocks

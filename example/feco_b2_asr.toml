@@ -42,7 +42,6 @@ max_iterations = 200
 
 [asr]
 recursion_steps = 24     # Lanczos steps (ordered: one component per sublattice)
-supercell = 12
 contour_points = 32
 
 [dos]

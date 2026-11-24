@@ -33,7 +33,7 @@ program test_epi_scf
     '[[sublattice]]'//nl//'name = "fcc"'//nl//'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Cu", "Ni", "Nx"]'//nl// &
     'concentrations = [0.5, 0.3, 0.2]'//nl// &
     '[scf]'//nl//'spin = 1'//nl//'xc = "vbh"'//nl//'mixing = 0.3'//nl//'max_iterations = 2'//nl//'tolerance = 1.0e3'//nl// &
-    '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 6'//nl//'supercell = 4'//nl//'contour_points = 8'//nl//'fermi_kt = 0.008'//nl// &
+    '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 6'//nl//'contour_points = 8'//nl//'fermi_kt = 0.008'//nl// &
     'cluster_radius = 0.8'//nl//'flip_radius = 2'//nl// &
     '[epi]'//nl//'shells = 2'//nl//'lambda_points = 1'//nl//'file = "test_epi_scf_epi.toml"'//nl// &
     '[dos]'//nl//'npoints = 3'//nl//'[output]'//nl//'dos_file = "test_epi_scf_dos.dat"'//nl//'out_file = "test_epi_scf.out"'//nl

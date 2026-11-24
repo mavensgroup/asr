@@ -63,12 +63,14 @@ module asr_epi
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_chain, only: cf_species, ed_project, ed_nchain, ed_nlev
   use asr_symmetry, only: cubic_site_perms, class_ops
+  use asr_crystal_symmetry, only: is_monomial
   use asr_lapack, only: dsyev
   use asr_ed3, only: ed3_t, ed3_work_t
   implicit none
   private
   public :: epi_par_t, epi_path_t, epi_work_t, epi_pair_t, epi_table_t
   public :: epi_species, epi_path, epi_setup, epi_integrand, epi_adapted, epi_pair_ops, epi_pair_list
+  public :: epi_pair_ops_c, epi_pair_list_c
   public :: epi_work_init, epi_start, epi_blocks, epi_blocks_blk, epi_exchange, epi_skip, epi_mirror
   public :: epi3_setup, epi3_start, epi3_integrand
 
@@ -417,6 +419,155 @@ contains
     end do
     pairs = buf(1:np)
   end subroutine epi_pair_list
+
+  !> Group of a pair operator on the site cluster (asr_crystal_graph), as epi_pair_ops: of the site operations (perm, rot;
+  !> identity first, graph_site_ops order) the monomial ones that keep the z axis and the classes cls (the partner carries a
+  !> class of its own, so they fix it), reduced to an abelian group of involutions: if the kept operations do not all commute
+  !> (partner on the z axis: C4v), only the sign changes of the axes stay.  idx: the kept operations (indices into perm, rot).
+  subroutine epi_pair_ops_c(perm, rot, cls, idx)
+    integer, intent(in) :: perm(:, :), cls(:)
+    real(dp), intent(in) :: rot(:, :, :)
+    integer, allocatable, intent(out) :: idx(:)
+    real(dp), parameter :: tol = 1.0e-9_dp
+    logical :: keep(size(perm, 2)), abel
+    real(dp) :: one(3, 3)
+    integer :: i, j, k
+    one = 0.0_dp; do k = 1, 3; one(k, k) = 1.0_dp; end do
+    do k = 1, size(perm, 2)
+      keep(k) = is_monomial(rot(:, :, k)) .and. abs(abs(rot(3, 3, k)) - 1.0_dp) < tol
+      if (keep(k)) keep(k) = all(cls(perm(:, k)) == cls)
+    end do
+    abel = .true.
+    do i = 1, size(perm, 2)
+      if (.not. keep(i)) cycle
+      if (maxval(abs(matmul(rot(:, :, i), rot(:, :, i)) - one)) > tol) abel = .false.
+      do j = i + 1, size(perm, 2)
+        if (.not. keep(j)) cycle
+        if (maxval(abs(matmul(rot(:, :, i), rot(:, :, j)) - matmul(rot(:, :, j), rot(:, :, i)))) > tol) abel = .false.
+      end do
+    end do
+    if (.not. abel) then
+      do k = 1, size(perm, 2)
+        if (keep(k)) keep(k) = maxval(abs(rot(:, :, k) - diag(rot(:, :, k)))) < tol
+      end do
+    end if
+    idx = pack([(k, k=1, size(perm, 2))], keep)
+    if (idx(1) /= 1) error stop 'epi_pair_ops_c: operation 1 is not the identity'
+  contains
+    pure function diag(a) result(b)
+      real(dp), intent(in) :: a(3, 3)
+      real(dp) :: b(3, 3)
+      integer :: q
+      b = 0.0_dp; do q = 1, 3; b(q, q) = a(q, q); end do
+    end function diag
+  end subroutine epi_pair_ops_c
+
+  !> Pair types of site 1 with the sites of its first nshell coordination shells on the site cluster, as epi_pair_list: a shell
+  !> is one distance; it is split into the orbits of the class-preserving site operations (perm, rot; cls: classes seen from
+  !> site 1); each orbit is one pair type with the orbit size as multiplicity; its representative is the member with the largest
+  !> group of epi_pair_ops_c.  disp: displacements of the cluster sites from site 1 (alat units).  The pair vectors are kept in
+  !> half-lattice units (the pair file and the report), so every member must lie on the half-lattice of a cubic graph lattice.
+  !> Members, orbits and ties follow the site order of the periodic box of earlier versions: by z, then y, then x, each
+  !> component 0, 1, 2, ... before the negative values in increasing order; so the pair files do not change.  msg is empty on
+  !> success.
+  subroutine epi_pair_list_c(disp, perm, rot, cls, nshell, pairs, msg)
+    real(dp), intent(in) :: disp(:, :), rot(:, :, :)
+    integer, intent(in) :: perm(:, :), cls(:), nshell
+    type(epi_pair_t), allocatable, intent(out) :: pairs(:)
+    character(len=:), allocatable, intent(out) :: msg
+    real(dp), parameter :: tol = 1.0e-9_dp
+    integer, allocatable :: h(:, :), ord(:), cl2(:), pidx(:), sub(:)
+    real(dp), allocatable :: r2(:)
+    logical, allocatable :: keep(:), done(:), inorb(:)
+    type(epi_pair_t), allocatable :: buf(:)
+    type(epi_pair_t) :: cand
+    real(dp) :: shells(max(nshell, 1)), rcur
+    integer :: n, i, ii, k, j, jj, np, ish
+    msg = ''
+    n = size(disp, 2)
+    allocate (h(3, n), r2(n), done(n), inorb(n), keep(size(perm, 2)), buf(0))
+    do i = 1, n
+      r2(i) = sum(disp(:, i)**2)
+      h(:, i) = nint(2.0_dp * disp(:, i))
+    end do
+    rcur = 0.0_dp
+    do ish = 1, nshell                                   ! the nshell smallest distances
+      if (.not. any(r2 > rcur + tol)) then
+        msg = 'epi: shell '//itoa(ish)//' lies outside the site cluster (raise [asr] levels)'; allocate (pairs(0)); return
+      end if
+      shells(ish) = minval(r2, mask=r2 > rcur + tol); rcur = shells(ish)
+    end do
+    do i = 2, n
+      if (r2(i) > rcur + tol) cycle
+      if (maxval(abs(2.0_dp * disp(:, i) - real(h(:, i), dp))) > 1.0e-6_dp) then
+        msg = 'epi: pair vectors need the half-lattice of a cubic graph lattice'; allocate (pairs(0)); return
+      end if
+    end do
+    sub = pack([(i, i=1, n)], r2 <= rcur + tol)          ! the sites of the requested shells (and site 1)
+    call box_order(h(:, sub), ord); ord = sub(ord)
+    do k = 1, size(perm, 2); keep(k) = all(cls(perm(:, k)) == cls); end do
+    np = 0; done = .false.
+    do ish = 1, nshell
+      do ii = 1, size(ord)
+        i = ord(ii)
+        if (i == 1 .or. abs(r2(i) - shells(ish)) > tol .or. done(i)) cycle
+        inorb = .false.
+        do k = 1, size(perm, 2)
+          if (keep(k)) inorb(perm(i, k)) = .true.
+        end do
+        done = done .or. inorb
+        cand%nop = 0
+        do jj = 1, size(ord)                             ! representative: largest pair group, first in box order
+          j = ord(jj)
+          if (.not. inorb(j)) cycle
+          cl2 = cls; cl2(j) = maxval(cls) + 1
+          call epi_pair_ops_c(perm, rot, cl2, pidx)
+          if (size(pidx) > cand%nop) then
+            cand%nop = size(pidx); cand%site = j; cand%vec = h(:, j)
+          end if
+        end do
+        cand%shell = ish; cand%r2 = sum(cand%vec**2); cand%mult = count(inorb); cand%cls2 = cls(cand%site)
+        if (allocated(cand%orbit)) deallocate (cand%orbit)
+        allocate (cand%orbit(3, cand%mult)); k = 0
+        do jj = 1, size(ord)
+          j = ord(jj)
+          if (inorb(j)) then; k = k + 1; cand%orbit(:, k) = h(:, j); end if
+        end do
+        np = np + 1
+        buf = [buf, cand]
+      end do
+    end do
+    pairs = buf(1:np)
+  contains
+    !> sites in the order of the periodic box: (z, y, x), each component 0, 1, 2, ... then the negative values increasing
+    subroutine box_order(hv, o)
+      integer, intent(in) :: hv(:, :)
+      integer, allocatable, intent(out) :: o(:)
+      integer :: a, b, t
+      o = [(a, a=1, size(hv, 2))]
+      do a = 2, size(o)                                  ! insertion sort (stable)
+        t = o(a); b = a - 1
+        do while (b >= 1)
+          if (.not. before(hv(:, t), hv(:, o(b)))) exit
+          o(b + 1) = o(b); b = b - 1
+        end do
+        o(b + 1) = t
+      end do
+    end subroutine box_order
+    pure logical function before(p, q)
+      integer, intent(in) :: p(3), q(3)
+      integer :: c
+      before = .false.
+      do c = 3, 1, -1
+        if (key(p(c)) < key(q(c))) then; before = .true.; return; end if
+        if (key(p(c)) > key(q(c))) return
+      end do
+    end function before
+    pure integer function key(x)
+      integer, intent(in) :: x
+      key = x; if (x < 0) key = x + 1000000
+    end function key
+  end subroutine epi_pair_list_c
 
   subroutine epi_work_init(wk, n)
     type(epi_work_t), intent(out) :: wk

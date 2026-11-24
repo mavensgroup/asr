@@ -82,7 +82,6 @@ max_iterations = 80
 
 [asr]
 recursion_steps = 24
-supercell = 12
 contour_points = 32
 
 [dos]
@@ -177,7 +176,6 @@ max_iterations = 200
 
 [asr]
 recursion_steps = 24     # Lanczos steps (ordered: one component per sublattice)
-supercell = 12
 contour_points = 32
 
 [dos]
@@ -239,7 +237,6 @@ max_iterations = 60
 levels = 4               # augmented-space generations
 recursion_steps = 24     # Lanczos steps; convergence must be checked
 rank = 1                 # max flipped sites per augmented-space state
-supercell = 8            # graph size in conventional cells
 contour_points = 32
 
 [dos]

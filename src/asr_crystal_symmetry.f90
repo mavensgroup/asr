@@ -29,7 +29,8 @@ module asr_crystal_symmetry
   use asr_lapack, only: dgesv
   implicit none
   private
-  public :: symop_t, space_group, site_ops, basis_orbits, is_monomial, orbital_matrix, orbital_groups, reduction_ops
+  public :: symop_t, space_group, site_ops, basis_orbits, translation_types, is_monomial, orbital_matrix, orbital_groups, &
+            reduction_ops
 
   type :: symop_t
     integer :: m(3, 3) = 0                !! rotation in lattice coordinates
@@ -135,6 +136,35 @@ contains
       end do
     end do
   end subroutine basis_orbits
+
+  !> Translation types of the basis sites: b and c share a type when the translation frac(c) - frac(b) maps every site onto a
+  !> site, labels ignored.  The geometry seen from b and from c is then the same, so are the structure constants (equal spheres).
+  !> A decoration cell holds many such sites (every site of a decorated bcc cell has the bcc geometry).  typ(b) in 1 .. ntyp,
+  !> numbered by their first site.
+  subroutine translation_types(s, typ, ntyp)
+    type(structure_t), intent(in) :: s
+    integer, allocatable, intent(out) :: typ(:)
+    integer, intent(out) :: ntyp
+    integer :: b, c, d, e
+    logical :: ok, hit
+    allocate (typ(s%nb)); typ = 0; ntyp = 0
+    do b = 1, s%nb
+      if (typ(b) > 0) cycle
+      ntyp = ntyp + 1; typ(b) = ntyp
+      do c = b + 1, s%nb
+        if (typ(c) > 0) cycle
+        ok = .true.
+        do d = 1, s%nb
+          hit = .false.
+          do e = 1, s%nb
+            if (same_frac(s%frac(:, d) + s%frac(:, c) - s%frac(:, b), s%frac(:, e))) then; hit = .true.; exit; end if
+          end do
+          if (.not. hit) then; ok = .false.; exit; end if
+        end do
+        if (ok) typ(c) = ntyp
+      end do
+    end do
+  end subroutine translation_types
 
   !> Is a Cartesian rotation a signed permutation (one entry +-1 per row and column, zeros elsewhere)?
   pure logical function is_monomial(rot)

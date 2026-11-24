@@ -16,7 +16,7 @@ program test_cluster_scf
   character(len=*), parameter :: common = '[scf]'//nl//'xc = "vbh"'//nl//'mixing = 0.2'//nl//'max_iterations = 2'//nl// &
     'tolerance = 1.0e3'//nl
   character(len=*), parameter :: asr2 = '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 8'//nl//'contour_points = 16'//nl// &
-    'fermi_kt = 0.004'//nl//'supercell = 10'//nl
+    'fermi_kt = 0.004'//nl
   character(len=*), parameter :: sp_fe = '[[species]]'//nl//'symbol = "Fe"'//nl//'z = 26'//nl//'nval = 8'//nl// &
     'konfig = [4, 4, 3, 4]'//nl//'occupations = [2.0, 6.0]'//nl
   character(len=*), parameter :: sp_co = '[[species]]'//nl//'symbol = "Co"'//nl//'z = 27'//nl//'nval = 9'//nl// &

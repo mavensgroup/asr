@@ -80,7 +80,7 @@ contains
     rep%nlevels = 4
     rep%nrec = 4
     rep%maxrank = 1
-    rep%lsuper = 8
+    rep%cluster_radius = 4.0_dp
     allocate (rep%nodes(1)); rep%nodes(1) = 32
     allocate (rep%subname(1)); rep%subname(1) = 'A'
     rep%s_range = 1.2_dp

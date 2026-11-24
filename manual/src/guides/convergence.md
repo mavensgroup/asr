@@ -16,7 +16,6 @@ terminators](../theory/recursion.html)).
 |---|---|---|---|
 | `levels` | Resolution of the LDOS; moments of magnetic d bands | **Exponential** in node count | Increase until DOS (and moments, \(E_F\)) stop changing |
 | `rank` | Environment fluctuations kept | Large | 1 → 2; the effect is usually smaller than depth |
-| `supercell` | Periodic graph size | Mild | Must exceed what `levels` can reach; enlarge until nothing changes |
 | `flip_radius` | Locality of flips | Mild | Default 99 (unlimited); reduce only to save time after testing |
 | `contour_points` | Accuracy of moments and \(E_F\) | Linear | 32 → 60 → 80 |
 | `fermi_kt`, `fermi_poles` | Smoothness of \(N(E_F)\) | small | Small `fermi_kt` (1 mRy) stabilises the SCF |
@@ -25,17 +24,16 @@ terminators](../theory/recursion.html)).
 
 ## Protocol
 
-1. **Cheap pass.** `levels = 3–4`, `rank = 1`, small `supercell`. Confirms input,
+1. **Cheap pass.** `levels = 3–4`, `rank = 1`. Confirms input,
    chemistry and that the SCF converges (a few minutes).
 2. **Depth scan.** Run `levels = 4, 6, 8, …` as far as memory allows. Plot the
    species DOS and tabulate \(E_F\), moments, net charges. Stop when changes fall
    below the physical question you ask.
 3. **Rank.** Repeat the best depth with `rank + 1`.
-4. **Supercell.** Double `supercell` once at the best depth.
-5. **Cross-check the route.** `route = "edc"` and `route = "ed3"` differ by the
+4. **Cross-check the route.** `route = "edc"` and `route = "ed3"` differ by the
    \(hph\) term of the Hamiltonian, not by truncation, so their difference is a
    Hamiltonian effect. To judge truncation compare two depths of the same route.
-6. **Final.** Tighten `tolerance` and `contour_points`.
+5. **Final.** Tighten `tolerance` and `contour_points`.
 
 !!! warning "Warning signs"
     * Negative l-resolved DOS at some energies (seen in the shipped
@@ -53,7 +51,7 @@ The augmented-space node count grows steeply. Rough numbers measured for
 Cu-Ni without symmetry: ≈ 2·10⁶ nodes at depth 3 and ≈ 4·10⁷ at depth 4
 (rank ≤ 2). The D\(_{4h}\) symmetry reduction (always on in the recursion) cuts it by
 ≈ 40×. For an energy-independent CuZn test (`levels = 3`, `rank = 2`,
-`supercell = 8`) the report showed
+on the periodic graph of earlier versions) the report showed
 
 ```text
 augmented-space nodes 63175   D4h symmetry=T
@@ -81,7 +79,7 @@ The reduction is exact.
   agree within 0.005 muB. Do not use `bp` for SCF runs (see [Recursion and terminators](../theory/recursion.html)).
 * `fermi_kt` > 0 helps the SCF because \(N(E_F)\) becomes smooth.
 * Long chains on ordered cells carry a length error near \(10^{-3}\) e. On B2
-  CuZn (route `ed3`, supercell 16) the Cu charge transfer is 0.13 e. It moves
+  CuZn (route `ed3`, periodic graph of 16 cubes) the Cu charge transfer is 0.13 e. It moves
   by \(7.8\times10^{-4}\) e from 96 to 256 steps, and \(E_F\) by 1.1 mRy. Between 64 and 192
   steps the result also depends on rounding by a few \(10^{-4}\) e. So
   `energy_block` 0 and 8, or a run with a different rounding, can differ by

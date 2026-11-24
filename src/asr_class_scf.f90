@@ -5,7 +5,7 @@
 !> site is w_p = f_kappa x_{s,kappa} (f_kappa: fraction of the sites on sublattice kappa).  Equal ASA spheres (one common S).
 !> Per iteration:  component potentials -> potential parameters -> for every sublattice one class operator with the origin on
 !> that sublattice; for every component p of it the start site is frozen to p and the operator re-parametrised with p's Delta
-!> (asr_edc_setup) -> G_p(z) on the Fermi contour, four start orbitals (s, p_z, t2g, e_g; cubic site symmetry is checked)
+!> (asr_edc_setup) -> G_p(z) on the Fermi contour, one start orbital per orbital group of the site (cubic: s, p_z, t2g, e_g)
 !> -> moments M_k (common E_F from sum_p w_p N_p = sum_p w_p Z_val,p) -> density M0 phi^2 + 2 M1 phi phidot + M2 (phidot^2 +
 !> phi phiddot), relaxed core, Hartree, xc ->
 !>     V_p = sum_kappa' Phi(kappa, kappa') qbar_kappa'  +  sum_p' F(p, p') (q_p' - qbar_kappa'),   qbar_kappa = sum_{p in kappa} x_p q_p:
@@ -42,7 +42,7 @@ module asr_class_scf
   use asr_potpar, only: potpar_l_t, potpar_at_enu, clamp_enu
   use asr_lmto_ham, only: potpar_t, to_alpha, o_alpha
   use asr_asa, only: asa_class_t, asa_input_t, asa_class_result_t, atomic_start
-  use asr_strconst, only: avg_ws_radius, standard_alpha
+  use asr_strconst, only: standard_alpha
   use asr_kinds, only: i8
   use asr_runstats
   use asr_augspace, only: graph_t, graph_distances
@@ -52,8 +52,10 @@ module asr_class_scf
   use asr_augblk, only: blk_work_t, blk_work_init, blk_nbmax
   use asr_chain, only: ed_depth_tol, ed_nchain, ed_nlev, ed_nfall, ed_tail, chain_teams, chain_vec_par
   !$ use omp_lib, only: omp_get_max_threads, omp_set_num_threads, omp_get_max_active_levels, omp_set_max_active_levels
-  use asr_symmetry, only: class_ops, orbital_rep
-  use asr_lmto_alloy, only: build_lmto_alloy, orb_alloy_t
+  use asr_crystal, only: structure_t, ws_radius
+  use asr_crystal_symmetry, only: symop_t, space_group, is_monomial, orbital_matrix, orbital_groups, reduction_ops
+  use asr_crystal_graph, only: crystal_graph_t, crystal_graph, graph_site_ops
+  use asr_lmto_alloy, only: structure_blocks
   use asr_sublattice
   use asr_contour, only: contour_nodes_closed, contour_nodes_fermi, fermi_npole, fermi_nodes_count, gauss_legendre
   use asr_mixing, only: anderson_t, anderson_init, anderson_step
@@ -77,7 +79,7 @@ module asr_class_scf
     real(dp) :: alat = 0.0_dp                          !! graph lattice constant (Bohr)
     character(len=8) :: lattice = 'bcc', xc = 'vbh'
     real(dp) :: rcl = 1.2_dp, rinv = 0.0_dp            !! kept S^alpha range, inversion cluster radius (alat)
-    integer :: lsuper = 8, nlevels = 4, nrec = 0, maxrank = 1, flip_radius = 99, ncont = 32
+    integer :: nlevels = 4, nrec = 0, maxrank = 1, flip_radius = 99, ncont = 32
     real(dp) :: beta = 0.3_dp, tol = 1.0e-5_dp, sim_beta = 1.0_dp, zeta0 = 0.1_dp
     real(dp) :: beta_restart = 0.0_dp                  !! linear step after an Anderson restart (0: beta)
     integer :: maxit = 60, mix_history = 6, nspin = 1
@@ -148,6 +150,9 @@ module asr_class_scf
     !> causal: -Im G <= 0 (edc) or the block -Im G not positive semidefinite (ed3).  A Herglotz function has none.  The
     !> truncated energy-dependent chain can have some (manual/src/theory/energy_dependent.md, causality); the charges then carry the chain error there.
     integer :: nnode = 0, nnoncausal = 0
+    !> radius of the site clusters of the recursion (asr_crystal_graph; alat units) and their number of sites per sublattice
+    real(dp) :: cluster_radius = 0.0_dp
+    integer, allocatable :: cluster_sites(:)
     !> effective pair interactions (asr_epi), one entry per pair type; epi_wbelow: largest valence weight of the path site
     !> (electrons) in the 3 Ry below the contour bottom over all path points (must vanish, as wbelow)
     type(epi_table_t), allocatable :: epi(:)
@@ -169,15 +174,25 @@ module asr_class_scf
     integer, allocatable :: spec_nodes(:)
   end type class_scf_result_t
 
-  integer, parameter :: iorb(4) = [1, 3, 5, 7], lorb(4) = [0, 1, 2, 2], nvert = 8
+  integer, parameter :: nvert = 8
   integer, parameter :: lorb9(9) = [0, 1, 1, 1, 2, 2, 2, 2, 2]
   real(dp), parameter, public :: wbelow_tol = 1.0e-3_dp     !! electrons per site
-  real(dp), parameter :: worb(4) = [1.0_dp, 3.0_dp, 3.0_dp, 2.0_dp]
 
   type :: class_op_t
     type(augcls_op) :: op
     real(dp), allocatable :: d(:, :, :)
   end type class_op_t
+
+  !> The site cluster of one sublattice (asr_crystal_graph: start site on the sublattice) with what the operators need
+  type :: sub_graph_t
+    type(crystal_graph_t) :: cg
+    logical, allocatable :: flip(:)                       !! flippable sites (graph distance <= flip_radius, not the start)
+    integer, allocatable :: dist(:)                       !! graph distance from the start site
+    integer, allocatable :: cls(:)                        !! sublattice of every site
+    integer, allocatable :: stype(:)                      !! structure-constant table of every site (translation type)
+    integer, allocatable :: perm(:, :)                    !! site operations (graph_site_ops): images of every site
+    real(dp), allocatable :: rot(:, :, :)                 !! their Cartesian rotations
+  end type sub_graph_t
 
 contains
 
@@ -189,21 +204,24 @@ contains
     type(asa_input_t) :: ai
     type(potpar_t), allocatable :: pps(:, :)                ! (component, spin)
     type(potpar_l_t) :: ppl
-    type(graph_t) :: g
-    type(orb_alloy_t) :: m0
+    type(structure_t) :: st
+    type(symop_t), allocatable :: sops(:)
+    type(sub_graph_t), allocatable :: sgr(:)
     type(class_alloy_t) :: mdl
     type(class_op_t), allocatable :: cop(:)
     type(edn_t) :: ed
     type(anderson_t) :: mixer
     type(asa_class_result_t), allocatable :: cr(:)
-    integer, allocatable :: coord(:, :), dist(:), offx(:), cls(:), perm(:, :), mats(:, :, :), pcl(:), psp(:)
-    logical, allocatable :: flippable(:)
+    integer, allocatable :: offx(:), cls(:), pcl(:), psp(:), styp(:), gidx(:), red(:)
+    integer, allocatable :: norb(:), iorbk(:, :), lorbk(:, :)   !! start orbitals per sublattice: count, orbital, l
+    real(dp), allocatable :: worbk(:, :), dgo(:, :, :)          !! their weights (orbital group sizes); orbital matrices
+    logical, allocatable :: mono(:)
     real(dp), allocatable :: y(:, :, :, :, :, :), enu(:, :, :), mom(:, :, :, :), dosef(:, :, :), w(:), xp(:), phimad(:, :), qbar(:)
     complex(dp), allocatable :: dmp_a(:, :, :, :, :), dmp_b(:, :, :, :, :)   ! ef_scan_dump: chain coefficients (level, node, orb, comp, spin)
     integer, allocatable :: dmp_m(:, :, :, :)
     real(dp), allocatable :: xin(:), xout(:), xnext(:), wmix(:), nval(:, :), ncore(:, :), ntot(:), vh(:), vxc(:, :), rho(:, :), exc(:)
     real(dp), allocatable :: tmp(:), cum(:), yc(:, :, :), vtmp(:, :), etmp(:, :), esum(:)
-    real(dp) :: alpha(0:2), c, avw, r1, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell, rlo, rhi, etot, ep, br
+    real(dp) :: alpha(0:2), c, avw, rmin, fs, nelec, ef, nn, dvc, dv, e, elo, ehi, flo, fhi, vm, qcell, rlo, rhi, etot, ep, br
     real(dp) :: ef_in, r2n, denu, rdv, efshift
     integer :: npass, efmode, pdv, sgdv, kdv
     real(dp), allocatable :: molo(:, :, :, :), mohi(:, :, :, :), dslo(:, :, :), dshi(:, :, :)
@@ -216,8 +234,9 @@ contains
     integer :: offu
     character(len=:), allocatable :: smsg
     integer :: p2
-    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, mg, nmc
-    logical :: vb, cubic, hlo, hhi, core_ok, ed3
+    integer :: nsp, ncomp, ncls, p, kap, k, n, nmax, it, i, sg, l, nx, jf, nfe, side, ngen, nlev, is, nod, nmc, nomax, b0
+    integer :: grp(9), ngrp, rep(9), wgt(9)
+    logical :: vb, hlo, hhi, core_ok, ed3
     integer :: teams_said(2)                    !! the last thread split of chain_greens that was printed (nout, nin)
     real(dp), allocatable :: qch(:, :, :), dsm(:, :, :, :), qclo(:, :, :), qchi(:, :, :), dmlo(:, :, :, :), dmhi(:, :, :, :)
     real(dp) :: phi2, asym_max, psd_max
@@ -232,9 +251,12 @@ contains
     nsp = inp%nspin; fs = 2.0_dp / real(nsp, dp)
     c = c_nonrel; if (inp%relativistic) c = c_ry
     ncls = inp%dec%ncls
-    avw = avg_ws_radius(trim(inp%lattice)) * inp%alat
+    ! the decoration as a crystal structure (asr_sublattice): cell, basis sites, sublattice labels; its space group
+    call decoration_structure(inp%dec, st, smsg)
+    if (len(smsg) > 0) error stop smsg
+    call space_group(st, sops)
+    avw = ws_radius(st) * inp%alat
     alpha = standard_alpha() * inp%alpha_scale
-    r1 = nn_distance(trim(inp%lattice)) * inp%alat
     call screen_lattice(trim(inp%lattice), inp%alat, inp%sim_beta, res%screen, smsg)
     if (len(smsg) > 0) error stop smsg
     ngen = inp%nlevels
@@ -297,20 +319,31 @@ contains
     call timer_stop(res%timer, tb_setup)
     call all_params()
     call timer_start(res%timer, tb_setup)
-    ! ---- graph, S blocks, one class operator per sublattice (origin on it)
-    call build_lmto_alloy(trim(inp%lattice), inp%lsuper, inp%rcl, 0.7_dp, pps(1, 1), pps(1, 1), 0.5_dp, g, coord, m0, &
-                          max(inp%rcl, inp%rinv), alpha)
-    call augcls_set_blocks(mdl, m0%block, m0%block0)
+    ! ---- site clusters (one per sublattice, start site on it; asr_crystal_graph), S blocks per translation type, one class
+    ! operator per sublattice.  The cluster holds every site the closure reaches in ngen levels (and the spectral targets).
+    rmin = 0.0_dp; if (inp%spectral%on) rmin = inp%spectral%rmax
+    allocate (sgr(ncls))
+    do kap = 1, ncls
+      b0 = findloc(st%label, kap, 1)
+      call crystal_graph(st, sops, inp%rcl, ngen, sgr(kap)%cg, smsg, start=b0, rmin=rmin)
+      if (len(smsg) > 0) error stop smsg
+    end do
+    call structure_blocks(st, sgr(1)%cg, max(inp%rcl, inp%rinv), alpha, mdl%block, mdl%block0, styp)
     allocate (mdl%c(9, ncomp), mdl%d(9, ncomp), mdl%o(9, ncomp), mdl%e(9, ncomp))
     call edc_setup(mdl, pps(:, 1), alpha, 1, ed)
-    mg = 2 * inp%lsuper
-    call graph_distances(g, 1, dist)
-    allocate (flippable(g%n)); flippable = dist <= inp%flip_radius; flippable(1) = .false.
     allocate (cop(ncls), res%nodes(ncls), zsh(ncls, ncls)); zsh = 0
+    allocate (norb(ncls), iorbk(9, ncls), lorbk(9, ncls), worbk(9, ncls)); iorbk = 0; lorbk = 0; worbk = 0.0_dp
     do kap = 1, ncls
-      call decoration_classes(inp%dec, coord, mg, kap, cls)
+      associate (sk => sgr(kap))
+        call graph_distances(sk%cg%g, 1, sk%dist)
+        sk%flip = sk%dist <= inp%flip_radius; sk%flip(1) = .false.
+        sk%cls = st%label(sk%cg%basis)
+        sk%stype = styp(sk%cg%basis)
+        call graph_site_ops(sk%cg, st, sops, sk%perm, sk%rot, gidx)
+      end associate
+      cls = sgr(kap)%cls
       if (inp%sro) then
-        call shell_classes(cls)
+        call shell_classes(kap, cls)
         do k = 1, ncls; zsh(kap, k) = count(cls == ncls + k); end do
         do k = 1, ncls                                 ! SRO with a sublattice that is not in the first shell: input error
           if (.not. any(cls == ncls + k)) then
@@ -326,14 +359,24 @@ contains
           end if
         end do
       end if
-      call class_ops(coord, mg, cls, perm, mats, cubic)
-      if (.not. cubic) error stop 'class_scf: a sublattice site is not cubic (needs the p_x, p_y / t2g, e_g partners separately)'
-      call orbital_rep(mats, cop(kap)%d)
-      call build_augcls_operator(g, mdl, cls, perm, cop(kap)%d, 1, ngen, cop(kap)%op, inp%maxrank, flippable)
+      ! start orbitals: one per orbital group of the class-preserving site group, weight = group size; the operator is reduced
+      ! by its monomial operations under which every start orbital is one dimensional (asr_crystal_symmetry)
+      call class_group(kap, cls, gidx, dgo, mono)
+      call orbital_groups(dgo, mono, grp, ngrp, rep, wgt)
+      norb(kap) = ngrp; iorbk(1:ngrp, kap) = rep(1:ngrp); lorbk(1:ngrp, kap) = lorb9(rep(1:ngrp))
+      worbk(1:ngrp, kap) = real(wgt(1:ngrp), dp)
+      call reduction_ops(dgo, mono, rep(1:ngrp), red)
+      cop(kap)%d = dgo(:, :, red)
+      call build_augcls_operator(sgr(kap)%cg%g, mdl, cls, sgr(kap)%perm(:, gidx(red)), cop(kap)%d, 1, ngen, cop(kap)%op, &
+                                 inp%maxrank, sgr(kap)%flip, stype=sgr(kap)%stype)
       res%nodes(kap) = cop(kap)%op%nn
-      if (vb) print '(a,i0,a,i0,a,i0,a,i0)', '  sublattice ', kap, ': site group order (in D4h) ', size(perm, 2), ', components ', &
-        inp%nsc(kap), ', augmented-space nodes ', cop(kap)%op%nn
+      if (vb) print '(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)', '  sublattice ', kap, ': cluster sites ', sgr(kap)%cg%n, &
+        ', site group ', size(gidx), ', start orbitals ', ngrp, ', reduction group ', size(red), ', components ', inp%nsc(kap), &
+        ', augmented-space nodes ', cop(kap)%op%nn
     end do
+    nomax = maxval(norb)
+    res%cluster_radius = sgr(1)%cg%radius
+    res%cluster_sites = [(sgr(kap)%cg%n, kap=1, ncls)]
     if (vb) print '(a,i0,a,i0,a,i0,a,i0,a,i0)', '  class ASR: components=', ncomp, '  levels=', ngen, '  recursion steps=', nlev, &
       '  rank<=', inp%maxrank, '  nspin=', nsp
     ! ---- screened fluctuation electrostatics: F = (G00 + G1 Ahat)^-1 (W00 + W1 Ahat)
@@ -740,25 +783,26 @@ contains
       type(potpar_t) :: qa
       integer :: j, o, gg, kk, ll, nq, pp_
       call contour(efv, zq, wq, nq)
-      allocate (gz(nq + 1, 4, ncomp, nsp))
+      allocate (gz(nq + 1, nomax, ncomp, nsp))
       mo = 0.0_dp; dosv = 0.0_dp; dm = 0.0_dp
       if (.not. ed3) then
         call chain_greens(zq, gz)
         npsd = 0; nnode = 0
         do gg = 1, nsp
           do pp_ = 1, ncomp
-            do o = 1, 4
-              ll = lorb(o)
+            do o = 1, norb(pcl(pp_))
+              ll = lorbk(o, pcl(pp_))
               ! causality at every node in the upper half plane: -Im G > 0 for a Herglotz function (manual/src/theory/energy_dependent.md, causality)
               do j = 1, nq + 1
                 if (aimag(zq(j)) <= 0.0_dp) cycle
                 nnode = nnode + 1
                 if (aimag(gz(j, o, pp_, gg)) >= 0.0_dp) npsd = npsd + 1
               end do
-              dosv(pp_, gg, ll) = dosv(pp_, gg, ll) - worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
+              dosv(pp_, gg, ll) = dosv(pp_, gg, ll) - worbk(o, pcl(pp_)) * aimag(gz(nq + 1, o, pp_, gg)) / pi
               do j = 1, nq
                 do kk = 0, 2
-                  mo(pp_, gg, kk, ll) = mo(pp_, gg, kk, ll) - worb(o) * aimag(wq(j) * (zq(j) - enu(ll, gg, pp_))**kk * gz(j, o, pp_, gg)) / pi
+                  mo(pp_, gg, kk, ll) = mo(pp_, gg, kk, ll) - worbk(o, pcl(pp_)) * aimag(wq(j) * (zq(j) - enu(ll, gg, pp_))**kk &
+                                                                                       * gz(j, o, pp_, gg)) / pi
                 end do
               end do
             end do
@@ -767,21 +811,21 @@ contains
         qc = mo(:, :, 0, :)
         return
       end if
-      allocate (gb(nq + 1, 4, ncomp, nsp, 0:3))
+      allocate (gb(nq + 1, nomax, ncomp, nsp, 0:3))
       call chain_greens(zq, gz, gb)
       asym_max = 0.0_dp; psd_max = 0.0_dp; npsd = 0; nnode = 0
       qc = 0.0_dp
       do gg = 1, nsp
         do pp_ = 1, ncomp
           qa = to_alpha(pps(pp_, gg), alpha); oa = o_alpha(qa, alpha)
-          do o = 1, 4
-            ll = lorb(o)
+          do o = 1, norb(pcl(pp_))
+            ll = lorbk(o, pcl(pp_))
             xm = 0.0_dp
             do kk = 0, 2
               do j = 1, nq
-                xm(kk) = xm(kk) - worb(o) * aimag(wq(j) * gb(j, o, pp_, gg, kk)) / pi
+                xm(kk) = xm(kk) - worbk(o, pcl(pp_)) * aimag(wq(j) * gb(j, o, pp_, gg, kk)) / pi
               end do
-              xd(kk) = -worb(o) * aimag(gb(nq + 1, o, pp_, gg, kk)) / pi
+              xd(kk) = -worbk(o, pcl(pp_)) * aimag(gb(nq + 1, o, pp_, gg, kk)) / pi
             end do
             mo(pp_, gg, 0, ll) = mo(pp_, gg, 0, ll) + xm(0) + 2.0_dp * oa(ll) * xm(1) + oa(ll)**2 * xm(2)
             mo(pp_, gg, 1, ll) = mo(pp_, gg, 1, ll) + xm(1) + oa(ll) * xm(2)
@@ -832,9 +876,9 @@ contains
         nf0 = ed_nfall
         call contour(ev, zq, wq, nq)
         bnd = [4, 4 + inp%ncont, 4 + inp%ncont + 16, 4 + inp%ncont + 24]   ! last node of each part (contour_nodes_fermi order)
-        allocate (gz(nq + 1, 4, ncomp, nsp))
+        allocate (gz(nq + 1, nomax, ncomp, nsp))
         if (len_trim(inp%ef_scan_dump) > 0) then
-          allocate (dmp_a(nlev, nq + 1, 4, ncomp, nsp), dmp_b(nlev, nq + 1, 4, ncomp, nsp), dmp_m(nq + 1, 4, ncomp, nsp))
+          allocate (dmp_a(nlev, nq + 1, nomax, ncomp, nsp), dmp_b(nlev, nq + 1, nomax, ncomp, nsp), dmp_m(nq + 1, nomax, ncomp, nsp))
           dmp_a = (0.0_dp, 0.0_dp); dmp_b = (0.0_dp, 0.0_dp); dmp_m = 0
         end if
         call chain_greens(zq, gz)
@@ -845,11 +889,11 @@ contains
         part = 0.0_dp; qc = 0.0_dp; dsum = 0.0_dp
         do gg = 1, nsp
           do pp_ = 1, ncomp
-            do o = 1, 4
-              dsum = dsum - fs * w(pp_) * worb(o) * aimag(gz(nq + 1, o, pp_, gg)) / pi
+            do o = 1, norb(pcl(pp_))
+              dsum = dsum - fs * w(pp_) * worbk(o, pcl(pp_)) * aimag(gz(nq + 1, o, pp_, gg)) / pi
               do j = 1, nq
                 ip = count(j > bnd) + 1
-                x = -fs * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
+                x = -fs * worbk(o, pcl(pp_)) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
                 part(ip) = part(ip) + w(pp_) * x; qc(pp_) = qc(pp_) + x
               end do
             end do
@@ -870,10 +914,14 @@ contains
       integer :: u, j, o, pp_, gg, k
       if (.not. par_root()) return
       if (js == -inp%ef_scan) then
+        if (any(norb /= norb(1))) error stop 'class_scf: ef_scan_dump needs the same start orbitals on every sublattice'
+        do k = 2, ncls
+          if (any(worbk(:, k) /= worbk(:, 1))) error stop 'class_scf: ef_scan_dump needs the same start orbitals on every sublattice'
+        end do
         open (newunit=u, file=trim(inp%ef_scan_dump), status='replace', action='write')
         write (u, '(a,es25.16,f6.1,3i6)') 'H ', nelec, fs, ncomp, nsp, nlev
         write (u, '(a,*(es25.16))') 'W ', w
-        write (u, '(a,*(f6.1))') 'O ', worb
+        write (u, '(a,*(f6.1))') 'O ', worbk(1:norb(1), 1)
       else
         open (newunit=u, file=trim(inp%ef_scan_dump), status='old', position='append', action='write')
       end if
@@ -881,7 +929,7 @@ contains
       do j = 1, nq + 1
         write (u, '(a,i5,4es25.16)') 'Z ', j, zq(j), wq(j)
       end do
-      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, nq + 1
+      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, norb(pcl(pp_)); do j = 1, nq + 1
         write (u, '(a,4i5)') 'C ', j, o, pp_, gg
         write (u, '(i4)') dmp_m(j, o, pp_, gg)
         do k = 1, dmp_m(j, o, pp_, gg)
@@ -939,7 +987,8 @@ contains
       ! The inner loops write disjoint parts of the vectors, so the results do not depend on the split.
       ntg_ = size(zs); if (nbe > 0) ntg_ = (size(zs) + nbe - 1) / nbe
       nmy = 0
-      do t_ = 1, ntg_ * 4 * ncomp * nsp
+      do t_ = 1, ntg_ * nomax * ncomp * nsp
+        if (mod((t_ - 1) / ntg_, nomax) + 1 > norb(pcl(mod((t_ - 1) / (ntg_ * nomax), ncomp) + 1))) cycle   ! no such start orbital
         if (mod(t_ - 1 + (t_ - 1) / ntg_, par_size()) == par_rank()) nmy = nmy + 1
       end do
       nth = 1
@@ -981,7 +1030,7 @@ contains
         call par_sum_i8(cnt, 3)
         ed_nchain = cnt0(1) + cnt(1); ed_nlev = cnt0(2) + cnt(2); ed_nfall = cnt0(3) + cnt(3)
       end if
-      call timer_stop(res%timer, ib, int(size(zs), i8) * int(4 * ncomp * nsp, i8))
+      call timer_stop(res%timer, ib, int(size(zs), i8) * int(sum(norb(pcl)) * nsp, i8))
     end subroutine chain_greens
 
     !> Diagnostic: the environment variable ASR_CHAIN_TEAMS = "nout,nin" forces the thread split of chain_greens (timing of the
@@ -1022,20 +1071,21 @@ contains
       allocate (lop(ncls), lwk(ncls), lw3(ncls), lbw(ncls)); cur = -1; newstart = .true.
       if (nbe > 0) allocate (bkb(0:3, nbe))
       !$omp do schedule(dynamic)
-      do t = 1, ntg * 4 * ncomp * nsp
+      do t = 1, ntg * nomax * ncomp * nsp
         ! MPI: this rank's share, cyclic in t; the shift by the group index rotates the energies over the ranks, so that no
         ! rank keeps the same energies (whose cost differs) in every group.  One rank: every task.
         if (mod(t - 1 + (t - 1) / ntg, nr) /= rk) cycle
         if (nbe == 0) then
-          j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, 4) + 1
-          pp_ = mod((t - 1) / (4 * nz), ncomp) + 1; gg = (t - 1) / (4 * nz * ncomp) + 1
+          j = mod(t - 1, nz) + 1; o = mod((t - 1) / nz, nomax) + 1
+          pp_ = mod((t - 1) / (nomax * nz), ncomp) + 1; gg = (t - 1) / (nomax * nz * ncomp) + 1
           j1 = j; j2 = j
         else
-          jb = mod(t - 1, nbk) + 1; o = mod((t - 1) / nbk, 4) + 1
-          pp_ = mod((t - 1) / (4 * nbk), ncomp) + 1; gg = (t - 1) / (4 * nbk * ncomp) + 1
+          jb = mod(t - 1, nbk) + 1; o = mod((t - 1) / nbk, nomax) + 1
+          pp_ = mod((t - 1) / (nomax * nbk), ncomp) + 1; gg = (t - 1) / (nomax * nbk * ncomp) + 1
           j1 = (jb - 1) * nbe + 1; j2 = min(nz, jb * nbe)
         end if
         kp = pcl(pp_)
+        if (o > norb(kp)) cycle                                 ! this sublattice has fewer start orbitals
         if (cur(1, kp) < 0) then
           lop(kp) = cop(kp)%op
           nullify (lop(kp)%wk); allocate (lop(kp)%wk(size(cop(kp)%op%wk, 1), size(cop(kp)%op%wk, 2)))
@@ -1056,8 +1106,10 @@ contains
           end if
           cur(1, kp) = pp_; cur(2, kp) = gg; newstart(kp) = .true.
         end if
-        if (cur(3, kp) /= o) then; call augcls_set_start(lop(kp), iorb(o), cop(kp)%d); cur(3, kp) = o; newstart(kp) = .true.; end if
-        iv = iorb(o)
+        if (cur(3, kp) /= o) then
+          call augcls_set_start(lop(kp), iorbk(o, kp), cop(kp)%d); cur(3, kp) = o; newstart(kp) = .true.
+        end if
+        iv = iorbk(o, kp)
         if (ed3) then
           if (newstart(kp)) then; call ed3_start(lop(kp), lw3(kp), e3(pp_, gg), iv); newstart(kp) = .false.; end if
           if (nbe == 0) then
@@ -1098,7 +1150,7 @@ contains
       type(class_alloy_t) :: mp
       type(augcls_op) :: pop
       type(epi_par_t), allocatable :: par(:, :)
-      integer, allocatable :: cl0(:), clp(:), pperm(:, :), pmats(:, :, :)
+      integer, allocatable :: cl0(:), clp(:), pidx(:)
       logical, allocatable :: flip(:)
       real(dp), allocatable :: pd(:, :, :), chi(:, :), xl(:), wl(:), db(:), rvs(:, :), gr(:), wr(:)
       complex(dp), allocatable :: zq(:), wq(:), tz(:, :, :, :, :, :), zb(:), wb(:), tb(:, :, :, :, :, :)
@@ -1127,8 +1179,8 @@ contains
       if (vb) print '(a,i0,a,i0,a,a,a,i0)', '  effective pair interactions: ', inp%epi_shells, ' shells, ', nlam, ' path points', &
         trim(merge(', pair-exchange symmetry used', '                             ', inp%epi_sym)), ', energy_block ', inp%eblock
       do kp = 1, ncls
-        call decoration_classes(inp%dec, coord, mg, kp, cl0)
-        call epi_pair_list(coord, mg, cl0, inp%epi_shells, prs, emsg)
+        cl0 = sgr(kp)%cls
+        call epi_pair_list_c(sgr(kp)%cg%disp, sgr(kp)%perm, sgr(kp)%rot, cl0, inp%epi_shells, prs, emsg)
         if (len(emsg) > 0) error stop emsg
         if (size(prs) == 0) cycle
         allocate (rvs(3, size(prs)), gr(size(prs)), wr(size(prs)))
@@ -1146,12 +1198,15 @@ contains
           mp%nsc(1:ncls) = mdl%nsc(1:ncls); mp%spc(:, 1:ncls) = mdl%spc(:, 1:ncls); mp%conc(:, 1:ncls) = mdl%conc(:, 1:ncls)
           mp%nsc(ncls + 1) = mdl%nsc(k2); mp%spc(:, ncls + 1) = mdl%spc(:, k2); mp%conc(:, ncls + 1) = mdl%conc(:, k2)
           mp%block = mdl%block; mp%block0 = mdl%block0
-          flip = flippable; flip(jsite) = .false.
-          call epi_pair_ops(coord, mg, clp, pperm, pmats)
-          call orbital_rep(pmats, pd)
-          call build_augcls_operator(g, mp, clp, pperm, pd, 1, ngen, pop, inp%maxrank, flip)
+          flip = sgr(kp)%flip; flip(jsite) = .false.
+          call epi_pair_ops_c(sgr(kp)%perm, sgr(kp)%rot, clp, pidx)
+          if (allocated(pd)) deallocate (pd)
+          allocate (pd(9, 9, size(pidx)))
+          do j = 1, size(pidx); call orbital_matrix(sgr(kp)%rot(:, :, pidx(j)), pd(:, :, j)); end do
+          call build_augcls_operator(sgr(kp)%cg%g, mp, clp, sgr(kp)%perm(:, pidx), pd, 1, ngen, pop, inp%maxrank, flip, &
+                                     stype=sgr(kp)%stype)
           if (allocated(chi)) deallocate (chi)
-          allocate (chi(size(pperm, 2), 9))
+          allocate (chi(size(pidx), 9))
           call epi_adapted(pd, vec, chi, lo)
           call augcls_freeze_any(pop, jsite, mdl%spc(1, k2), nfr)
           if (nfr == 0) print '(a,i0,a)', '  WARNING: effective pair interactions, shell ', prs(ip)%shell, &
@@ -1174,7 +1229,7 @@ contains
           ntab = ntab + 1
           tab = [tab, epi_table_t()]
           associate (t => tab(ntab))
-            t%kap = kp; t%kap2 = k2; t%shell = prs(ip)%shell; t%mult = prs(ip)%mult; t%nop = size(pperm, 2); t%nodes = pop%nn
+            t%kap = kp; t%kap2 = k2; t%shell = prs(ip)%shell; t%mult = prs(ip)%mult; t%nop = size(pidx); t%nodes = pop%nn
             t%vec = prs(ip)%vec; t%orbit = prs(ip)%orbit; t%dist = norm2(rvs(:, ip)); t%wr = wr(ip); t%tail = tailmax
             allocate (t%uband(n1, n2), t%ues(n1, n2)); t%uband = 0.0_dp; t%ues = 0.0_dp
             do c = 2, n1
@@ -1356,24 +1411,46 @@ contains
       integer :: j, o, gg, pp_
       ebot = minval(enu(:, 1:nsp, :)) - inp%ebot_offset
       call contour_nodes_closed(ebot - 3.0_dp, ebot, 0.05_dp, na, nv, zq, wq)
-      allocate (gz(na + nv, 4, ncomp, nsp))
+      allocate (gz(na + nv, nomax, ncomp, nsp))
       call chain_greens(zq, gz, tbk=tb_below)
       wb = 0.0_dp
-      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, 4; do j = 1, na + nv
-        wb = wb - fs * w(pp_) * worb(o) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
+      do gg = 1, nsp; do pp_ = 1, ncomp; do o = 1, norb(pcl(pp_)); do j = 1, na + nv
+        wb = wb - fs * w(pp_) * worbk(o, pcl(pp_)) * aimag(wq(j) * gz(j, o, pp_, gg)) / pi
       end do; end do; end do; end do
     end subroutine weight_below
 
-    !> SRO: the first shell of the origin (site 1 at coord 0; minimum image) goes to the classes ncls + kappa'
-    subroutine shell_classes(cl)
+    !> SRO: the first shell of the start site of the cluster of sublattice kp goes to the classes ncls + kappa'
+    subroutine shell_classes(kp, cl)
+      integer, intent(in) :: kp
       integer, intent(inout) :: cl(:)
-      integer :: i_, r2m
-      r2m = huge(1)
-      do i_ = 2, g%n; r2m = min(r2m, sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2)); end do
-      do i_ = 2, g%n
-        if (sum((modulo(coord(:, i_) + mg / 2, mg) - mg / 2)**2) == r2m) cl(i_) = ncls + cl(i_)
-      end do
+      integer :: i_
+      real(dp) :: r2m
+      associate (dsp => sgr(kp)%cg%disp)
+        r2m = huge(1.0_dp)
+        do i_ = 2, size(dsp, 2); r2m = min(r2m, sum(dsp(:, i_)**2)); end do
+        do i_ = 2, size(dsp, 2)
+          if (sum(dsp(:, i_)**2) <= r2m + 1.0e-9_dp) cl(i_) = ncls + cl(i_)
+        end do
+      end associate
     end subroutine shell_classes
+
+    !> The site operations of the cluster of sublattice kp that keep the classes cl (gidx: indices into sgr(kp)%perm, identity
+    !> first), their orbital matrices d (asr_crystal_symmetry::orbital_matrix) and which of them are monomial
+    subroutine class_group(kp, cl, gidx_, d, mono_)
+      integer, intent(in) :: kp, cl(:)
+      integer, allocatable, intent(out) :: gidx_(:)
+      real(dp), allocatable, intent(out) :: d(:, :, :)
+      logical, allocatable, intent(out) :: mono_(:)
+      integer :: k_
+      associate (pm => sgr(kp)%perm, rt => sgr(kp)%rot)
+        gidx_ = pack([(k_, k_=1, size(pm, 2))], [(all(cl(pm(:, k_)) == cl), k_=1, size(pm, 2))])
+        if (gidx_(1) /= 1) error stop 'class_scf: the identity does not keep the classes'
+        allocate (d(9, 9, size(gidx_)), mono_(size(gidx_)))
+        do k_ = 1, size(gidx_)
+          call orbital_matrix(rt(:, :, gidx_(k_)), d(:, :, k_)); mono_(k_) = is_monomial(rt(:, :, gidx_(k_)))
+        end do
+      end associate
+    end subroutine class_group
 
     !> Bloch spectral function A(k, E) at the final potential (asr_spectral, route edc).  Per origin class: the operator reduced
     !> with D2h, the target sites within rmax and their nodes; per spin, component, start orbital and energy one projected chain
@@ -1383,30 +1460,37 @@ contains
       type(class_op_t), allocatable :: sop(:)
       type(class_alloy_t), allocatable :: ms(:, :)
       type(edn_t), allocatable :: es(:, :)
-      integer, allocatable :: clsb(:), clsr(:), perm_(:, :), mats_(:, :, :), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
+      integer, allocatable :: clsb(:), clsr(:), gix(:), keep(:), tsite(:), tmir(:), tbase(:, :), tcls(:, :)
       integer, allocatable :: tnode(:, :, :), tgop(:, :, :), tn_(:, :), tg_(:, :), shell(:), kop(:)
       real(dp), allocatable :: tdisp(:, :), tw(:, :, :, :, :), ee(:), v(:), r2sh(:), wwin(:)
       complex(dp), allocatable :: zs(:), gdg(:, :, :, :, :), gdg4(:, :, :, :, :)
       real(dp) :: rmax2, gmax, gmax0, a_, de, amax
       integer :: ne, nst, nt, nsm, ks, cl_, t_, kp, pp_, gg, i, j, l_, ik, nkp, nsh, t0, nopd, it_
-      integer :: hd(3)
+      real(dp), allocatable :: dsp(:, :, :)
+      logical, allocatable :: mn_(:)
       if (ed3) error stop 'class_scf: the spectral function needs route = edc'
       if (.not. spectral_translations_ok(inp%dec)) error stop &
         'class_scf: spectral function: a sublattice holds sites that no translation relates (for example L1_2); not supported'
       nst = inp%spectral%nsteps; if (nst <= 0) nst = nlev
       ne = inp%spectral%ne; nsm = maxval(inp%nsc)
-      if (2.0_dp * inp%spectral%rmax >= real(inp%lsuper, dp)) error stop 'class_scf: spectral rmax must be below supercell / 2'
       call all_params()
-      ! ---- targets: graph sites within rmax of the origin (the same set for every origin class), their mirror images
+      ! ---- targets: cluster sites within rmax of the origin (the same displacements for every origin class), their mirror
+      ! images.  The clusters hold the ball of rmax (crystal_graph, rmin).
       rmax2 = 4.0_dp * inp%spectral%rmax**2                ! half-lattice units
-      allocate (keep(g%n)); nt = 0
-      do i = 1, g%n
-        hd = modulo(coord(:, i) + mg / 2, mg) - mg / 2
-        if (real(sum(hd**2), dp) <= rmax2 + 1.0e-9_dp) then; nt = nt + 1; keep(nt) = i; end if
+      associate (cg1 => sgr(1)%cg)
+        allocate (keep(cg1%n)); nt = 0
+        do i = 1, cg1%n
+          if (4.0_dp * sum(cg1%disp(:, i)**2) <= rmax2 + 1.0e-9_dp) then; nt = nt + 1; keep(nt) = i; end if
+        end do
+        tsite = keep(1:nt)
+        tdisp = cg1%disp(:, tsite)
+      end associate
+      do kp = 2, ncls
+        if (sgr(kp)%cg%n < maxval(tsite)) error stop 'class_scf: spectral function: the clusters of the origin classes differ'
+        if (maxval(abs(sgr(kp)%cg%disp(:, tsite) - tdisp)) > 1.0e-12_dp) &
+          error stop 'class_scf: spectral function: the origin classes see different target displacements; not supported'
       end do
-      tsite = keep(1:nt)
-      allocate (tdisp(3, nt), tmir(nt))
-      do t_ = 1, nt; tdisp(:, t_) = 0.5_dp * real(modulo(coord(:, tsite(t_)) + mg / 2, mg) - mg / 2, dp); end do
+      allocate (tmir(nt))
       t0 = 0
       do t_ = 1, nt
         if (tsite(t_) == 1) t0 = t_
@@ -1417,21 +1501,24 @@ contains
         if (tmir(t_) == 0) error stop 'class_scf: spectral targets are not symmetric under inversion'
       end do
       if (t0 == 0) error stop 'class_scf: the origin is not a spectral target'
-      res%spec_nt = nt; res%spec_maxhop = maxval(dist(tsite)); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
+      res%spec_nt = nt; res%spec_maxhop = maxval(sgr(1)%dist(tsite)); res%spec_hoplim = 2 * (ngen - 1); res%spec_nsteps = nst
       ! ---- per origin class: D2h-reduced operator with the target nodes
       allocate (sop(ncls), tnode(nsm, nt, ncls), tgop(nsm, nt, ncls), tbase(nt, ncls), tcls(nt, ncls), res%spec_nodes(ncls))
       do kp = 1, ncls
-        call decoration_classes(inp%dec, coord, mg, kp, clsb)
-        clsr = clsb; if (inp%sro) call shell_classes(clsr)
-        call class_ops(coord, mg, clsr, perm_, mats_)
+        clsb = sgr(kp)%cls
+        clsr = clsb; if (inp%sro) call shell_classes(kp, clsr)
+        call class_group(kp, clsr, gix, dsp, mn_)
         if (allocated(kop)) deallocate (kop)
-        allocate (kop(size(perm_, 2))); nopd = 0              ! D2h: the operations with a diagonal matrix (identity first)
-        do j = 1, size(perm_, 2)
-          if (count(mats_(:, :, j) /= 0) == 3 .and. all([(mats_(i, i, j) /= 0, i=1, 3)])) then; nopd = nopd + 1; kop(nopd) = j; end if
+        allocate (kop(size(gix))); nopd = 0                  ! D2h: the operations with a diagonal matrix (identity first)
+        do j = 1, size(gix)
+          if (maxval(abs(sgr(kp)%rot(:, :, gix(j)))) <= 1.0_dp + 1.0e-9_dp .and. &
+              all([(abs(abs(sgr(kp)%rot(i, i, gix(j))) - 1.0_dp) < 1.0e-9_dp, i=1, 3)])) then
+            nopd = nopd + 1; kop(nopd) = j
+          end if
         end do
-        call orbital_rep(mats_(:, :, kop(1:nopd)), sop(kp)%d)
-        call build_augcls_operator(g, mdl, clsr, perm_(:, kop(1:nopd)), sop(kp)%d, 1, ngen, sop(kp)%op, inp%maxrank, flippable, &
-                                   tsite=tsite, tnode=tn_, tgop=tg_)
+        sop(kp)%d = dsp(:, :, kop(1:nopd))
+        call build_augcls_operator(sgr(kp)%cg%g, mdl, clsr, sgr(kp)%perm(:, gix(kop(1:nopd))), sop(kp)%d, 1, ngen, sop(kp)%op, &
+                                   inp%maxrank, sgr(kp)%flip, tsite=tsite, tnode=tn_, tgop=tg_, stype=sgr(kp)%stype)
         if (any(tn_(1, :) == 0)) error stop 'class_scf: a spectral target lies outside the node set (lower rmax or raise levels)'
         tnode(:, :, kp) = tn_; tgop(:, :, kp) = tg_; tbase(:, kp) = clsb(tsite); tcls(:, kp) = clsr(tsite)
         res%spec_nodes(kp) = sop(kp)%op%nn
@@ -1564,7 +1651,7 @@ contains
     end subroutine spectral_final
 
     !> eigenvalues of H^(2)(k) = E_nu + h - h o h, h = c + d S(k) d, S(k) = block0 + sum_slot block(slot) exp(2 pi i k . d_slot),
-    !> d_slot the displacement of the slot-th graph neighbour of the origin (the slots of asr_augcls::apply_h)
+    !> d_slot the bond vector of the slot (asr_crystal_graph; the slots of asr_augcls::apply_h), tables of the start site
     subroutine ordered_bands(ms, es)
       type(class_alloy_t), intent(in) :: ms(:, :)
       type(edn_t), intent(in) :: es(:, :)
@@ -1572,14 +1659,15 @@ contains
       real(dp) :: rw(27), ev(9), dsl(3)
       integer :: ks_, ns_, info_, m_, n_, gg, ik, nkp
       nkp = size(res%spec_dist)
-      ns_ = g%nbr_ptr(2) - g%nbr_ptr(1)
+      ns_ = sgr(1)%cg%nslot
       allocate (res%spec_bands(9, nkp, nsp))
       do gg = 1, nsp
         do ik = 1, nkp
-          sk = ms(1, gg)%block0(:, :, 1)
+          sk = ms(1, gg)%block0(:, :, sgr(1)%stype(1))
           do ks_ = 1, ns_
-            dsl = 0.5_dp * real(modulo(coord(:, g%nbr(g%nbr_ptr(1) + ks_ - 1)) + mg / 2, mg) - mg / 2, dp)
-            sk = sk + ms(1, gg)%block(:, :, ks_, 1) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
+            if (sgr(1)%cg%btgt(ks_, sgr(1)%cg%basis(1)) == 0) cycle   ! the start site has no such bond
+            dsl = sgr(1)%cg%bvec(:, ks_)
+            sk = sk + ms(1, gg)%block(:, :, ks_, sgr(1)%stype(1)) * exp(cmplx(0.0_dp, 2.0_dp * pi * dot_product(res%spec_k(:, ik), dsl), dp))
           end do
           sk = 0.5_dp * (sk + conjg(transpose(sk)))
           do n_ = 1, 9
@@ -1660,12 +1748,13 @@ contains
       end do
       call all_params()
       zs = cmplx(res%edos_e, inp%dos_eta, dp)
-      allocate (gz(inp%ndos, 4, ncomp, nsp))
+      allocate (gz(inp%ndos, nomax, ncomp, nsp))
       call chain_greens(zs, gz, tbk=tb_dos)
       do gg = 1, nsp
         do pp_ = 1, ncomp
-          do o = 1, 4
-            res%edos(:, lorb(o), pp_, gg) = res%edos(:, lorb(o), pp_, gg) - worb(o) * aimag(gz(:, o, pp_, gg)) / pi
+          do o = 1, norb(pcl(pp_))
+            res%edos(:, lorbk(o, pcl(pp_)), pp_, gg) = res%edos(:, lorbk(o, pcl(pp_)), pp_, gg) &
+                                                       - worbk(o, pcl(pp_)) * aimag(gz(:, o, pp_, gg)) / pi
           end do
         end do
       end do
@@ -1731,14 +1820,4 @@ contains
     end subroutine read_potentials
   end subroutine class_scf
 
-  function nn_distance(kind) result(d)
-    character(len=*), intent(in) :: kind
-    real(dp) :: d
-    select case (kind)
-    case ('sc'); d = 1.0_dp
-    case ('bcc'); d = sqrt(3.0_dp) / 2.0_dp
-    case ('fcc'); d = 1.0_dp / sqrt(2.0_dp)
-    case default; error stop 'nn_distance: unknown lattice'
-    end select
-  end function nn_distance
 end module asr_class_scf

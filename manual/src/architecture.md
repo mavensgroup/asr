@@ -34,11 +34,11 @@ implemented). The diagram shows the modules of the program (`app/main.f90`) only
  disorder      asr_augcls  asr_augblk        │  operator    asr_edc  asr_ed3  asr_lmto_alloy
                asr_augspace  asr_sublattice  │              asr_lmto_ham  asr_lmto_cell
                asr_sro  asr_epi  asr_spectral│  physics     asr_radial  asr_potpar  asr_atom
-               asr_lattices                  │              asr_xc  asr_strconst  asr_harmonics
+               asr_crystal_graph             │              asr_xc  asr_strconst  asr_harmonics
  recursion     asr_chain  asr_contour        │  input       asr_input_lmto
  ──────────────────────────────────────────────────────────────────────────────────────────────
- base          asr_kinds  asr_operator  asr_symmetry  asr_tomlutil  asr_lapack  asr_mpi
-               asr_build_info
+ base          asr_kinds  asr_operator  asr_tomlutil  asr_lapack  asr_mpi  asr_build_info
+ structure     asr_crystal  asr_prototypes  asr_crystal_symmetry
 ```
 
 The method sees only the abstract operator ([[asr_operator]]) and the class
@@ -83,8 +83,8 @@ species + [asr]
     ▼
 asr_class_scf (per SCF iteration)
     │  1. asr_radial → asr_potpar : C, √Δ, p, γ, E_ν per species and spin
-    │  2. asr_lmto_alloy / asr_sublattice : graph + bond blocks S^α (common screening)
-    │  3. asr_augcls : node set (hashed), point-group reduction, params → random operators
+    │  2. asr_sublattice → asr_crystal : structure; asr_crystal_graph : site cluster; asr_lmto_alloy : bond blocks S^α
+    │  3. asr_crystal_symmetry : start orbitals, reduction group; asr_augcls : node set (hashed), params → random operators
     │  4. asr_edc / asr_ed3 : one complex-symmetric Lanczos chain per energy (asr_augblk: blocks of energies)
     │  5. asr_chain : terminated continued fraction → G(z) per component → asr_contour moments M_k
     │  6. density, core, Hartree, xc, SIM/Madelung → asr_mixing
@@ -133,17 +133,21 @@ All modules link to their generated API pages.
 
 | Module | Purpose |
 |---|---|
-| [[asr_augspace]] | Graph of the lattice and hashed augmented-space states |
-| [[asr_symmetry]] | O\(_h\) site permutations on periodic sc/bcc/fcc supercells; D\(_{4h}\) orbital representations |
+| [[asr_augspace]] | Graph type and hashed augmented-space states |
+| [[asr_crystal]] | Crystal structure: primitive vectors, basis sites, sublattice labels |
+| [[asr_prototypes]] | Named structures as data (the only module with lattice names) |
+| [[asr_crystal_symmetry]] | Space group, site groups, orbital groups (start orbitals and weights), monomial reduction group |
+| [[asr_crystal_graph]] | Site cluster about the start site: exact site labels, bond slots, site operations |
+| [[asr_symmetry]] | O\(_h\) site permutations on periodic sc/bcc/fcc graphs (earlier path, kept for tests) |
 | [[asr_augcls]] | Site-class (sublattice) resolved, point-group reduced augmented space, n species per class |
 | [[asr_augblk]] | Kernels on blocks of contour energies |
-| [[asr_lattices]] | Periodic sc/bcc/fcc graphs and random alloy realisations |
+| [[asr_lattices]] | Periodic sc/bcc/fcc graphs and random alloy realisations (tests and reference modules) |
 | [[asr_sublattice]] | Decoration cells: sublattices from Wyckoff positions and centering |
 | [[asr_sro]] | First-shell short-range order: conditional probabilities |
 | [[asr_epi]] | Effective pair interactions (`[epi]`) for SRO thermodynamics |
 | [[asr_spectral]] | Configuration-averaged Bloch spectral function \(A(\mathbf k, E)\) on route `edc` |
 | [[asr_screening]] | Screened charge-deviation electrostatics (SIM, SRO closure) |
-| [[asr_lmto_alloy]] | Graph and bond blocks \(S^\alpha\) from own LMTO output (common screening) |
+| [[asr_lmto_alloy]] | Bond blocks \(S^\alpha\) per translation type of the basis sites (common screening) |
 | [[asr_edc]] | AMscf-form energy-dependent ASR on the site-class operator (`route = "edc"`, the default) |
 | [[asr_ed3]] | Full generalised ASA problem on the site-class operator (`route = "ed3"`) |
 | [[asr_chain]] | Terminated continued fraction of a chain, square-root tails, adaptive depth, chain statistics |

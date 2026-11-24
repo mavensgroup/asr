@@ -174,7 +174,7 @@ module asr_report
     integer :: nlevels = 0
     integer :: nrec = 0
     integer :: maxrank = 0
-    integer :: lsuper = 0
+    real(dp) :: cluster_radius = 0.0_dp      !! radius of the site cluster of the recursion (alat units)
     integer, allocatable :: nodes(:)
     character(len=16), allocatable :: subname(:)
     real(dp) :: s_range = 1.2_dp, inv_radius = 1.2_dp
@@ -509,8 +509,8 @@ contains
       call wline(u, line)
       write (line, '(a,i0,a)') ' components         : ', r%ncomp, ' (sublattice, species) pairs, one potential each'
       call wline(u, line)
-      write (line, '(a,i0,a,i0,a,i0,a,i0)') ' augmented space    : levels ', r%nlevels, ', recursion steps ', r%nrec, &
-        ', max rank ', r%maxrank, ', supercell ', r%lsuper
+      write (line, '(a,i0,a,i0,a,i0,a,f0.2)') ' augmented space    : levels ', r%nlevels, ', recursion steps ', r%nrec, &
+        ', max rank ', r%maxrank, ', cluster radius ', r%cluster_radius
       call wline(u, line)
       if (allocated(r%nodes) .and. allocated(r%subname)) then
         line = ' nodes / sublattice :'

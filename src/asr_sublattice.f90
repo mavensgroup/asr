@@ -7,9 +7,10 @@
 module asr_sublattice
   use asr_kinds, only: dp
   use asr_ewald, only: madelung_phi
+  use asr_crystal, only: structure_t, structure_init
   implicit none
   private
-  public :: decoration_t, decoration_build, decoration_classes, decoration_madelung
+  public :: decoration_t, decoration_build, decoration_classes, decoration_madelung, decoration_structure
 
   type :: decoration_t
     character(len=8) :: lattice = 'bcc'
@@ -99,6 +100,20 @@ contains
       if (cls(i) == 0) error stop 'decoration_classes: graph site outside the decoration'
     end do
   end subroutine decoration_classes
+
+  !> The decoration as a crystal structure (asr_crystal): the decoration cell (period conventional cubes, alat units) as the cell,
+  !> every graph site of the cell as a basis site in the order of dec%pts, labelled by its sublattice.  The first basis site of
+  !> a sublattice is its representative dec%rep.  msg is empty on success.
+  subroutine decoration_structure(dec, s, msg)
+    type(decoration_t), intent(in) :: dec
+    type(structure_t), intent(out) :: s
+    character(len=:), allocatable, intent(out) :: msg
+    real(dp) :: avec(3, 3)
+    integer :: k
+    avec = 0.0_dp
+    do k = 1, 3; avec(k, k) = real(dec%period, dp); end do
+    call structure_init(s, avec, real(dec%pts, dp) / real(dec%m, dp), dec%pcls, msg)
+  end subroutine decoration_structure
 
   !> Madelung shifts per class (Ry) of the class-average net charges qbar(class):  V_k = sum_k' phi(k, k') qbar(k'),
   !> phi(k, k') = 2 <sum_{j in k'} Phi(i, j)>_{i in k}  over the sites of the decoration cell (Ewald, asr_ewald; alat = graph

@@ -39,7 +39,6 @@ max_iterations = 60
 levels = 4
 recursion_steps = 24
 rank = 1
-supercell = 8
 contour_points = 32
 
 [spectral]

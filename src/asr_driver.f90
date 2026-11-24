@@ -22,7 +22,7 @@
 !>                  restart; default = mixing; smaller for stiff charge-transfer maps)
 !>                  sim_beta (0 <= beta < lattice maximum, about 1.39 on bcc) fixes the hardness of the charge-excess screening
 !>                  model; with [[sro]] it also sets the screened potential of the correlated first shell (asr_screening)
-!>   [asr]          (method = "asr") levels, recursion_steps, rank, supercell (multiple of period), flip_radius, contour_points,
+!>   [asr]          (method = "asr") levels, recursion_steps, rank, flip_radius, contour_points,
 !>                  cluster_radius, inversion_radius, ed_terminator (hull (default) | bp | avg2; bp can put a pole of the
 !>                  terminated fraction next to the contour on complex chains, see manual/src/theory/recursion.md), fermi_kt, fermi_poles, depth_tol,
 !>                  ef_scan, ef_scan_step, ef_scan_center, ef_scan_dump (diagnostic: N(E) at the start potential, then stop),
@@ -331,7 +331,8 @@ contains
     call get_value(child, 'levels', inp%ci%nlevels, 4)
     call get_value(child, 'recursion_steps', inp%ci%nrec, 0)
     call get_value(child, 'rank', inp%ci%maxrank, 1)
-    call get_value(child, 'supercell', inp%ci%lsuper, 8)
+    if (child%has_key('supercell')) print '(a)', '  note: [asr] supercell is no longer used: the recursion runs on a cluster of '// &
+      'sites about the start site, sized by levels'
     call get_value(child, 'flip_radius', inp%ci%flip_radius, 99)
     call get_value(child, 'contour_points', inp%ci%ncont, 32)
     call get_value(child, 'cluster_radius', inp%ci%rcl, inp%ci%rcl)
@@ -433,10 +434,6 @@ contains
       if (inp%ci%spectral%emax <= inp%ci%spectral%emin) then; msg = '[spectral] emax must be above emin'; return; end if
       if (inp%ci%spectral%nsteps < 0) then; msg = '[spectral] steps must be >= 0'; return; end if
       inp%ci%spectral%on = .true.
-      ! the same bound as class_scf (spectral_final), checked here so that the run fails before the SCF, not after it
-      if (2.0_dp * inp%ci%spectral%rmax >= real(inp%ci%lsuper, dp)) then
-        msg = '[spectral] rmax must be below [asr] supercell / 2'; return
-      end if
     end if
 
     ! ---- validation
@@ -444,7 +441,6 @@ contains
     if (inp%ci%nlevels < 2) msg = '[asr] levels must be >= 2'
     if (inp%ci%nrec /= 0 .and. inp%ci%nrec < inp%ci%nlevels) msg = '[asr] recursion_steps must be 0 or >= levels'
     if (inp%ci%maxrank < 0) msg = '[asr] rank must be >= 0'
-    if (.not. cell .and. modulo(inp%ci%lsuper, period) /= 0) msg = '[asr] supercell must be a multiple of [structure] period'
     if (inp%ci%fermi_poles < 0 .or. inp%ci%fermi_poles > 200) msg = '[asr] fermi_poles must be 0 (automatic) .. 200'
     if (edt /= 'hull' .and. edt /= 'bp' .and. edt /= 'avg2') msg = "[asr] ed_terminator must be 'hull', 'bp' or 'avg2'"
     if (inp%li%bz /= 'tetra' .and. inp%li%bz /= 'gauss') msg = "[kspace] bz must be 'tetra' or 'gauss'"
@@ -969,7 +965,7 @@ contains
     rep%nlevels = inp%ci%nlevels
     rep%nrec = merge(inp%ci%nrec, inp%ci%nlevels, inp%ci%nrec > 0)
     rep%maxrank = inp%ci%maxrank
-    rep%lsuper = inp%ci%lsuper
+    rep%cluster_radius = res%cluster_radius
     if (allocated(res%nodes)) rep%nodes = res%nodes
     allocate (rep%subname(inp%ci%dec%ncls))
     rep%subname = inp%subname

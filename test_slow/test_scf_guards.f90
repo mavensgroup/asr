@@ -19,7 +19,7 @@ program test_scf_guards
     '[[species]]'//nl//'symbol = "Cu"'//nl//'z = 29'//nl//'nval = 11'//nl//'konfig = [4, 4, 3, 4]'//nl//'occupations = [1.0, 10.0]'//nl// &
     '[[sublattice]]'//nl//'name = "fcc"'//nl//'positions = [[0.0, 0.0, 0.0]]'//nl//'species = ["Cu"]'//nl// &
     '[scf]'//nl//'spin = 1'//nl//'xc = "vbh"'//nl//'mixing = 0.3'//nl//'max_iterations = 5'//nl//'tolerance = 1.0e3'//nl// &
-    '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 8'//nl//'supercell = 4'//nl//'contour_points = 16'//nl
+    '[asr]'//nl//'levels = 2'//nl//'recursion_steps = 8'//nl//'contour_points = 16'//nl
 
   print '(a)', 'test_scf_guards'
   open (newunit=u, file=f, status='replace'); write (u, '(a)') cu; close (u)

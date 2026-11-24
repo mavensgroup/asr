@@ -10,12 +10,15 @@ title: Recursion and disorder (method = "asr")
 
 ### Augmented space
 
+The recursion runs on a cluster of sites about the start site. It holds every site that `levels` can reach: the radius is
+2 `levels` times the longest bond within `cluster_radius` (or `[spectral] rmax` if that is larger). Nothing wraps around, and
+there is no size to converge. The key `supercell` of earlier versions is read and ignored.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `levels` | `4` | Recursion depth, ≥ 2 |
 | `recursion_steps` | `0` | Lanczos steps; `0` = `levels`; otherwise ≥ `levels` |
 | `rank` | `1` | Maximum number of simultaneously flipped sites in an augmented-space state (≥ 0). Sites beyond are an average medium. Rank 2 is a refinement; for soft-moment alloys it changes moments by several percent ([Convergence](../guides/convergence.html)) |
-| `supercell` | `8` | Graph size in conventional cells; a multiple of `period` |
 | `flip_radius` | `99` | Only sites within this distance may flip |
 | `cluster_radius`, `inversion_radius` | `1.2`, `0.0` | Real-space cluster for the structure constants and for their inversion (in `alat`; `0.0` keeps `cluster_radius`) |
 
@@ -74,7 +77,6 @@ min, mean, max and max/mean.  A max/mean well above 1 means some ranks wait for 
 ### Constraints enforced by the reader
 
 * `levels` ≥ 2; `recursion_steps` is 0 or ≥ `levels`.
-* `supercell` is a multiple of `period`.
 * `fermi_poles` in 0 to 200; `route` is `edc` or `ed3`.
 * `energy_block` ≥ 0; `ef_linear_max` ≥ 0; `alpha_scale` > 0.
 

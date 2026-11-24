@@ -30,7 +30,7 @@ steps = 48               # off-site elements converge later than the on-site one
 ### Key choices
 
 - **`kpath` coordinates:** Cartesian coordinates in units of \(2\pi / a\) of the **graph lattice** (`alat`), not fractional coordinates of the primitive cell.
-- **`rmax` and `supercell`:** `rmax` (in units of `alat`) sets the real-space cutoff of the Fourier sum. The reader enforces `2 * rmax < supercell`, so raising `rmax` for sharper \(\mathbf k\)-resolution requires raising `[asr] supercell` as well.
+- **`rmax`:** `rmax` (in units of `alat`) sets the real-space cutoff of the Fourier sum. The site cluster of the recursion always holds the ball of `rmax`. The targets must also lie inside the node set that `levels` generates; a run stops if one does not, and warns when the targets reach beyond its interior.
 - **`window` (`"ball"` vs `"sharp"`):**
   - `"ball"` (default): weights displacements by \(w(R) = (1 - R/r_{\max})^2 (1 + R/(2r_{\max}))\). Its Fourier transform is non-negative, so \(A(\mathbf k, E) \ge 0\) wherever the real-space elements are converged, while preserving the BZ average and energy integral.
   - `"sharp"`: sets \(w(R) = 1\) up to `rmax`. Gives narrower \(\mathbf k\)-features at fixed `rmax`, but introduces Gibbs ringing (which can drive \(A < 0\), e.g. \(-30\,\%\) on ordered Cu at \(\eta = 0.01\text{ Ry}\)).

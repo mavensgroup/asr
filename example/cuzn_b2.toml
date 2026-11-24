@@ -41,7 +41,6 @@ max_iterations = 80
 
 [asr]
 recursion_steps = 24
-supercell = 12
 contour_points = 32
 
 [dos]

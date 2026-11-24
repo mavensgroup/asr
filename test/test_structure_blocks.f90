@@ -90,17 +90,19 @@ contains
     type(orb_alloy_t) :: m0
     integer, allocatable :: coord(:, :)
     real(dp), allocatable :: blk(:, :, :, :), blk0(:, :, :)
+    integer, allocatable :: typ(:)
     integer :: b
     real(dp) :: e1, e0
     call proto(name, 0.0_dp, s, ops)
     call graph(s, ops, rcl, 1, cg)
-    call structure_blocks(s, cg, rinv, alpha, blk, blk0)
+    call structure_blocks(s, cg, rinv, alpha, blk, blk0, typ)
     call build_lmto_alloy(kind, l, rcl, 0.7_dp, pp(1), pp(2), 0.5_dp, g, coord, m0, rinv, alpha)
-    call check(size(blk, 3) == size(m0%block, 3) .and. size(blk, 4) == s%nb, name//': one table per basis site, slots as today')
+    call check(size(blk, 3) == size(m0%block, 3) .and. size(blk, 4) == 1 .and. all(typ == 1), &
+               name//': one table (B2: both sites have the bcc geometry), slots as today')
     if (size(blk, 3) /= size(m0%block, 3)) return
-    do b = 1, s%nb
+    do b = 1, size(blk, 4)
       e1 = maxval(abs(blk(:, :, :, b) - m0%block)); e0 = maxval(abs(blk0(:, :, b) - m0%block0))
-      print '(2x,a,a,i0,a,2es10.2)', name, ' site ', b, ': max |block - today|, |block0 - today| ', e1, e0
+      print '(2x,a,a,i0,a,2es10.2)', name, ' type ', b, ': max |block - today|, |block0 - today| ', e1, e0
       call check(e1 == 0.0_dp .and. e0 == 0.0_dp, name//': blocks of the structure equal build_lmto_alloy bit for bit')
     end do
   end subroutine cubic_blocks
@@ -117,12 +119,13 @@ contains
     type(augcls_op) :: opo, opn, ops4
     integer, allocatable :: perm(:, :), mats(:, :, :), gperm(:, :), gidx(:), red(:)
     real(dp), allocatable :: d(:, :, :), rot(:, :, :), dg(:, :, :), blk(:, :, :, :), blk0(:, :, :)
+    integer, allocatable :: typ(:)
     logical, allocatable :: fl(:), mono(:)
     real(dp) :: mo_(0:nmom), mn_(0:nmom), sc(0:nmom), err
     integer :: k, grp(9), ngrp, rep(9), wgt(9), nn4
     call proto(name, 0.0_dp, s, ops)
     call graph(s, ops, rcl, nlev, cg)
-    call structure_blocks(s, cg, rinv, alpha, blk, blk0)
+    call structure_blocks(s, cg, rinv, alpha, blk, blk0, typ)
     ! new: site operations of the cluster, orbital groups and the reduction group from the structure
     call graph_site_ops(cg, s, ops, gperm, rot, gidx)
     allocate (dg(9, 9, size(gperm, 2)), mono(size(gperm, 2)))
@@ -135,14 +138,14 @@ contains
     mn%block = blk; mn%block0 = blk0
     allocate (fl(cg%n)); fl = .true.; fl(1) = .false.
     call build_augcls_operator(cg%g, mn, s%label(cg%basis), gperm(:, red), dg(:, :, red), 1, nlev, opn, maxrank=1, flippable=fl, &
-                               stype=cg%basis)
+                               stype=typ(cg%basis))
     ! today: a periodic box of lbig cubes, classes from the half-lattice coordinates, class_ops
     call torus_operator(s%nb, lbig, nlev, rcl, rinv, opo, perm, mats, d)
     call check(size(red) == size(perm, 2), name//': reduction group of the structure has today''s order')
     if (size(red) /= size(perm, 2)) return
     call check(all(nint(rot(:, :, red)) == mats), name//': reduction group rotations equal class_ops, in order')
     call check(all(dg(:, :, red) == d), name//': orbital matrices equal orbital_rep, bit for bit')
-    call check(opn%ntype == s%nb, name//': one site type per basis site')
+    call check(opn%ntype == 1, name//': one table for every site (bcc geometry)')
     call check(opn%nn == opo%nn, name//': the cluster gives the node set of a box that does not wrap')
     err = 0.0_dp
     do k = 1, ngrp
@@ -229,6 +232,7 @@ contains
     type(symop_t), allocatable :: ops(:)
     type(crystal_graph_t) :: cg
     real(dp), allocatable :: blk(:, :, :, :), blk0(:, :, :)
+    integer, allocatable :: typ(:)
     real(dp) :: dm(9, 9), e0, e1, et, par(9, 9), big, pd
     integer :: g, b, b2, k, k2, kr
     integer, parameter :: parity(9) = [1, -1, -1, -1, 1, 1, 1, 1, 1]
@@ -236,7 +240,8 @@ contains
     write (tag, '(a,a,f5.3)') name, ' c/a ', ca
     call proto(name, ca, s, ops)
     call graph(s, ops, rcl, 1, cg)
-    call structure_blocks(s, cg, rinv, alpha, blk, blk0)
+    call structure_blocks(s, cg, rinv, alpha, blk, blk0, typ)
+    call check(all(typ == [(b, b=1, s%nb)]), trim(tag)//': no two basis sites related by a translation (one table each)')
     big = maxval(abs(blk))
     e0 = 0.0_dp; e1 = 0.0_dp; et = 0.0_dp
     do g = 1, size(ops)
@@ -298,6 +303,7 @@ contains
     type(augcls_op) :: opr, opu
     integer, allocatable :: perm(:, :), gidx(:), red(:), cls(:), sidx(:), perm1(:, :)
     real(dp), allocatable :: rot(:, :, :), dg(:, :, :), dcr(:, :, :), blk(:, :, :, :), blk0(:, :, :), x(:), y(:), hy(:), hx(:)
+    integer, allocatable :: typ(:)
     logical, allocatable :: fl(:), mono(:), mcr(:)
     real(dp) :: d1(9, 9, 1), mr(0:nmom), mu(0:nmom), sc(0:nmom), err, errp, asym, eb(2)
     real(dp), allocatable :: mall(:, :)
@@ -306,7 +312,7 @@ contains
     write (tag, '(a,a,i0)') name, ' start ', start
     call proto(name, ca, s, ops)
     call graph(s, ops, rcl, 2, cg, start)
-    call structure_blocks(s, cg, 1.5_dp, alpha, blk, blk0)
+    call structure_blocks(s, cg, 1.5_dp, alpha, blk, blk0, typ)
     ! orbital groups from the crystal site group, reduction group from the graph operations
     call site_ops(ops, start, sidx)
     allocate (dcr(9, 9, size(sidx)), mcr(size(sidx)))
@@ -336,8 +342,8 @@ contains
     allocate (fl(cg%n)); fl = .true.; fl(1) = .false.
     allocate (perm1(cg%n, 1)); perm1(:, 1) = [(i, i=1, cg%n)]
     d1 = 0.0_dp; do l = 1, 9; d1(l, l, 1) = 1.0_dp; end do
-    call build_augcls_operator(cg%g, m, cls, perm(:, red), dg(:, :, red), 1, 2, opr, maxrank=1, flippable=fl, stype=cg%basis)
-    call build_augcls_operator(cg%g, m, cls, perm1, d1, 1, 2, opu, maxrank=1, flippable=fl, stype=cg%basis)
+    call build_augcls_operator(cg%g, m, cls, perm(:, red), dg(:, :, red), 1, 2, opr, maxrank=1, flippable=fl, stype=typ(cg%basis))
+    call build_augcls_operator(cg%g, m, cls, perm1, d1, 1, 2, opu, maxrank=1, flippable=fl, stype=typ(cg%basis))
     print '(2x,a,a,i0,a,i0,a,i0,a,i0)', trim(tag), ': sites ', cg%n, ', slots ', cg%nslot, ', nodes reduced ', opr%nn, &
       ', unreduced ', opu%nn
     ! moments of every start orbital, reduced against unreduced
