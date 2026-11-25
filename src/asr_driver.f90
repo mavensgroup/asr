@@ -59,7 +59,7 @@ module asr_driver
   use asr_input_lmto, only: lmto_species_t, lmto_input_t
   use asr_asa, only: core_shells_for, asa_class_result_t
   use asr_lmto_driver, only: run_lmto, atom_shells
-  use asr_crystal, only: structure_t, structure_init, ws_radius
+  use asr_crystal, only: structure_t, structure_init, ws_radius, cell_volume
   use asr_prototypes, only: prototype_structure, prototype_names
   use asr_sublattice, only: decoration_t, decoration_build, decoration_structure
   use asr_sro, only: sro_conditional
@@ -336,7 +336,6 @@ contains
       else if (has_vec) then
         call structure_init(inp%ci%st, vec3, pos, owner, msg)
         if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
-        call fill_dec_from_st(inp%ci%st, lat, inp%ci%dec)
       else
         if (size(pos, 2) == 0) then
           if (nsub == proto_st%nlabel) then
@@ -353,7 +352,6 @@ contains
           call match_prototype_positions(proto_st, pos, owner, nsub, inp%ci%st, msg)
           if (len(msg) > 0) then; msg = '[[sublattice]]: '//msg; return; end if
         end if
-        call fill_dec_from_st(inp%ci%st, lat, inp%ci%dec)
       end if
       if (kspace .and. nmax > 1) then
         msg = 'method = "kspace" needs an ordered structure (one species per sublattice); disorder runs with method = "asr"'; return
@@ -726,20 +724,6 @@ contains
     if (li%lattice == 'b2') li%species = [li%species(li%site_sp(1)), li%species(li%site_sp(2))]
   end subroutine kspace_structure_cell
 
-  !> Fill dec metadata (lattice, period, ncls, nsite, frac, pcls) from st for non-cubic prototypes and explicit cells.
-  subroutine fill_dec_from_st(st, lat, dec)
-    type(structure_t), intent(in) :: st
-    character(len=*), intent(in) :: lat
-    type(decoration_t), intent(out) :: dec
-    integer :: k
-    dec%lattice = lat; dec%period = 1; dec%m = 2; dec%ncls = st%nlabel; dec%nsite = st%nb
-    allocate (dec%pcls(st%nb), dec%frac(st%nlabel), dec%pts(3, st%nb))
-    dec%pcls = st%label; dec%pts = nint(2.0_dp * st%tau)
-    do k = 1, st%nlabel
-      dec%frac(k) = real(count(st%label == k), dp) / real(st%nb, dp)
-    end do
-  end subroutine fill_dec_from_st
-
   !> Match explicit fractional positions pos(3, n) with sublattice labels owner(1:n) against a prototype structure p.
   subroutine match_prototype_positions(p, pos, owner, nsub, s, msg)
     use asr_crystal, only: same_frac
@@ -822,10 +806,16 @@ contains
     nsp = size(inp%species)
     call class_species(inp)
     print '(a,a)', 'asr (augmented-space recursion)  ', inp%name
-    print '(a,a,a,f9.5,a,i0,a,i0,a,i0)', '  graph lattice ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, '  period=', inp%ci%dec%period, &
-      '  sites per decoration cell=', inp%ci%dec%nsite, '  spin=', inp%ci%nspin
-    do p = 1, inp%ci%dec%ncls
-      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(p), '  site fraction=', inp%ci%dec%frac(p), '  species: ', &
+    if (inp%ci%dec%nsite > 0) then
+      print '(a,a,a,f9.5,a,i0,a,i0,a,i0)', '  graph lattice ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, &
+        '  period=', inp%ci%dec%period, '  sites per decoration cell=', inp%ci%st%nb, '  spin=', inp%ci%nspin
+    else
+      print '(a,a,a,f9.5,a,i0,a,i0)', '  structure ', trim(inp%ci%lattice), '  a(Bohr)=', inp%ci%alat, &
+        '  sites per cell=', inp%ci%st%nb, '  spin=', inp%ci%nspin
+    end if
+    do p = 1, inp%ci%st%nlabel
+      print '(a,a8,a,f7.4,a,*(a))', '  sublattice ', inp%subname(p), '  site fraction=', &
+        real(count(inp%ci%st%label == p), dp) / real(inp%ci%st%nb, dp), '  species: ', &
         (trim(inp%species(inp%ci%spc(ie, p))%symbol)//' ', ie=1, inp%ci%nsc(p))
     end do
     inp%ci%ndos = inp%npoints; inp%ci%dos_emin = inp%emin; inp%ci%dos_emax = inp%emax; inp%ci%dos_eta = inp%eta
@@ -839,8 +829,8 @@ contains
     qcell = 0.0_dp; mcell = 0.0_dp
     do p = 1, ncomp
       labels(p) = trim(inp%species(res%comp_spec(p))%symbol)//'@'//trim(inp%subname(res%comp_cls(p)))
-      qcell = qcell + res%comp_w(p) * res%comp(p)%qnet * inp%ci%dec%nsite
-      mcell = mcell + res%comp_w(p) * res%comp(p)%moment * inp%ci%dec%nsite
+      qcell = qcell + res%comp_w(p) * res%comp(p)%qnet * inp%ci%st%nb
+      mcell = mcell + res%comp_w(p) * res%comp(p)%moment * inp%ci%st%nb
     end do
     print '(a,l1,a,i0,a,f10.6,a)', '  SCF converged=', res%converged, '  iterations=', res%iter, '  E_F=', res%ef, ' Ry'
     print '(a,f18.8,a)', '  total energy =', res%etot, ' Ry per site'
@@ -848,7 +838,11 @@ contains
     do p = 1, ncomp
       print '(a,a16,a,f7.4,a,f9.5,a,f9.5)', '  component ', labels(p), '  x=', res%comp_x(p), '  qnet=', res%comp(p)%qnet, '  moment=', res%comp(p)%moment
     end do
-    print '(a,i0,a,f9.5,a,es10.2)', '  per decoration cell (', inp%ci%dec%nsite, ' sites): moment=', mcell, '  net charge=', qcell
+    if (inp%ci%dec%nsite > 0) then
+      print '(a,i0,a,f9.5,a,es10.2)', '  per decoration cell (', inp%ci%st%nb, ' sites): moment=', mcell, '  net charge=', qcell
+    else
+      print '(a,i0,a,f9.5,a,es10.2)', '  per cell (', inp%ci%st%nb, ' sites): moment=', mcell, '  net charge=', qcell
+    end if
 
     ! every rank holds the full result (asr_class_scf); rank 0 alone writes the files
     if (.not. par_root()) then
@@ -1018,19 +1012,28 @@ contains
     write (u, '(a,a,a)') 'name = "', inp%name, '"'
     write (u, '(a,a,a)') 'lattice = "', trim(inp%ci%lattice), '"'
     write (u, '(a,es22.14)') 'alat = ', inp%ci%alat
-    write (u, '(a,i0)') 'period = ', inp%ci%dec%period
+    if (inp%ci%dec%nsite > 0) then
+      write (u, '(a,i0)') 'period = ', inp%ci%dec%period
+    else
+      write (u, '(a)', advance='no') 'vectors_alat = ['
+      do k = 1, 3
+        write (u, '(a,es22.14,a,es22.14,a,es22.14,a,a)', advance='no') '[', inp%ci%st%avec(1, k), ', ', &
+          inp%ci%st%avec(2, k), ', ', inp%ci%st%avec(3, k), ']', trim(merge(', ', '  ', k < 3))
+      end do
+      write (u, '(a)') ']'
+    end if
     write (u, '(a,es22.14)') 'fermi_energy = ', res%ef
     write (u, '(a,a)') 'converged = ', trim(merge('true ', 'false', res%converged))
     write (u, '(a,i0)') 'lambda_points = ', inp%ci%epi_nlam
     write (u, '(a,a)') 'symmetric = ', trim(merge('true ', 'false', inp%ci%epi_sym))
-    do kap = 1, inp%ci%dec%ncls
+    do kap = 1, inp%ci%st%nlabel
       write (u, '(/,a)') '[[sublattice]]'
       write (u, '(a,a,a)') 'name = "', trim(inp%subname(kap)), '"'
-      write (u, '(a,es22.14)') 'site_fraction = ', inp%ci%dec%frac(kap)
+      write (u, '(a,es22.14)') 'site_fraction = ', real(count(inp%ci%st%label == kap), dp) / real(inp%ci%st%nb, dp)
       write (u, '(a,*(a))') 'species = [', ('"'//trim(inp%species(inp%ci%spc(c, kap))%symbol)//'"'//merge(', ', '  ', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap)), ']'
       write (u, '(a,*(es22.14,a))') 'concentrations = [', (inp%ci%conc(c, kap), merge(', ', ' ]', c < inp%ci%nsc(kap)), c=1, inp%ci%nsc(kap))
-      ns = count(inp%ci%dec%pcls == kap); k = 0
-      if (maxval(abs(2.0_dp * inp%ci%st%tau - real(inp%ci%dec%pts, dp))) < 1.0e-6_dp) then
+      ns = count(inp%ci%st%label == kap); k = 0
+      if (inp%ci%dec%nsite > 0) then
         write (u, '(a)', advance='no') 'sites = ['
         do i = 1, size(inp%ci%dec%pcls)
           if (inp%ci%dec%pcls(i) /= kap) cycle
@@ -1154,7 +1157,7 @@ contains
     rep%maxrank = inp%ci%maxrank
     rep%cluster_radius = res%cluster_radius
     if (allocated(res%nodes)) rep%nodes = res%nodes
-    allocate (rep%subname(inp%ci%dec%ncls))
+    allocate (rep%subname(inp%ci%st%nlabel))
     rep%subname = inp%subname
     rep%s_range = inp%ci%rcl
     rep%inv_radius = max(inp%ci%rcl, inp%ci%rinv)            ! rinv = 0: the inversion cluster is the kept range
@@ -1192,7 +1195,7 @@ contains
     ! SRO
     rep%sro%has_sro = inp%ci%sro
     if (inp%ci%sro) then
-      if (inp%ci%dec%ncls == 1) then
+      if (inp%ci%st%nlabel == 1) then
         rep%sro%sub_centre = inp%subname(1)
         rep%sro%sub_neigh = inp%subname(1)
         rep%sro%coord_num = res%screen%z
@@ -1207,8 +1210,8 @@ contains
           end do
         end do
       else
-        find_pair: do kap = 1, inp%ci%dec%ncls
-          do k = 1, inp%ci%dec%ncls
+        find_pair: do kap = 1, inp%ci%st%nlabel
+          do k = 1, inp%ci%st%nlabel
             if (any(abs(inp%ci%sro_cond(1:inp%ci%nsc(kap), 1:inp%ci%nsc(k), kap, k) - &
                         spread(inp%ci%conc(1:inp%ci%nsc(k), k), 1, inp%ci%nsc(kap))) > 1.0e-12_dp)) then
               rep%sro%sub_centre = inp%subname(kap)
@@ -1262,16 +1265,17 @@ contains
     ! Structure
     rep%lattice = trim(inp%ci%lattice)
     rep%alat = inp%ci%alat
-    rep%period = inp%ci%dec%period
-    rep%nsite = inp%ci%dec%nsite
+    rep%avec = inp%ci%st%avec
+    rep%period = merge(inp%ci%dec%period, 0, inp%ci%dec%nsite > 0)
+    rep%nsite = inp%ci%st%nb
     avw = ws_radius(inp%ci%st) * inp%ci%alat
     rep%sws_avg = avw
-    rep%cell_vol = (4.0_dp * pi / 3.0_dp) * avw**3 * inp%ci%dec%nsite
-    rep%nsub = inp%ci%dec%ncls
+    rep%cell_vol = cell_volume(inp%ci%st) * inp%ci%alat**3
+    rep%nsub = inp%ci%st%nlabel
     allocate (rep%sub(rep%nsub))
     do kap = 1, rep%nsub
       rep%sub(kap)%name = inp%subname(kap)
-      rep%sub(kap)%frac = inp%ci%dec%frac(kap)
+      rep%sub(kap)%frac = real(count(inp%ci%st%label == kap), dp) / real(inp%ci%st%nb, dp)
       rep%sub(kap)%nspec = inp%ci%nsc(kap)
       allocate (rep%sub(kap)%species(rep%sub(kap)%nspec), rep%sub(kap)%conc(rep%sub(kap)%nspec))
       do i = 1, rep%sub(kap)%nspec

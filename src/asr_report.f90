@@ -540,7 +540,11 @@ contains
       write (line, '(a,a,a,a,a)') '                      bottom ', trim(ftoa(r%ebot_offset, 3)), &
         ' Ry below the lowest E_nu;  E_F probe eta ', trim(ftoa(r%ed_eta, 3)), ' Ry'
       call wline(u, line)
-      call wline(u, ' electrostatics     : Madelung of the sublattice averages (Ewald, decoration cell)')
+      if (r%period > 0) then
+        call wline(u, ' electrostatics     : Madelung of the sublattice averages (Ewald, decoration cell)')
+      else
+        call wline(u, ' electrostatics     : Madelung of the sublattice averages (Ewald, primitive cell)')
+      end if
       if (r%unscreened) then
         call wline(u, '                      screening: none (sim_beta = 0; bare point charges)')
       else
@@ -576,7 +580,7 @@ contains
     real(dp) :: vsite, vsph
 
     call rep_section(u, 'structure')
-    if (trim(r%method) == 'kspace') then
+    if (trim(r%method) == 'kspace' .or. r%period == 0) then
       if (trim(r%lattice) == 'cell') then
         call kv(u, 'lattice', 'explicit cell (primitive vectors below)')
       else
@@ -598,6 +602,16 @@ contains
       vsph = 0.0_dp
       if (allocated(r%sites)) vsph = sum([(4.0_dp * pi / 3.0_dp * r%sites(i)%sws**3, i=1, r%nat)])
       call kv(u, 'sphere / cell vol.', trim(ftoa(vsph / max(r%cell_vol, tiny(1.0_dp)), 5)))
+    else if (r%period == 0) then
+      call kv(u, 'primitive vectors', '(alat units)')
+      do k = 1, 3
+        write (line, '(a,i1,a,3f11.6)') '   a', k, '                : ', r%avec(:, k)
+        call wline(u, line)
+      end do
+      call kv(u, 'sites per cell', trim(itoa(r%nsite)))
+      call kv(u, 'sphere radius S', trim(ftoa(r%sws_avg, 6)) // ' Bohr  (equal spheres, space filling)')
+      vsite = r%cell_vol / real(max(1, r%nsite), dp)
+      call kv(u, 'volume per site', trim(ftoa(vsite, 5)) // ' Bohr^3  (' // trim(ftoa(vsite * bohr_to_ang**3, 5)) // ' Angstrom^3)')
     else
       call kv(u, 'decoration cell', trim(itoa(r%period)) // '^3 conventional cubes;  sites ' // trim(itoa(r%nsite)))
       call kv(u, 'sphere radius S', trim(ftoa(r%sws_avg, 6)) // ' Bohr  (equal spheres, space filling)')

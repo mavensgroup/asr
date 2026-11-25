@@ -169,8 +169,9 @@ program test_run_input
            '[[sublattice]]'//nl//'name = "hcp"'//nl//'species = ["Fe", "Co"]'//nl//'concentrations = [0.5, 0.5]'//nl)
   call read_run_input(f, inp, msg)
   call check(len(msg) == 0 .and. inp%ci%st%nb == 2 .and. inp%ci%st%nlabel == 1 .and. &
-             abs(inp%ci%st%avec(3, 3) - sqrt(8.0_dp / 3.0_dp)) < 1.0e-12_dp, &
-             'hcp prototype with default c_over_a and omitted positions accepted')
+             abs(inp%ci%st%avec(3, 3) - sqrt(8.0_dp / 3.0_dp)) < 1.0e-12_dp .and. &
+             inp%ci%dec%nsite == 0 .and. .not. allocated(inp%ci%dec%pts), &
+             'hcp prototype accepted without fake cubic decoration')
   call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//co//fe// &
            '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co"]'//nl// &
            '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Fe"]'//nl)

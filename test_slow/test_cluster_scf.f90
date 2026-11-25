@@ -92,7 +92,7 @@ contains
     character(len=:), allocatable :: msg
     character(len=256) :: line
     integer :: u, ios
-    logical :: ok, all_le_90, has_vec_a
+    logical :: ok, all_le_90, has_pvec, no_cubes, has_vec_a, has_sites_a
     open (newunit=u, file=fn, status='replace'); write (u, '(a)') nias_txt; close (u)
     call read_run_input(fn, inp, msg)
     call check(len(msg) == 0, 'NiAs pipeline: input accepted')
@@ -107,21 +107,27 @@ contains
                  'NiAs pipeline: non-zero anion-anion EPI on shell 2 (6 sites)')
     end if
     open (newunit=u, file='build/test_nias.out', status='old', action='read', iostat=ios)
-    all_le_90 = (ios == 0)
+    all_le_90 = (ios == 0); has_pvec = .false.; no_cubes = .true.
     do while (ios == 0)
       read (u, '(a)', iostat=ios) line
-      if (ios == 0 .and. len_trim(line) > 90) all_le_90 = .false.
+      if (ios == 0) then
+        if (len_trim(line) > 90) all_le_90 = .false.
+        if (index(line, 'primitive vectors') > 0) has_pvec = .true.
+        if (index(line, 'conventional cubes') > 0) no_cubes = .false.
+      end if
     end do
     if (all_le_90 .or. ios /= 0) close (u)
     call check(all_le_90, 'NiAs pipeline: all lines of report <= 90 columns')
+    call check(has_pvec .and. no_cubes, 'NiAs pipeline: report prints primitive vectors without conventional cubes')
     open (newunit=u, file='build/test_nias_epi.toml', status='old', action='read', iostat=ios)
-    has_vec_a = .false.
+    has_vec_a = .false.; has_sites_a = .false.
     do while (ios == 0)
       read (u, '(a)', iostat=ios) line
       if (ios == 0 .and. index(line, 'vector_alat =') > 0) has_vec_a = .true.
+      if (ios == 0 .and. index(line, 'sites_alat =') > 0) has_sites_a = .true.
     end do
     close (u)
-    call check(has_vec_a, 'NiAs pipeline: pair file writes vector_alat for non-cubic pair')
+    call check(has_vec_a .and. has_sites_a, 'NiAs pipeline: pair file writes sites_alat and vector_alat from structure')
   end subroutine run_nias_pipeline
 
   subroutine run_case(tag, txt, nodes, ef, etot, mom, qnet)

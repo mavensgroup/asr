@@ -279,6 +279,29 @@ contains
         call check_close(sum(rep%eterm), rep%etot, 1.0e-12_dp, 'energy terms sum to etot ('//trim(fname)//')')
       end do
     end do
+
+    ! Non-cubic structure layout (period = 0: primitive vectors and sites per cell, no conventional cubes)
+    call make_synthetic_run(rep, 3, 1, has_sro=.true.)
+    rep%lattice = 'nias'
+    rep%period = 0
+    rep%nsite = 4
+    rep%avec = reshape([1.0_dp, 0.0_dp, 0.0_dp, -0.5_dp, 0.8660254_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.62_dp], [3, 3])
+    rep%cell_vol = 4.0_dp * 77.8_dp
+    fname = 'test_nias_rep.out'
+    rep%out_file = fname
+    call rep_write_report(rep, fname)
+    open (newunit=u, file=fname, status='old', action='read', iostat=ios)
+    all_le_90 = (ios == 0); has_struct = .false.; has_banner = .false.
+    do
+      read (u, '(a)', iostat=ios) line
+      if (ios /= 0) exit
+      if (len_trim(line) > 90) all_le_90 = .false.
+      if (index(line, 'primitive vectors') > 0) has_struct = .true.
+      if (index(line, 'conventional cubes') > 0) has_banner = .true.
+    end do
+    close (u, status='delete')
+    call check(all_le_90, 'non-cubic structure report: all lines <= 90 chars')
+    call check(has_struct .and. .not. has_banner, 'non-cubic structure report: primitive vectors printed, no conventional cubes')
   end subroutine test_layouts
 
   subroutine test_per_spin_conversion()
