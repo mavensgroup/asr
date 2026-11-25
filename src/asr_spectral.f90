@@ -13,12 +13,13 @@
 !> Symmetrisation.  The truncated augmented space does not give G_{0L,RL'} = G_{0L',-R L} exactly (two different chains, the
 !> second from the origin of the partner sublattice).  The code averages the two and prints their largest difference.
 !>
-!> Unfolding.  A(k, E) is given on the Brillouin zone of the graph lattice (bcc, fcc, sc) per graph site and per spin:
-!>     A(k, E) = sum_kappa f_kappa sum_L sum_R cos(2 pi k . R) ( -1/pi Im <G_{0 kappa L, R L}(E + i eta)> ),
-!> R the displacement in units of alat, k in units of 2 pi / alat (Cartesian).  It is the trace over L of <k L| A |k L> with Bloch
-!> vectors of the graph lattice, so it is non-negative for the exact average, and its BZ average is the DOS per site.  For an
-!> ordered decoration it is the unfolded band structure.  It needs every sublattice to be one lattice of translations
-!> (random alloys, B2, L2_1; not L1_2, whose face sites are related by rotations only): spectral_translations_ok.
+!> Unfolding.  A(k, E) is given per crystal site and per spin on Cartesian wavevectors k (units 2 pi / alat):
+!>     A(k, E) = sum_u w_u sum_L sum_R cos(2 pi k . R) ( -1/pi Im <G_{0_u L, R L}(E + i eta)> ),
+!> R the displacement in units of alat, w_u the site fraction of origin class u.  Basis sites of a sublattice fall into one origin
+!> class when a pure translation or an inversion of the structure maps one onto the other (cos(2 pi k . R) is even in R and
+!> D_LL(-I)^2 = 1).  Sites related only by rotations, screws or glides (such as NiAs cations and L1_2 face sites) form separate
+!> origin classes whose unfolded sums are averaged with w_u.  Every sublattice must still be a single orbit of the space group so
+!> its sites share one single-site potential: spectral_structure_ok.
 !>
 !> Window.  The Fourier sum stops at rmax.  A sharp stop rings: for an ordered metal with eta 0.01 Ry, A dips to -30 % of its
 !> peak.  The default window is the ball window: w(R) is the overlap volume of two
@@ -35,8 +36,8 @@ module asr_spectral
   use asr_augcls, only: augn_basis
   implicit none
   private
-  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_structure_ok, spectral_unfold, spectral_dressing, &
-            spectral_window
+  public :: spectral_input_t, spectral_kpath, spectral_translations_ok, spectral_structure_ok, spectral_origin_classes, &
+            spectral_unfold, spectral_dressing, spectral_window
 
   type :: spectral_input_t
     logical :: on = .false.
@@ -75,16 +76,15 @@ contains
     end do
   end subroutine spectral_kpath
 
-  !> .true. if every sublattice of the structure s is a single space-group orbit under the space group of s (with labels) AND all
-  !> basis sites of a sublattice share one reduction group / start site geometry so that the chain from one representative basis
-  !> site of each sublattice equals the sublattice average.  For a cubic decoration (every basis site has the same cubic geometry),
-  !> the reduction group is fixed to the z-axis D4h / D2h, so sites in a sublattice must be related by a translation of the
-  !> structure (or by a space-group operation whose rotation is in D2h, such as inversion in hcp and NiAs).
+  !> .true. if every sublattice of the structure s is a single space-group orbit under the space group of s (with labels).
+  !> Each sublattice holds one set of component potentials in class_scf, so every site of the sublattice must be symmetry
+  !> equivalent to its representative site.  Structures where sites of a sublattice are related by rotations, screws or glides
+  !> (such as NiAs and L1_2) are accepted and unfolded over all translation-inversion origin classes.
   logical function spectral_structure_ok(s) result(ok)
     type(structure_t), intent(in) :: s
     type(symop_t), allocatable :: ops(:)
     integer :: kap, b0, b, g
-    logical :: hit, d2h_rot
+    logical :: hit
     call space_group(s, ops)
     ok = .true.
     do kap = 1, s%nlabel
@@ -94,22 +94,57 @@ contains
         if (s%label(b) /= kap) cycle
         hit = .false.
         do g = 1, size(ops)
-          if (ops(g)%perm(b0) /= b) cycle
-          ! A space-group operation mapping b0 to b keeps the real-orbital trace Tr_l[-Im G(0, R)] invariant with the same
-          ! Cartesian displacement d = R_target - R_origin when its point rotation is +/- I (pure translation or inversion)
-          d2h_rot = maxval(abs(ops(g)%rot - eye3())) < 1.0e-7_dp .or. maxval(abs(ops(g)%rot + eye3())) < 1.0e-7_dp
-          if (d2h_rot) then; hit = .true.; exit; end if
+          if (ops(g)%perm(b0) == b) then; hit = .true.; exit; end if
         end do
         if (.not. hit) then; ok = .false.; return; end if
       end do
     end do
+  end function spectral_structure_ok
+
+  !> Partition the basis sites 1 .. s%nb into equivalence classes under pure translations (rot = +I) and inversions (rot = -I)
+  !> in ops (space_group(s, ops)).  Returns bclass(1:nb) in 1 .. norig, representative basis sites orig_b(1:norig) ordered by
+  !> sublattice and basis index, orig_sign(1:nb) (+1 if a pure translation maps b to orig_b(bclass(b)), -1 if an inversion does),
+  !> and site fractions orig_w(1:norig) summing to 1.
+  subroutine spectral_origin_classes(s, ops, bclass, orig_b, orig_sign, orig_w)
+    type(structure_t), intent(in) :: s
+    type(symop_t), intent(in) :: ops(:)
+    integer, allocatable, intent(out) :: bclass(:), orig_b(:), orig_sign(:)
+    real(dp), allocatable, intent(out) :: orig_w(:)
+    integer :: ob(s%nb), kap, b, b2, g, norig
+    allocate (bclass(s%nb), orig_sign(s%nb))
+    bclass = 0; orig_sign = 1; norig = 0
+    do kap = 1, s%nlabel
+      do b = 1, s%nb
+        if (s%label(b) /= kap .or. bclass(b) /= 0) cycle
+        norig = norig + 1
+        ob(norig) = b; bclass(b) = norig; orig_sign(b) = 1
+        do b2 = b + 1, s%nb
+          if (s%label(b2) /= kap .or. bclass(b2) /= 0) cycle
+          do g = 1, size(ops)
+            if (ops(g)%perm(b2) == b .and. maxval(abs(ops(g)%rot - eye3())) < 1.0e-7_dp) then
+              bclass(b2) = norig; orig_sign(b2) = 1; exit
+            end if
+          end do
+        end do
+        do b2 = b + 1, s%nb
+          if (s%label(b2) /= kap .or. bclass(b2) /= 0) cycle
+          do g = 1, size(ops)
+            if (ops(g)%perm(b2) == b .and. maxval(abs(ops(g)%rot + eye3())) < 1.0e-7_dp) then
+              bclass(b2) = norig; orig_sign(b2) = -1; exit
+            end if
+          end do
+        end do
+      end do
+    end do
+    orig_b = ob(1:norig)
+    orig_w = [(real(count(bclass == g), dp) / real(s%nb, dp), g=1, norig)]
   contains
     pure function eye3() result(e)
       real(dp) :: e(3, 3)
       integer :: i
       e = 0.0_dp; do i = 1, 3; e(i, i) = 1.0_dp; end do
     end function eye3
-  end function spectral_structure_ok
+  end subroutine spectral_origin_classes
 
   !> .true. if every class of the decoration is one lattice of the translations that keep the decoration: then the Bloch sum
   !> from one origin per class is the class average (asr_spectral header).

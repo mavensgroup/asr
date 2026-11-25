@@ -68,21 +68,42 @@ program test_spectral
   call set_dec(dec, reshape([0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1], [3, 4]), [1, 2, 2, 2], 2)
   call check(.not. spectral_translations_ok(dec), 'translations: L1_2 is refused (face sites related by rotations only)')
   block
-    use asr_crystal, only: structure_t
+    use asr_crystal, only: structure_t, structure_init
+    use asr_crystal_symmetry, only: symop_t, space_group
     use asr_prototypes, only: prototype_structure
     use asr_sublattice, only: decoration_structure
-    type(structure_t) :: st
+    type(structure_t) :: st, st_bad
+    type(symop_t), allocatable :: ops(:)
+    integer, allocatable :: bcl(:), ob(:), osg(:)
+    real(dp), allocatable :: ow(:)
     character(len=:), allocatable :: msg
     call prototype_structure('fcc', st, msg)
     call check(spectral_structure_ok(st), 'spectral_structure_ok: fcc accepted')
+    call space_group(st, ops); call spectral_origin_classes(st, ops, bcl, ob, osg, ow)
+    call check(size(ob) == 1 .and. abs(ow(1) - 1.0_dp) < 1.0e-14_dp, 'origin classes: fcc has 1 origin of weight 1')
     call prototype_structure('b2', st, msg)
     call check(spectral_structure_ok(st), 'spectral_structure_ok: B2 accepted')
     call prototype_structure('hcp', st, msg)
-    call check(spectral_structure_ok(st), 'spectral_structure_ok: hcp accepted (two sites related by inversion)')
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: hcp accepted')
+    call space_group(st, ops); call spectral_origin_classes(st, ops, bcl, ob, osg, ow)
+    call check(size(ob) == 1 .and. all(osg == [1, -1]) .and. abs(ow(1) - 1.0_dp) < 1.0e-14_dp, &
+               'origin classes: hcp merges inversion-related sites into 1 origin')
     call prototype_structure('nias', st, msg, c_over_a=1.62_dp)
-    call check(.not. spectral_structure_ok(st), 'spectral_structure_ok: NiAs refused (cations related by screw and glide only)')
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: NiAs accepted')
+    call space_group(st, ops); call spectral_origin_classes(st, ops, bcl, ob, osg, ow)
+    call check(size(ob) == 3 .and. all(ob == [1, 2, 3]) .and. all(osg == [1, 1, 1, -1]), &
+               'origin classes: NiAs splits cations into 2 origins and merges anions into 1')
+    call check_close(maxval(abs(ow - [0.25_dp, 0.25_dp, 0.5_dp])), 0.0_dp, 1.0e-14_dp, &
+                     'origin classes: NiAs weights are (1/4, 1/4, 1/2)')
     call decoration_structure(dec, st, msg)
-    call check(.not. spectral_structure_ok(st), 'spectral_structure_ok: L1_2 refused')
+    call check(spectral_structure_ok(st), 'spectral_structure_ok: L1_2 accepted')
+    call space_group(st, ops); call spectral_origin_classes(st, ops, bcl, ob, osg, ow)
+    call check(size(ob) == 4 .and. maxval(abs(ow - 0.25_dp)) < 1.0e-14_dp, &
+               'origin classes: L1_2 has 4 origins (corner + 3 faces) of weight 1/4 each')
+    call structure_init(st_bad, reshape([1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 2.0_dp], [3, 3]), &
+                        reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.2_dp, 0.0_dp, 0.0_dp, 0.5_dp], [3, 3]), [1, 1, 1], msg)
+    call check(.not. spectral_structure_ok(st_bad), &
+               'spectral_structure_ok: sublattice merging inequivalent Wyckoff sites refused')
   end block
 
   ! ---- (A) the Fourier window

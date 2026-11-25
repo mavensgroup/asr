@@ -939,18 +939,21 @@ contains
       end do
       close (us)
       print '(a,a)', '  wrote ', sfile
-      if (allocated(res%spec_bands)) then              ! ordered, one species: the exact bands of the same H^(2)
+      if (allocated(res%spec_bands)) then              ! ordered, one species per sublattice: the exact bands of H^(2)(k)
         open (newunit=us, file=sfile//'.bands', status='replace', action='write')
         call spectral_header(us, 'eigenvalues of H^(2)(k), from the structure constant blocks and parameters of the recursion', .true.)
-        write (us, '(a)') '# columns    : 9 eigenvalues per spin channel, ascending (Ry)'
-        nl = 4 + 9 * size(res%spec_bands, 3)
+        write (us, '(a,i0,a)') '# columns    : ', size(res%spec_bands, 1), ' eigenvalues per spin channel, ascending (Ry)'
+        nl = 4 + size(res%spec_bands, 1) * size(res%spec_bands, 3)
         deallocate (lab, wid); allocate (lab(nl), wid(nl))
         lab(1:4) = [character(len=13) :: 'dist', 'kx', 'ky', 'kz']; wid(1:4) = [10, 9, 9, 9]
         do gs = 1, size(res%spec_bands, 3)
-          do ie = 1, 9
-            lab(4 + (gs - 1) * 9 + ie) = 'e' // trim(adjustl(itoa_(ie)))
-            if (size(res%spec_bands, 3) == 2) lab(4 + (gs - 1) * 9 + ie) = trim(lab(4 + (gs - 1) * 9 + ie)) // merge(' up  ', ' down', gs == 1)
-            wid(4 + (gs - 1) * 9 + ie) = 11
+          do ie = 1, size(res%spec_bands, 1)
+            lab(4 + (gs - 1) * size(res%spec_bands, 1) + ie) = 'e' // trim(adjustl(itoa_(ie)))
+            if (size(res%spec_bands, 3) == 2) then
+              lab(4 + (gs - 1) * size(res%spec_bands, 1) + ie) = &
+                trim(lab(4 + (gs - 1) * size(res%spec_bands, 1) + ie)) // merge(' up  ', ' down', gs == 1)
+            end if
+            wid(4 + (gs - 1) * size(res%spec_bands, 1) + ie) = 11
           end do
         end do
         call rep_label_rows(us, lab, wid)
