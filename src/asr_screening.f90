@@ -39,11 +39,11 @@ module asr_screening
   use asr_lapack, only: dgesv, dsyev, zheev, zgesv
   use asr_kinds, only: dp, pi
   use asr_crystal, only: structure_t
-  use asr_prototypes, only: prototype_structure
+  use asr_prototypes, only: prototype_bravais_data, match_cubic_bravais
   implicit none
   private
-  public :: screen_t, screen_lattice, screen_structure, screen_matrix, screen_gamma, screen_update, screen_project, mode_f, &
-            coulomb_k, coulomb_k_basis, screen_shells, screen_structure_shells
+  public :: screen_t, screen_bravais, screen_lattice, screen_structure, screen_matrix, screen_gamma, screen_update, &
+            screen_project, mode_f, coulomb_k, coulomb_k_basis, screen_bravais_shells, screen_shells, screen_structure_shells
 
   type :: screen_t
     real(dp) :: beta = 0.0_dp            !! input SIM parameter
@@ -63,17 +63,6 @@ module asr_screening
   end type screen_t
 
 contains
-
-  !> Primitive vectors (columns, alat units) of a named prototype lattice.
-  subroutine prim_vectors(lattice, p, msg)
-    character(len=*), intent(in) :: lattice
-    real(dp), intent(out) :: p(3, 3)
-    character(len=:), allocatable, intent(out) :: msg
-    type(structure_t) :: st
-    call prototype_structure(lattice, st, msg)
-    if (len(msg) > 0) then; msg = 'screening: '//msg; return; end if
-    p = st%avec
-  end subroutine prim_vectors
 
   !> M(k) = sum_{R /= 0} (2/|R|) cos(k.R) in Ry/e (Ewald; k in 1/Bohr, not a reciprocal lattice vector) for the Bravais lattice
   !> with primitive vectors p (columns, Bohr).  Several k at once (columns of kv).
@@ -212,8 +201,8 @@ contains
     type(screen_t), intent(out) :: s
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk, sub_sro
-    character(len=8) :: lat
-    real(dp) :: al_brav, p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, r1_nn, r1_sh, ev(st%nb), rwork(3 * st%nb), ph, gsp
+    real(dp) :: al_brav, p_pr(3, 3), k_pr(3, 3), p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, r1_nn, r1_sh
+    real(dp) :: ev(st%nb), rwork(3 * st%nb), ph, gsp
     real(dp), allocatable :: tau(:, :), kv(:, :), ksp(:, :), sh(:, :), ec(:), rw_c(:)
     real(dp), allocatable :: meig(:, :), w0_eig(:, :), c1_br(:, :), ov(:, :, :), sp_ev(:, :), sp_c1(:, :), sp_ov(:, :, :)
     complex(dp), allocatable :: mb(:, :, :), msp(:, :, :), cw(:), ck(:, :), cw_c(:)
@@ -221,8 +210,8 @@ contains
     integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
     msg = ''
     ksro = 0; if (present(sub_sro)) ksro = sub_sro
-    if ((ksro == 0 .or. st%nlabel == 1) .and. bravais_kind(st, lat, al_brav)) then
-      call screen_lattice(trim(lat), alat * al_brav, beta, s, msg, nk)
+    if ((ksro == 0 .or. st%nlabel == 1) .and. match_cubic_bravais(st, p_pr, al_brav, k_pr)) then
+      call screen_bravais(p_pr * (alat * al_brav), k_pr * (2.0_dp * pi / (alat * al_brav)), beta, s, msg, nk)
       return
     end if
     n = max(12, nint(24.0_dp / real(st%nb, dp)**(1.0_dp / 3.0_dp)))
@@ -348,18 +337,18 @@ contains
       beta_of_st = a * (g - 1.0_dp) * s%r1 / (2.0_dp * g)
     end function beta_of_st
   end subroutine screen_structure
-  subroutine screen_lattice(lattice, alat, beta, s, msg, nk)
-    character(len=*), intent(in) :: lattice
-    real(dp), intent(in) :: alat, beta
+  !> Screened fluctuation electrostatics on a single-site Bravais lattice with primitive vectors p (columns, Bohr) and
+  !> high-symmetry ordering wavevectors ksp (columns, 1/Bohr).
+  subroutine screen_bravais(p, ksp, beta, s, msg, nk)
+    real(dp), intent(in) :: p(3, 3), ksp(:, :), beta
     type(screen_t), intent(out) :: s
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk
-    real(dp) :: p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, ksp(3, 3), msp(3), c1sp(3)
+    real(dp) :: b(3, 3), f(3), lo, hi, mid, bm, msp(size(ksp, 2)), c1sp(size(ksp, 2))
     real(dp), allocatable :: kv(:, :), m(:), c1(:), sh(:, :)
-    integer :: n, i1, i2, i3, ik, j, nsh
+    integer :: n, i1, i2, i3, ik, j, nsh, nsp
+    msg = ''
     n = 28; if (present(nk)) n = nk
-    call prim_vectors(lattice, p, msg); if (len(msg) > 0) return
-    p = p * alat
     b(:, 1) = cross(p(:, 2), p(:, 3)); b(:, 2) = cross(p(:, 3), p(:, 1)); b(:, 3) = cross(p(:, 1), p(:, 2))
     b = 2.0_dp * pi * b / det3(p)
     call first_shell(p, sh, nsh); s%z = nsh; s%r1 = norm2(sh(:, 1)); s%beta = beta
@@ -380,10 +369,11 @@ contains
       c1(ik) = c1(ik) / nsh
     end do
     s%a_min = -minval(m)
-    ! the exact minimum of M lies at a high-symmetry point (bcc H, fcc X, sc R) that the offset mesh misses
-    ksp = special_k(nsh, alat)
-    call coulomb_k(p, ksp, msp)
-    s%a_min = max(s%a_min, -minval(msp))
+    nsp = size(ksp, 2)
+    if (nsp > 0) then
+      call coulomb_k(p, ksp, msp)
+      s%a_min = max(s%a_min, -minval(msp))
+    end if
     s%beta_max = beta_of(s%a_min * (1.0_dp + 1.0e-9_dp))
     if (beta >= s%beta_max) then
       msg = 'screening: sim_beta exceeds the lattice maximum '//trim(rtoa(s%beta_max))//' (charge-transfer instability)'; return
@@ -403,8 +393,7 @@ contains
     ! closure: lattice functions on the mesh, the ordering point k_o, the last clipped points (next to the extreme
     ! c1 value of the mesh, so that S keeps support)
     s%gk = s%a / (s%a + m); s%c1k = c1
-    ! ordering point: lowest M among the special points where c1 is minimal (bcc H, fcc W on the degenerate X-W line, sc R)
-    do j = 1, 3; c1sp(j) = sum(cos(matmul(ksp(:, j), sh))) / nsh; end do
+    do j = 1, nsp; c1sp(j) = sum(cos(matmul(ksp(:, j), sh))) / nsh; end do
     s%c1_ord = minval(c1sp)
     s%g_ord = s%a / (s%a + minval(msp, mask=c1sp < s%c1_ord + 1.0e-10_dp))
     s%c0_cl = maxval(c1, mask=c1 < maxval(c1) - 1.0e-12_dp)
@@ -418,23 +407,29 @@ contains
       g = sum(a / (a + m)) / size(m)
       beta_of = a * (g - 1.0_dp) * s%r1 / (2.0_dp * g)
     end function beta_of
+  end subroutine screen_bravais
+
+  subroutine screen_lattice(lattice, alat, beta, s, msg, nk)
+    character(len=*), intent(in) :: lattice
+    real(dp), intent(in) :: alat, beta
+    type(screen_t), intent(out) :: s
+    character(len=:), allocatable, intent(out) :: msg
+    integer, intent(in), optional :: nk
+    real(dp) :: p_pr(3, 3), k_pr(3, 3)
+    call prototype_bravais_data(lattice, p_pr, k_pr, msg)
+    if (len(msg) > 0) then; msg = 'screening: '//msg; return; end if
+    call screen_bravais(p_pr * alat, k_pr * (2.0_dp * pi / alat), beta, s, msg, nk)
   end subroutine screen_lattice
 
-  !> Lattice functions of the charge-excess model at lattice vectors rv (columns, Bohr; R = 0 allowed):
+  !> Lattice functions of the charge-excess model on a Bravais lattice p (columns, Bohr) at lattice vectors rv (columns, Bohr):
   !>     gr = G(R) = <G(k) cos(k.R)>_BZ,     wr = W(R) = a (delta_R0 - G(R)).
-  !> W is the pair kernel of the model energy.  The model minimises sum_i a/2 (q_i - b_i)^2 + 1/2 sum_ij q_i M_ij q_j over the
-  !> charges; the minimum is E = 1/2 sum_ij b_i W_ij b_j with the drives b (species properties).  So two species with drives
-  !> b_p, b_q on sites R apart have the screened Coulomb exchange interaction W(R) (b_p - b_q)^2 (asr_epi).  In the random alloy
-  !> the drive deviations are db = dq / G00.  Unscreened (beta = 0): G = delta_R0, W = 2 / R.  Mesh as in screen_lattice.
-  subroutine screen_shells(lattice, alat, s, rv, gr, wr, nk)
-    character(len=*), intent(in) :: lattice
-    real(dp), intent(in) :: alat, rv(:, :)
+  subroutine screen_bravais_shells(p, s, rv, gr, wr, nk)
+    real(dp), intent(in) :: p(3, 3), rv(:, :)
     type(screen_t), intent(in) :: s
     real(dp), intent(out) :: gr(:), wr(:)
     integer, intent(in), optional :: nk
-    real(dp) :: p(3, 3), b(3, 3), f(3)
+    real(dp) :: b(3, 3), f(3)
     real(dp), allocatable :: kv(:, :), m(:)
-    character(len=:), allocatable :: msg
     integer :: n, i1, i2, i3, ik, j
     logical :: zero
     if (s%unscreened) then
@@ -446,8 +441,6 @@ contains
       return
     end if
     n = 28; if (present(nk)) n = nk
-    call prim_vectors(lattice, p, msg); if (len(msg) > 0) error stop 'screen_shells: unknown graph lattice'
-    p = p * alat
     b(:, 1) = cross(p(:, 2), p(:, 3)); b(:, 2) = cross(p(:, 3), p(:, 1)); b(:, 3) = cross(p(:, 1), p(:, 2))
     b = 2.0_dp * pi * b / det3(p)
     allocate (kv(3, n**3), m(n**3))
@@ -462,19 +455,31 @@ contains
       wr(j) = -s%a * gr(j)
       if (norm2(rv(:, j)) < 1.0e-10_dp) wr(j) = s%a * (1.0_dp - gr(j))
     end do
+  end subroutine screen_bravais_shells
+
+  subroutine screen_shells(lattice, alat, s, rv, gr, wr, nk)
+    character(len=*), intent(in) :: lattice
+    real(dp), intent(in) :: alat, rv(:, :)
+    type(screen_t), intent(in) :: s
+    real(dp), intent(out) :: gr(:), wr(:)
+    integer, intent(in), optional :: nk
+    real(dp) :: p_pr(3, 3), k_pr(3, 3)
+    character(len=:), allocatable :: msg
+    call prototype_bravais_data(lattice, p_pr, k_pr, msg)
+    if (len(msg) > 0) error stop 'screen_shells: unknown prototype lattice'
+    call screen_bravais_shells(p_pr * alat, s, rv, gr, wr, nk)
   end subroutine screen_shells
 
   !> Lattice functions G(R) and W(R) of the charge-excess model on any crystal structure st at displacement vectors rv(3, npair)
   !> (Bohr) between origin basis site b0 (optional; default 1) and partner basis sites b2(1:npair) (optional; default 1).
-  !> For a single-type Bravais structure (sc, bcc, fcc, or any cubic decoration cell) it delegates to screen_shells.
+  !> For a single-type cubic Bravais structure it uses the matched prototype cell through screen_bravais_shells.
   subroutine screen_structure_shells(st, alat, s, rv, gr, wr, b0, b2, nk)
     type(structure_t), intent(in) :: st
     real(dp), intent(in) :: alat, rv(:, :)
     type(screen_t), intent(in) :: s
     real(dp), intent(out) :: gr(:), wr(:)
     integer, intent(in), optional :: b0, b2(:), nk
-    character(len=8) :: lat
-    real(dp) :: al_brav, p(3, 3), b(3, 3), f(3), ev(st%nb), rwork(3 * st%nb), ph
+    real(dp) :: al_brav, p_pr(3, 3), k_pr(3, 3), p(3, 3), b(3, 3), f(3), ev(st%nb), rwork(3 * st%nb), ph
     real(dp), allocatable :: tau(:, :), kv(:, :)
     complex(dp), allocatable :: mb(:, :, :), cw(:)
     complex(dp) :: gk_el
@@ -488,8 +493,8 @@ contains
       end do
       return
     end if
-    if (bravais_kind(st, lat, al_brav)) then
-      call screen_shells(trim(lat), alat * al_brav, s, rv, gr, wr, nk)
+    if (match_cubic_bravais(st, p_pr, al_brav, k_pr)) then
+      call screen_bravais_shells(p_pr * (alat * al_brav), s, rv, gr, wr, nk)
       return
     end if
     n = max(12, nint(24.0_dp / real(st%nb, dp)**(1.0_dp / 3.0_dp)))
@@ -693,22 +698,6 @@ contains
     end do
   end subroutine screen_project
 
-  !> Zone-boundary high-symmetry points for a cubic Bravais lattice of coordination nsh (8 bcc, 12 fcc, 6 sc), where the
-  !> lattice Coulomb kernel takes its lowest values (ordering vectors): bcc H, N, P; fcc X, W, L; sc R, M, X (Cartesian, 1/Bohr).
-  function special_k(nsh, alat) result(kv)
-    integer, intent(in) :: nsh
-    real(dp), intent(in) :: alat
-    real(dp) :: kv(3, 3)
-    if (nsh == 8) then
-      kv = reshape([1.0_dp, 0.0_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp], [3, 3])
-    else if (nsh == 12) then
-      kv = reshape([1.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp], [3, 3])
-    else
-      kv = reshape([0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.0_dp, 0.0_dp], [3, 3])
-    end if
-    kv = kv * 2.0_dp * pi / alat
-  end function special_k
-
   !> First-shell vectors of the Bravais lattice (columns of sh, Bohr).
   subroutine first_shell(p, sh, nsh)
     real(dp), intent(in) :: p(3, 3)
@@ -728,53 +717,6 @@ contains
         end do; end do; end do
     sh = buf(:, 1:nsh)
   end subroutine first_shell
-
-  !> True if the basis sites of st (labels ignored) form a single sc, bcc or fcc Bravais lattice of cubic constant al_brav
-  !> (in units of st%alat).  When true, every basis site has the same translation type and the charge-excess model on st is
-  !> identical to screen_lattice(lat, alat * al_brav, ...).
-  logical function bravais_kind(st, lat, al_brav) result(ok)
-    type(structure_t), intent(in) :: st
-    character(len=8), intent(out) :: lat
-    real(dp), intent(out) :: al_brav
-    real(dp), allocatable :: sh(:, :)
-    real(dp) :: vsite, r1, acub, p(3, 3), tau(3, st%nb)
-    integer, allocatable :: sb1(:), sb2(:)
-    integer :: nsh, nb_sro, z
-    lat = ''; al_brav = 1.0_dp; ok = .false.
-    p = st%avec; tau = st%tau
-    call structure_sro_shell(p, tau, st%label, 0, sh, sb1, sb2, nsh, nb_sro, r1)
-    if (mod(nsh, st%nb) /= 0) return
-    z = nsh / st%nb
-    vsite = abs(det3(p)) / real(st%nb, dp)
-    if (z == 6) then
-      acub = r1
-      if (abs(vsite - acub**3) < 1.0e-6_dp * acub**3 .and. cubic_shell(sh, acub, 1.0_dp)) then
-        lat = 'sc'; al_brav = acub; ok = .true.
-      end if
-    else if (z == 8) then
-      acub = 2.0_dp * r1 / sqrt(3.0_dp)
-      if (abs(vsite - 0.5_dp * acub**3) < 1.0e-6_dp * acub**3 .and. cubic_shell(sh, acub, 0.5_dp * sqrt(3.0_dp))) then
-        lat = 'bcc'; al_brav = acub; ok = .true.
-      end if
-    else if (z == 12) then
-      acub = sqrt(2.0_dp) * r1
-      if (abs(vsite - 0.25_dp * acub**3) < 1.0e-6_dp * acub**3 .and. cubic_shell(sh, acub, 0.5_dp * sqrt(2.0_dp))) then
-        lat = 'fcc'; al_brav = acub; ok = .true.
-      end if
-    end if
-  contains
-    pure logical function cubic_shell(sv, a, r0)
-      real(dp), intent(in) :: sv(:, :), a, r0
-      real(dp) :: h(3)
-      integer :: j
-      cubic_shell = .true.
-      do j = 1, size(sv, 2)
-        if (abs(norm2(sv(:, j)) - a * r0) > 1.0e-6_dp * a) then; cubic_shell = .false.; return; end if
-        h = 2.0_dp * sv(:, j) / a
-        if (maxval(abs(h - anint(h))) > 1.0e-6_dp) then; cubic_shell = .false.; return; end if
-      end do
-    end function cubic_shell
-  end function bravais_kind
 
   !> Shortest inter-site distance in the crystal structure (p, tau in Bohr).
   subroutine structure_nn_distance(p, tau, r1)
