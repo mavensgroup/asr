@@ -95,8 +95,11 @@ def main():
         a, g00, g1, _ = solve(m, c1, r1, amin, beta)
         g = a / (a + m)
         c1min = {'fcc': -1.0 / 3.0, 'bcc': -1.0}[lat]
-        kord = {'fcc': [1.0, 0.5, 0.0], 'bcc': [1.0, 0.0, 0.0]}[lat]           # ordering point: fcc W, bcc H (lowest M at min c1)
-        g_ord = a / (a + coulomb_k(prim(lat) * ALAT[lat], np.array([kord]).T * 2 * np.pi / ALAT[lat])[0])
+        # ordering end point: bcc H (an isolated point); fcc the average over the X-W line (1, q, 0), q in [0, 2), where
+        # c1 = -1/3 throughout (the degenerate ground states fill it evenly; asr_screening ordering_set)
+        q = 2.0 * (np.arange(96) + 0.5) / 96
+        kord = {'fcc': np.vstack([np.ones(96), q, np.zeros(96)]), 'bcc': np.array([[1.0], [0.0], [0.0]])}[lat]
+        g_ord = np.mean(a / (a + coulomb_k(prim(lat) * ALAT[lat], kord * 2 * np.pi / ALAT[lat])))
         print(f'\n=== {lat} binary x = 0.5, L = {L} ({cell.nsite} sites), sim_beta {beta}: a {a:.4f}, linear range of lambda '
               f'[-1, {-1 / c1min:.0f}], pole of the linear form at {-g00 / g1:.2f}')
         print('  target | alpha_1..alpha_6 measured                         | lambda |  Gamma exact  linear    clip     KCM  |'

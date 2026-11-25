@@ -85,7 +85,10 @@ first-shell **short-range order** the charge deviations respond to their drive \
 gives \(\Gamma=G_{00}+G_1\hat A\). For strong clustering this has a zero, because the truncated structure factor turns
 negative. The code keeps the first-shell structure factor wherever it is non-negative, which matches the ASR's own model
 of uncorrelated sites beyond the first shell. Beyond that range it clips the structure factor at zero and renormalises it,
-so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. On a Bravais lattice it vanishes only for complete segregation, where the
+so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. For complete order
+it ends at the average of the screening function over the set where \(c_1\) is minimal. On bcc this is the single point
+\(H\) (perfect B2 order). On fcc it is the whole line from \(X\) to \(W\), and the first shell does not fix the order along
+it. The degenerate ground states of the first-shell model fill that line evenly, so the code averages over it. On a Bravais lattice it vanishes only for complete segregation, where the
 segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite. \(\delta b\) is saved in `save_potential`. A start
 without it (free atoms, or a potential of a run without SRO) starts it at zero, because such a potential holds no SRO part.
 `asr.out` lists the SRO modes with \(\Gamma\), the first-shell value and \(F\).

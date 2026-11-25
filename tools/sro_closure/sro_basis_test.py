@@ -164,10 +164,72 @@ def clustering_set(p, sites, bonds, nline=48):
     return b @ np.array(pts).T
 
 
-def mode_green_c1max(p, tau, sites, bonds, z, a, kset):
-    """Mode-weighted average of g over the c1 = 1 branches at the wavevectors kset (uniform mode G = 0 at k = 0)."""
+def shell_matrix(k, sites, bonds, z):
     smap = {s_: i for i, s_ in enumerate(sites)}
-    tr, nd = 0.0, 0
+    ck = np.zeros((len(sites),) * 2, dtype=complex)
+    for (b1, b2, _, rv) in bonds:
+        ck[smap[b1], smap[b2]] += np.exp(1j * (k @ rv)) / z
+    return ck
+
+
+def ordering_set(p, k0, c1min, c1_ord, nline=48):
+    """Sample (k columns, weights) of the set where the lowest branch c1min(k) equals c1_ord (asr_screening ordering_set).
+
+    Through each point of k0, every primitive rational reciprocal direction u (fractional components -2..2) along which
+    c1min stays at c1_ord is a line of minima, periodic with period b u, sampled at nline midpoints of weight |b u| / nline.
+    Without lines the set is the points k0 (weight 1 each).
+    """
+    b = 2 * pi * np.linalg.inv(p).T
+    dirs = []
+    for u in np.array(np.meshgrid(*[np.arange(-2, 3)] * 3, indexing='ij')).reshape(3, -1).T:
+        if not u.any() or u[np.flatnonzero(u)[0]] < 0 or np.gcd.reduce(np.abs(u)) != 1:
+            continue
+        dirs.append(u)
+    lines = []
+    for ip in range(k0.shape[1]):
+        f0 = p.T @ k0[:, ip] / (2 * pi)
+        loc = []
+        for u in dirs:
+            bu = b @ u
+            if all(abs(c1min(k0[:, ip] + sg * bu) - c1_ord) < 1e-9 for sg in (0.1234, 0.3141, 0.4567, 0.7071)):
+                loc.append(u)
+                same = False
+                for (u2, f2) in lines:
+                    if (u2 != u).any():
+                        continue
+                    d = f0 - f2
+                    iu = np.argmax(np.abs(u))
+                    for m in range(-6, 7):
+                        sv = (d[iu] - m) / u[iu]
+                        r = d - sv * u
+                        if np.max(np.abs(r - np.round(r))) < 1e-8:
+                            same = True; break
+                    if same:
+                        break
+                if not same:
+                    lines.append((u, f0))
+        for i in range(len(loc)):
+            for j in range(i + 1, len(loc)):
+                b1, b2 = b @ loc[i], b @ loc[j]
+                if abs(c1min(k0[:, ip] + 0.2371 * b1 + 0.3617 * b2) - c1_ord) < 1e-9 and \
+                   abs(c1min(k0[:, ip] + 0.4113 * b1 + 0.1729 * b2) - c1_ord) < 1e-9:
+                    raise ValueError('ordering minima fill a plane')
+    if not lines:
+        return k0, np.ones(k0.shape[1])
+    ks, ws = [], []
+    for (u, f0) in lines:
+        bu = b @ u
+        for q in range(nline):
+            ks.append(b @ f0 + (q + 0.5) / nline * bu); ws.append(np.linalg.norm(bu) / nline)
+    return np.array(ks).T, np.array(ws)
+
+
+def mode_green_c1max(p, tau, sites, bonds, z, a, kset, target=1.0, weights=None):
+    """Mode average of g over the branches with c1 = target at the wavevectors kset (uniform mode G = 0 at k = 0)."""
+    smap = {s_: i for i, s_ in enumerate(sites)}
+    if weights is None:
+        weights = np.ones(kset.shape[1])
+    tr, nd = 0.0, 0.0
     for ik in range(kset.shape[1]):
         k = kset[:, ik]
         mk = coulomb_k_basis(p, tau, k[:, None])[:, :, 0]
@@ -179,11 +241,11 @@ def mode_green_c1max(p, tau, sites, bonds, z, a, kset):
         for (b1, b2, _, rv) in bonds:
             ck[smap[b1], smap[b2]] += np.exp(1j * (k @ rv)) / z
         ec, vc = np.linalg.eigh(ck)
-        v = vc[:, ec > 1 - 1e-9]
+        v = vc[:, np.abs(ec - target) < 1e-9]
         if v.shape[1] == 0:
-            raise RuntimeError('clustering set: no c1 = 1 branch')
-        tr += np.trace(v.conj().T @ G[np.ix_(sites, sites)] @ v).real
-        nd += v.shape[1]
+            raise RuntimeError('no branch at the target c1 on the sampled set')
+        tr += weights[ik] * np.trace(v.conj().T @ G[np.ix_(sites, sites)] @ v).real
+        nd += weights[ik] * v.shape[1]
     return tr / nd
 
 
@@ -324,23 +386,13 @@ def branch_model(avec, tau0, label, alat, beta, nk=14, ksro=0):
     g00 = gk_flat.mean()
     g1 = (gk_flat * c1_flat).mean()
 
-    # Special points: c1_ord and g_ord (largest mode G among ordering modes with minimal c1)
+    # Ordering end point: g averaged over the set where the lowest branch reaches c1_ord (asr_screening ordering_set)
     c1_ord = min(c1_flat.min(), min(ec.min() for ec in sp_c1))
-    g_ord_cands = []
-    for ik in range(ksp.shape[1]):
-        sel = sp_c1[ik] < c1_ord + 1e-10
-        if not sel.any():
-            continue
-        # degenerate branches: largest eigenvalue of G projected on the subspace (independent of the eigenvector basis)
-        gs = (sp_u[ik] * (a / (a + sp_ev[ik]))) @ sp_u[ik].conj().T
-        v = sp_v[ik][:, sel]
-        g_ord_cands.append(np.linalg.eigvalsh(v.conj().T @ gs @ v).max())
-    for ik in range(kv.shape[1]):
-        for m in range(nb_sro):
-            if c1_br[m, ik] < c1_ord + 1e-10:
-                g_ord_cands.append(gk_br[m, ik])
-    # Ordering point: highest G (lowest effective M) among modes attaining c1_ord, matching screen_lattice
-    g_ord = max(g_ord_cands)
+    sel = [ik for ik in range(ksp.shape[1]) if sp_c1[ik].min() < c1_ord + 1e-10]
+    k0 = ksp[:, sel] if sel else kv[:, c1_br[0] < c1_ord + 1e-10]
+    c1low = lambda k: np.linalg.eigvalsh(shell_matrix(k, sites, bonds, z)).min()
+    kor, wor = ordering_set(p, k0, c1low, c1_ord)
+    g_ord = mode_green_c1max(p, tau, sites, bonds, z, a, kor, target=c1_ord, weights=wor)
 
     # Complete-clustering condensate: g averaged over the c1 = 1 branches (0 when the shell joins every site of the cell)
     g_cl0 = mode_green_c1max(p, tau, sites, bonds, z, a, clustering_set(p, sites, bonds))

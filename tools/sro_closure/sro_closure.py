@@ -70,7 +70,7 @@ def clip(g, c1, lam, z, c1min, g_ord):
         clustering  S ~ max(0, c1 - c0), c0 from c1min (= the linear form at lam = -1/c1min) towards max c1 (S -> k = 0);
         ordering    S ~ max(0, c0 - c1), c0 from 1 (= the linear form at lam = -1) towards c1min (S -> ordering point).
     alpha_1 = <c1 S> / <S> increases with c0 on both sides.  Past the last mesh value: condensate at k = 0 (G = 0) or at the
-    ordering point (G = g_ord: lowest M where c1 is minimal, bcc H, fcc W)."""
+    ordering set (G = g_ord: G averaged over the set where c1 is minimal; bcc H, the fcc X-W lines)."""
     al = lam / z
     lo, hi = -1.0, -1.0 / c1min
     if lo <= lam <= hi:

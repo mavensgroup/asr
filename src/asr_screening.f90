@@ -25,11 +25,14 @@
 !> configuration model of the ASR itself and of the SQS cells used to test it:
 !>   -1 <= lambda <= -1/c1min (fcc -1..3, bcc -1..1): S = 1 + lambda c1(k) >= 0 is realizable; Gamma = G00 + G1 lambda exactly.
 !>   lambda > -1/c1min (clustering): S ~ max(0, c1(k) - c0), c0 from c1min upwards; S concentrates at k = 0, where G = 0.
-!>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates at the ordering point k_o.
+!>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates where c1 is minimal.
 !> c0 follows from alpha_1 = <c1 S> / <S> (bisection; it increases with c0).  Past the last mesh value the order condenses at
-!> k = 0 (Gamma -> g_cl0 at alpha_1 = 1, which is 0 on a Bravais lattice) or at k_o, the point of lowest M where c1 is minimal
-!> (bcc H: Gamma -> G(H), exact for perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not
-!> fix the order; sc R).  On a Bravais lattice Gamma is positive, decreasing and continuous on the whole realizable range.
+!> k = 0 (Gamma -> g_cl0 at alpha_1 = 1, which is 0 on a Bravais lattice) or on the ordering set, where c1 = c1min
+!> (Gamma -> g_ord, the average of G over that set; ordering_set).  bcc H and sc R are isolated points: g_ord = G(H), exact
+!> for perfect B2 order.  On fcc c1 = -1/3 holds on the whole X-W line, and the first shell does not fix the order along it.
+!> The degenerate ground states of the first-shell model fill the line evenly (x = 1/2: any stacking of signed L1_0 planes;
+!> their mean exact Gamma is the line average to 4e-16), so g_ord is the line average, between G(X) and G(W).  On a Bravais
+!> lattice Gamma is positive, decreasing and continuous on the whole realizable range.
 !> Tests (tools/sro_closure): exact model on
 !> minimal-tail supercells (inverse Monte Carlo): Gamma within 1 % at beta 1.0 and 1.2 where the linear form is off by 25 %;
 !> CuZn alpha -0.148 unchanged.  On thermodynamic (long-tail) supercells the closure is within 4 % at beta 1.0; at beta 1.2 the
@@ -74,11 +77,19 @@ module asr_screening
     logical :: unscreened = .true.
     ! closure of the first-shell SRO (minimal-tail structure factor on the BZ mesh)
     real(dp), allocatable :: gk(:), c1k(:)   !! G(k) and c1(k) on the mesh
-    real(dp) :: g_ord = 0.0_dp, c1_ord = -1.0_dp   !! G and c1 at the ordering point k_o
+    real(dp) :: g_ord = 0.0_dp, c1_ord = -1.0_dp   !! c1 at the ordering set and G averaged over it
     real(dp) :: c0_cl = 1.0_dp, alpha_cl = 1.0_dp, gam_cl = 0.0_dp      !! last clipped point on the mesh, clustering side
     real(dp) :: g_cl0 = 0.0_dp           !! G of complete clustering: g averaged over the c1 = 1 branches (0 on Bravais lattices)
     real(dp) :: c0_ord = -1.0_dp, alpha_ord = -1.0_dp, gam_ord = 0.0_dp !! last clipped point on the mesh, ordering side
   end type screen_t
+
+  abstract interface
+    !> Lowest first-shell branch c1(k) at a Cartesian wavevector k (1/Bohr), for ordering_set.
+    real(dp) function branch_fn(k)
+      import :: dp
+      real(dp), intent(in) :: k(3)
+    end function branch_fn
+  end interface
 
 contains
 
@@ -357,6 +368,105 @@ contains
     end function igcd3
   end subroutine clustering_set
 
+  !> Wavevectors kc (Cartesian columns, 1/Bohr) with weights wc that sample the set where the lowest first-shell branch
+  !> c1min(k) equals c1_ord (the ordering set).  k0 holds the points known to reach c1_ord (special points).  Through each of
+  !> them every rational reciprocal direction u (fractional components -2 .. 2, primitive) is tested: if c1min stays at c1_ord
+  !> at four generic points along it, the line k0 + s b u is part of the set.  A line is periodic with period b u.  It is
+  !> sampled at nline midpoints of weight |b u| / nline, so the measure is uniform per length.  Lines reached from several
+  !> points are counted once.  Without lines the set is the points k0, each of weight 1.  b: reciprocal vectors (columns);
+  !> p: primitive vectors (columns, Bohr).  msg is set when the minima fill a plane.
+  subroutine ordering_set(b, p, k0, c1min, c1_ord, nline, kc, wc, msg)
+    real(dp), intent(in) :: b(3, 3), p(3, 3), k0(:, :), c1_ord
+    procedure(branch_fn) :: c1min
+    integer, intent(in) :: nline
+    real(dp), allocatable, intent(out) :: kc(:, :), wc(:)
+    character(len=:), allocatable, intent(out) :: msg
+    real(dp), parameter :: sg(4) = [0.1234_dp, 0.3141_dp, 0.4567_dp, 0.7071_dp], tol = 1.0e-9_dp
+    integer :: dirs(3, 62), nd, i1, i2, i3, ip, id, nl, nloc, j, q, m, iu, jl
+    integer, allocatable :: lu(:, :), loc(:)
+    real(dp), allocatable :: lf(:, :)
+    real(dp) :: f0(3), d(3), sv, bu(3), bu2(3)
+    logical :: on, same
+    msg = ''
+    nd = 0
+    do i1 = -2, 2; do i2 = -2, 2; do i3 = -2, 2
+      if (i1 == 0 .and. i2 == 0 .and. i3 == 0) cycle
+      if (first_nonzero([i1, i2, i3]) < 0) cycle
+      if (gcd3([i1, i2, i3]) /= 1) cycle
+      nd = nd + 1; dirs(:, nd) = [i1, i2, i3]
+    end do; end do; end do
+    allocate (lu(3, size(k0, 2) * nd), lf(3, size(k0, 2) * nd), loc(nd)); nl = 0
+    do ip = 1, size(k0, 2)
+      f0 = matmul(transpose(p), k0(:, ip)) / (2.0_dp * pi)
+      nloc = 0
+      do id = 1, nd
+        bu = matmul(b, real(dirs(:, id), dp))
+        on = .true.
+        do j = 1, 4
+          if (abs(c1min(k0(:, ip) + sg(j) * bu) - c1_ord) > tol) then; on = .false.; exit; end if
+        end do
+        if (.not. on) cycle
+        nloc = nloc + 1; loc(nloc) = id
+        same = .false.
+        do jl = 1, nl
+          if (any(lu(:, jl) /= dirs(:, id))) cycle
+          d = f0 - lf(:, jl)
+          iu = maxloc(abs(dirs(:, id)), 1)
+          do m = -6, 6
+            sv = (d(iu) - real(m, dp)) / real(dirs(iu, id), dp)
+            if (maxval(abs(d - sv * dirs(:, id) - anint(d - sv * dirs(:, id)))) < 1.0e-8_dp) then; same = .true.; exit; end if
+          end do
+          if (same) exit
+        end do
+        if (.not. same) then
+          nl = nl + 1; lu(:, nl) = dirs(:, id); lf(:, nl) = f0
+        end if
+      end do
+      do i1 = 1, nloc
+        do i2 = i1 + 1, nloc
+          bu = matmul(b, real(dirs(:, loc(i1)), dp)); bu2 = matmul(b, real(dirs(:, loc(i2)), dp))
+          if (abs(c1min(k0(:, ip) + 0.2371_dp * bu + 0.3617_dp * bu2) - c1_ord) < tol .and. &
+              abs(c1min(k0(:, ip) + 0.4113_dp * bu + 0.1729_dp * bu2) - c1_ord) < tol) then
+            msg = 'screening: the first-shell ordering minima fill a plane (not supported)'; return
+          end if
+        end do
+      end do
+    end do
+    if (nl > 0) then
+      allocate (kc(3, nl * nline), wc(nl * nline))
+      do jl = 1, nl
+        bu = matmul(b, real(lu(:, jl), dp))
+        do q = 1, nline
+          kc(:, (jl - 1) * nline + q) = matmul(b, lf(:, jl)) + (real(q, dp) - 0.5_dp) / real(nline, dp) * bu
+          wc((jl - 1) * nline + q) = norm2(bu) / real(nline, dp)
+        end do
+      end do
+    else
+      kc = k0
+      allocate (wc(size(k0, 2))); wc = 1.0_dp
+    end if
+  contains
+    pure integer function first_nonzero(v)
+      integer, intent(in) :: v(3)
+      integer :: k
+      first_nonzero = 0
+      do k = 1, 3
+        if (v(k) /= 0) then; first_nonzero = v(k); return; end if
+      end do
+    end function first_nonzero
+    pure integer function gcd3(v)
+      integer, intent(in) :: v(3)
+      integer :: g, k, a, bb, tt
+      g = 0
+      do k = 1, 3
+        a = abs(v(k)); bb = g
+        do while (bb /= 0); tt = modulo(a, bb); a = bb; bb = tt; end do
+        g = a
+      end do
+      gcd3 = g
+    end function gcd3
+  end subroutine ordering_set
+
   !> Screened fluctuation electrostatics on any crystal structure st (asr_crystal, alat in Bohr) for SIM parameter beta.
   !> If the basis sites of st form a single Bravais lattice of translations (one site per primitive cell of that lattice: sc, bcc,
   !> fcc, or any cubic decoration cell), the cell is reduced to that Bravais primitive cell and solved with coulomb_k, reproducing
@@ -371,16 +481,14 @@ contains
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk, sub_sro
     real(dp) :: al_brav, p_pr(3, 3), k_pr(3, 3), p(3, 3), b(3, 3), f(3), lo, hi, mid, bm, r1_nn, r1_sh
-    real(dp) :: ev(st%nb), rwork(3 * st%nb), ph, gsp
+    real(dp) :: ev(st%nb), rwork(3 * st%nb), ph
     real(dp), allocatable :: tau(:, :), kv(:, :), ksp(:, :), sh(:, :), ec(:), rw_c(:)
-    real(dp), allocatable :: meig(:, :), w0_eig(:, :), c1_br(:, :), ov(:, :, :), sp_ev(:, :), sp_c1(:, :), sp_ov(:, :, :)
+    real(dp), allocatable :: meig(:, :), w0_eig(:, :), c1_br(:, :), ov(:, :, :), sp_c1(:, :)
     complex(dp), allocatable :: mb(:, :, :), msp(:, :, :), cw(:), ck(:, :), cw_c(:)
     integer, allocatable :: sb1(:), sb2(:), sro_sites(:)
     integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
     complex(dp) :: vz(st%nb, st%nb)
-    complex(dp), allocatable :: sp_vc(:, :, :)
-    real(dp), allocatable :: kcl(:, :)
-    logical, allocatable :: sp_kz(:)
+    real(dp), allocatable :: kcl(:, :), wcl(:), kor(:, :)
     logical :: kzero
     msg = ''
     ksro = 0; if (present(sub_sro)) ksro = sub_sro
@@ -440,12 +548,12 @@ contains
     end do
     ! high-symmetry points (zone-boundary points, hexagonal K and H, and for nb > 1 also neutral optical modes at k = 0)
     call zone_special_k(b, nb > 1, ksp, nsp)
-    allocate (msp(nb, nb, nsp), sp_ev(nb, nsp), sp_c1(nb_sro, nsp), sp_ov(nb_sro, nb, nsp), sp_vc(nb_sro, nb_sro, nsp), sp_kz(nsp))
+    allocate (msp(nb, nb, nsp), sp_c1(nb_sro, nsp))
     call coulomb_k_basis(p, tau, ksp, msp, gamma_neutral=.true.)
     do ik = 1, nsp
       kzero = norm2(ksp(:, ik)) < 1.0e-12_dp
       if (kzero) then
-        ! k = 0: neutral modes only; the uniform mode (last column) carries the G = 0 divergence and gets G = 0 below
+        ! k = 0: neutral modes only (the uniform mode carries the G = 0 divergence)
         call neutral_eig(msp(:, :, ik), ev, vz)
         msp(:, :, ik) = vz
         s%a_min = max(s%a_min, -minval(ev(1:nb - 1)))
@@ -454,7 +562,6 @@ contains
         if (info /= 0) error stop 'screen_structure: zheev failed on special k'
         s%a_min = max(s%a_min, -minval(ev))
       end if
-      sp_ev(:, ik) = ev
       ck = (0.0_dp, 0.0_dp)
       do j = 1, nsh
         ph = dot_product(ksp(:, ik), sh(:, j))
@@ -462,13 +569,7 @@ contains
       end do
       call zheev('V', 'U', nb_sro, ck, nb_sro, ec, cw_c, size(cw_c), rw_c, info)
       if (info /= 0) error stop 'screen_structure: shell zheev failed on special k'
-      sp_c1(:, ik) = ec; sp_vc(:, :, ik) = ck; sp_kz(ik) = kzero
-      do m = 1, nb
-        do r = 1, nb_sro
-          sp_ov(r, m, ik) = abs(dot_product(ck(:, r), msp(sro_sites, m, ik)))**2
-        end do
-      end do
-      if (kzero) sp_ov(:, nb, ik) = 0.0_dp
+      sp_c1(:, ik) = ec
     end do
     s%beta_max = beta_of_st(s%a_min * (1.0_dp + 1.0e-9_dp))
     if (beta >= s%beta_max) then
@@ -496,45 +597,39 @@ contains
     s%w1 = -s%a * s%g1
     s%lambda = -s%a * s%g1 * r1_sh / (2.0_dp * s%g00**2)
     s%c1_ord = min(minval(s%c1k), minval(sp_c1))
-    ! G at the ordering point: the largest mode Green function among the branches with c1 = c1_ord.  When several branches
-    ! share c1_ord at one k, the eigenvectors zheev returns are one arbitrary basis of that subspace.  Then use the largest
-    ! eigenvalue of G projected on the subspace, which does not depend on the basis.
-    s%g_ord = 0.0_dp
-    do ik = 1, nsp
-      if (count(sp_c1(:, ik) < s%c1_ord + 1.0e-10_dp) > 1) then
-        s%g_ord = max(s%g_ord, proj_g_max(ik, pack([(r, r=1, nb_sro)], sp_c1(:, ik) < s%c1_ord + 1.0e-10_dp)))
-      else
-        do r = 1, nb_sro
-          if (sp_c1(r, ik) < s%c1_ord + 1.0e-10_dp) then
-            gsp = sum(sp_ov(r, :, ik) * (s%a / (s%a + sp_ev(:, ik))))
-            s%g_ord = max(s%g_ord, gsp)
-          end if
-        end do
-      end if
-    end do
-    do idx = 1, size(s%c1k)
-      if (s%c1k(idx) < s%c1_ord + 1.0e-10_dp) s%g_ord = max(s%g_ord, s%gk(idx))
-    end do
+    ! G at the ordering point.  The clipped structure factor ends on the branches with c1 = c1_ord.  Where they form lines
+    ! (fcc X-W, close-packed and basal-plane shells), any distribution along them has alpha_1 = c1_ord; the degenerate ground
+    ! states of the first-shell model fill them evenly (fcc x = 1/2: random stackings, exact).  So g_ord is the mode average of
+    ! g over that set (ordering_set), as g_cl0 is on the clustering side.  At an isolated point it is g of that point.
+    if (any(sp_c1(1, :) < s%c1_ord + 1.0e-10_dp)) then
+      kor = ksp(:, pack([(ik, ik=1, nsp)], sp_c1(1, :) < s%c1_ord + 1.0e-10_dp))
+    else
+      kor = kv(:, pack([(ik, ik=1, n**3)], c1_br(1, :) < s%c1_ord + 1.0e-10_dp))
+    end if
+    call ordering_set(b, p, kor, c1_low, s%c1_ord, 24, kcl, wcl, msg)
+    if (len(msg) > 0) return
+    s%g_ord = branch_green(kcl, wcl, s%c1_ord)
     ! Complete clustering (alpha_1 = 1): the clipped structure factor ends on the branches with c1 = 1.  It spreads evenly over
     ! them, so the limit is g averaged over that set (clustering_set).  The set is k = 0 alone when the shell joins every site
     ! of the cell in three dimensions; then its only branch is the uniform mode and g_cl0 = 0.  On a sublattice smaller than the
     ! cell the other sublattices screen, and with a shell in the basal plane any stacking of pure planes has c1 = 1: g_cl0 > 0.
     call clustering_set(b, tau, sh, sb1, sb2, smap, 24, kcl, msg)
     if (len(msg) > 0) return
-    s%g_cl0 = cl_green(kcl)
+    s%g_cl0 = branch_green(kcl, [(1.0_dp, ik=1, size(kcl, 2))], 1.0_dp)
     s%c0_cl = maxval(s%c1k, mask=s%c1k < maxval(s%c1k) - 1.0e-12_dp)
     s%c0_ord = minval(s%c1k, mask=s%c1k > minval(s%c1k) + 1.0e-12_dp)
     call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
     call clip_point(s, s%c0_ord, .false., s%alpha_ord, s%gam_ord)
   contains
-    !> Mode-weighted average of g = v^H G_kk v over the branches with c1 = 1 at the wavevectors kc (clustering_set).
-    real(dp) function cl_green(kc) result(gav)
-      real(dp), intent(in) :: kc(:, :)
+    !> Mode average of g = v^H G_kk v over the branches with c1 = ct at the wavevectors kc, with weights wc (clustering_set,
+    !> ordering_set).  At k = 0 the uniform mode has G = 0.
+    real(dp) function branch_green(kc, wc, ct) result(gav)
+      real(dp), intent(in) :: kc(:, :), wc(:), ct
       complex(dp) :: mk(nb, nb, 1), uk(nb, nb), gs(nb_sro, nb_sro), cc(nb_sro, nb_sro)
       complex(dp) :: cwa(max(1, 2 * nb)), cwb(max(1, 2 * nb_sro))
-      real(dp) :: evk(nb), wk(nb), ecc(nb_sro), rwa(max(1, 3 * nb)), rwb(max(1, 3 * nb_sro)), tr, phk
-      integer :: ic, r1, r2, jb, nd, infc, mm
-      tr = 0.0_dp; nd = 0
+      real(dp) :: evk(nb), wk(nb), ecc(nb_sro), rwa(max(1, 3 * nb)), rwb(max(1, 3 * nb_sro)), tr, phk, nd
+      integer :: ic, r1, r2, jb, infc, mm
+      tr = 0.0_dp; nd = 0.0_dp
       do ic = 1, size(kc, 2)
         call coulomb_k_basis(p, tau, kc(:, ic:ic), mk, gamma_neutral=.true.)
         if (norm2(kc(:, ic)) < 1.0e-12_dp) then
@@ -559,33 +654,30 @@ contains
         call zheev('V', 'U', nb_sro, cc, nb_sro, ecc, cwb, size(cwb), rwb, infc)
         if (infc /= 0) error stop 'screen_structure: shell zheev failed on the clustering set'
         do mm = 1, nb_sro
-          if (ecc(mm) > 1.0_dp - 1.0e-9_dp) then
-            tr = tr + real(dot_product(cc(:, mm), matmul(gs, cc(:, mm))), dp); nd = nd + 1
+          if (abs(ecc(mm) - ct) < 1.0e-9_dp) then
+            tr = tr + wc(ic) * real(dot_product(cc(:, mm), matmul(gs, cc(:, mm))), dp); nd = nd + wc(ic)
           end if
         end do
       end do
-      if (nd == 0) error stop 'screen_structure: no branch with c1 = 1 on the clustering set'
-      gav = tr / real(nd, dp)
-    end function cl_green
+      if (nd <= 0.0_dp) error stop 'screen_structure: no branch at the target c1 on the sampled set'
+      gav = tr / nd
+    end function branch_green
 
-    !> Largest eigenvalue of V^H G_kk V at special point ik, V the shell eigenvectors sel.  G_kk = U diag(a / (a + ev)) U^H on
-    !> the sites of the sublattice; at k = 0 the uniform mode (last column) has G = 0.
-    real(dp) function proj_g_max(ik, sel) result(gmax)
-      integer, intent(in) :: ik, sel(:)
-      complex(dp) :: gs(nb_sro, nb_sro), ap(size(sel), size(sel)), cwp(max(1, 2 * size(sel)))
-      real(dp) :: wm(nb), ep(size(sel)), rwp(max(1, 3 * size(sel)))
-      integer :: r1, r2, infp
-      wm = s%a / (s%a + sp_ev(:, ik)); if (sp_kz(ik)) wm(nb) = 0.0_dp
-      do r2 = 1, nb_sro
-        do r1 = 1, nb_sro
-          gs(r1, r2) = sum(msp(sro_sites(r1), :, ik) * wm * conjg(msp(sro_sites(r2), :, ik)))
-        end do
+    !> Lowest eigenvalue of the shell matrix C(k).
+    real(dp) function c1_low(k)
+      real(dp), intent(in) :: k(3)
+      complex(dp) :: cl(nb_sro, nb_sro), cwl(max(1, 2 * nb_sro))
+      real(dp) :: el(nb_sro), rwl(max(1, 3 * nb_sro)), phl
+      integer :: jl, infl
+      cl = (0.0_dp, 0.0_dp)
+      do jl = 1, nsh
+        phl = dot_product(k, sh(:, jl))
+        cl(smap(sb1(jl)), smap(sb2(jl))) = cl(smap(sb1(jl)), smap(sb2(jl))) + cmplx(cos(phl), sin(phl), dp) / real(s%z, dp)
       end do
-      ap = matmul(conjg(transpose(sp_vc(:, sel, ik))), matmul(gs, sp_vc(:, sel, ik)))
-      call zheev('N', 'U', size(sel), ap, size(sel), ep, cwp, size(cwp), rwp, infp)
-      if (infp /= 0) error stop 'screen_structure: zheev failed on the ordering subspace'
-      gmax = maxval(ep)
-    end function proj_g_max
+      call zheev('N', 'U', nb_sro, cl, nb_sro, el, cwl, size(cwl), rwl, infl)
+      if (infl /= 0) error stop 'screen_structure: shell zheev failed'
+      c1_low = minval(el)
+    end function c1_low
 
     real(dp) function beta_of_st(a)
       real(dp), intent(in) :: a
@@ -602,7 +694,7 @@ contains
     character(len=:), allocatable, intent(out) :: msg
     integer, intent(in), optional :: nk
     real(dp) :: b(3, 3), f(3), lo, hi, mid, bm, msp(size(ksp, 2)), c1sp(size(ksp, 2))
-    real(dp), allocatable :: kv(:, :), m(:), c1(:), sh(:, :)
+    real(dp), allocatable :: kv(:, :), m(:), c1(:), sh(:, :), kor(:, :), wor(:), mor(:)
     integer :: n, i1, i2, i3, ik, j, nsh, nsp
     msg = ''
     n = 28; if (present(nk)) n = nk
@@ -647,12 +739,18 @@ contains
     s%w00 = s%a * (1.0_dp - s%g00)
     s%w1 = -s%a * s%g1
     s%lambda = -s%a * s%g1 * s%r1 / (2.0_dp * s%g00**2)
-    ! closure: lattice functions on the mesh, the ordering point k_o, the last clipped points (next to the extreme
+    ! closure: lattice functions on the mesh, the ordering set, the last clipped points (next to the extreme
     ! c1 value of the mesh, so that S keeps support)
     s%gk = s%a / (s%a + m); s%c1k = c1
     do j = 1, nsp; c1sp(j) = sum(cos(matmul(ksp(:, j), sh))) / nsh; end do
     s%c1_ord = minval(c1sp)
-    s%g_ord = s%a / (s%a + minval(msp, mask=c1sp < s%c1_ord + 1.0e-10_dp))
+    ! G at the ordering point: the average of a / (a + M) over the set where c1 = c1_ord (ordering_set; screen_structure).
+    ! bcc H and sc R are isolated points, so their value does not change; fcc averages over the X-W lines.
+    call ordering_set(b, p, ksp(:, pack([(j, j=1, nsp)], c1sp < s%c1_ord + 1.0e-10_dp)), c1_brav, s%c1_ord, 24, kor, wor, msg)
+    if (len(msg) > 0) return
+    allocate (mor(size(kor, 2)))
+    call coulomb_k(p, kor, mor)
+    s%g_ord = sum(wor * (s%a / (s%a + mor))) / sum(wor)
     s%c0_cl = maxval(c1, mask=c1 < maxval(c1) - 1.0e-12_dp)
     s%c0_ord = minval(c1, mask=c1 > minval(c1) + 1.0e-12_dp)
     call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
@@ -664,6 +762,10 @@ contains
       g = sum(a / (a + m)) / size(m)
       beta_of = a * (g - 1.0_dp) * s%r1 / (2.0_dp * g)
     end function beta_of
+    real(dp) function c1_brav(k)
+      real(dp), intent(in) :: k(3)
+      c1_brav = sum(cos(matmul(k, sh))) / nsh
+    end function c1_brav
   end subroutine screen_bravais
 
   subroutine screen_lattice(lattice, alat, beta, s, msg, nk)

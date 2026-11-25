@@ -54,10 +54,33 @@ program test_screening
   call check(len(msg) == 0 .and. s%z == 12, 'fcc beta = 1 accepted, z = 12')
   call check(s%lambda > 0.0_dp .and. s%lambda < 1.0_dp, 'fcc: 0 < lambda < 1')
   call check_close(s%c1_ord, -1.0_dp / 3.0_dp, 1.0e-14_dp, 'fcc ordering point X: c1 = -1/3')
+  ! fcc: c1 = -1/3 on the whole X-W line (1, q, 0) 2 pi / a.  The degenerate ground states (x = 1/2: any stacking of signed
+  ! L1_0 planes) fill it evenly, so g_ord is the average of a / (a + M) along it (period q in [0, 2)), between G(X) and G(W).
+  block
+    real(dp) :: pf(3, 3), kl(3, 96), ml(96), kxw(3, 2), mxw(2)
+    integer :: jl
+    pf = reshape([0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp, 0.5_dp, 0.5_dp, 0.5_dp, 0.0_dp], [3, 3]) * afcc
+    do jl = 1, 96
+      kl(:, jl) = 2.0_dp * pi / afcc * [1.0_dp, 2.0_dp * (real(jl, dp) - 0.5_dp) / 96.0_dp, 0.0_dp]
+    end do
+    call coulomb_k(pf, kl, ml)
+    kxw(:, 1) = 2.0_dp * pi / afcc * [1.0_dp, 0.0_dp, 0.0_dp]; kxw(:, 2) = 2.0_dp * pi / afcc * [1.0_dp, 0.5_dp, 0.0_dp]
+    call coulomb_k(pf, kxw, mxw)
+    print '(2x,a,4f12.8)', 'fcc beta 1.0: g_ord, X-W line average, G(X), G(W):', s%g_ord, sum(s%a / (s%a + ml)) / 96.0_dp, &
+      s%a / (s%a + mxw)
+    call check_close(s%g_ord, sum(s%a / (s%a + ml)) / 96.0_dp, 1.0e-10_dp, 'fcc: g_ord = average of G over the X-W line')
+    call check(s%g_ord > s%a / (s%a + mxw(1)) .and. s%g_ord < s%a / (s%a + mxw(2)), 'fcc: G(X) < g_ord < G(W)')
+  end block
 
   ! ---- single-site matrix, one sublattice, ternary with SRO
   call screen_lattice('bcc', alat, 1.0_dp, s, msg)
   call check_close(s%c1_ord, -1.0_dp, 1.0e-14_dp, 'bcc ordering point H: c1 = -1')
+  block
+    real(dp) :: kh(3, 1), mh(1)
+    kh(:, 1) = 2.0_dp * pi / alat * [1.0_dp, 0.0_dp, 0.0_dp]
+    call coulomb_k(reshape([-1, 1, 1, 1, -1, 1, 1, 1, -1], [3, 3]) * 0.5_dp * alat, kh, mh)
+    call check_close(s%g_ord, s%a / (s%a + mh(1)), 0.0_dp, 'bcc: H is an isolated point, g_ord = G(H) (unchanged, bit for bit)')
+  end block
   x = [0.66_dp, 0.14_dp, 0.20_dp]; w = x
   at = 0.0_dp; at(1, 2) = -0.1_dp; at(2, 1) = -0.1_dp; at(1, 3) = 0.2_dp; at(3, 1) = 0.2_dp; at(2, 3) = 0.3_dp; at(3, 2) = 0.3_dp
   call sro_conditional(x, x, at, .true., cond, msg)
@@ -224,6 +247,8 @@ program test_screening
     call check_close(screen_gamma(shcp, 12.0_dp), 0.0_dp, 1.0e-14_dp, 'hcp closure: complete clustering Gamma(z) = 0')
     call check_close(shcp%g_cl0, 0.0_dp, 1.0e-14_dp, 'hcp ideal: the only c1 = 1 branch is the uniform mode, g_cl0 = 0')
     call check_close(screen_gamma(shcp, -4.0_dp), shcp%g_ord, 1.0e-12_dp, 'hcp closure: ordering limit Gamma(z c1_ord) = g_ord')
+    ! c1 = -1/3 on the three in-plane lines through the M points; numpy reference (sro_basis_test.py ordering_set), nk = 12
+    call check_close(shcp%g_ord, 1.724934595807_dp, 1.0e-10_dp, 'hcp ideal: g_ord = average over the M lines (numpy reference)')
     call check_positive_decreasing(shcp, 'hcp beta 1.0')
 
     call prototype_structure('nias', st, msg, c_over_a=1.6_dp)
@@ -312,12 +337,12 @@ program test_screening
     call screen_structure(st, alat, 1.0_dp, sn2, msg, nk=10, sub_sro=2)
     call check(len(msg) == 0 .and. sn2%z == 6, 'NiAs c/a 1.7 anion SRO shell: z = 6 in plane')
     call check_close(sn2%c1_ord, -0.5_dp, 1.0e-12_dp, 'NiAs c/a 1.7 in-plane anion shell: c1_ord = -1/2 at K')
-    ! The in-plane shell joins each anion site only to itself, so both branches have c1 = -1/2 at K and H.  g_ord is then the
-    ! largest eigenvalue of the 2 x 2 anion block of G = a (a + M)^-1 at K or H, not a diagonal element.
+    ! The in-plane shell joins each anion site only to itself, so both branches have c1 = -1/2 on the whole line (K, kz).
+    ! g_ord is the mode average over that line: the mean of (G_33 + G_44) / 2 of G = a (a + M)^-1 (direct zgesv solve).
     block
       use asr_lapack, only: zgesv
-      complex(dp) :: mkh(4, 4, 2), gk4(4, 4), id4(4, 4)
-      real(dp) :: fkh(3, 2), kkh(3, 2), bb(3, 3), pp(3, 3), gmx, gdiag
+      complex(dp) :: mkh(4, 4, 96), gk4(4, 4), id4(4, 4)
+      real(dp) :: fkh(3, 96), kkh(3, 96), bb(3, 3), pp(3, 3), gav
       integer :: ip4(4), info4, jk
       pp = st%avec * alat
       bb(:, 1) = [pp(2, 2) * pp(3, 3) - pp(3, 2) * pp(2, 3), pp(3, 2) * pp(1, 3) - pp(1, 2) * pp(3, 3), &
@@ -327,31 +352,31 @@ program test_screening
       bb(:, 3) = [pp(2, 1) * pp(3, 2) - pp(3, 1) * pp(2, 2), pp(3, 1) * pp(1, 2) - pp(1, 1) * pp(3, 2), &
                   pp(1, 1) * pp(2, 2) - pp(2, 1) * pp(1, 2)]
       bb = 2.0_dp * pi * bb / dot_product(pp(:, 1), bb(:, 1))
-      fkh(:, 1) = [1.0_dp, 1.0_dp, 0.0_dp] / 3.0_dp; fkh(:, 2) = [1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.5_dp]
+      do jk = 1, 96
+        fkh(:, jk) = [1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, (real(jk, dp) - 0.5_dp) / 96.0_dp]
+      end do
       kkh = matmul(bb, fkh)
       call coulomb_k_basis(pp, st%tau * alat, kkh, mkh)
-      gmx = 0.0_dp; gdiag = 0.0_dp
-      do jk = 1, 2
+      gav = 0.0_dp
+      do jk = 1, 96
         id4 = (0.0_dp, 0.0_dp); do j = 1, 4; id4(j, j) = sn2%a; end do
         gk4 = mkh(:, :, jk); do j = 1, 4; gk4(j, j) = gk4(j, j) + sn2%a; end do
         call zgesv(4, 4, gk4, 4, ip4, id4, 4, info4)
-        gmx = max(gmx, 0.5_dp * real(id4(3, 3) + id4(4, 4), dp) + &
-                       sqrt(0.25_dp * real(id4(3, 3) - id4(4, 4), dp)**2 + abs(id4(3, 4))**2))
-        gdiag = max(gdiag, real(id4(3, 3), dp), real(id4(4, 4), dp))
+        gav = gav + 0.5_dp * real(id4(3, 3) + id4(4, 4), dp) / 96.0_dp
       end do
-      print '(2x,a,3f12.8)', 'NiAs c/a 1.7: g_ord, largest eigenvalue of G_anion(K, H), largest diagonal:', sn2%g_ord, gmx, gdiag
-      call check_close(sn2%g_ord, gmx, 1.0e-12_dp, &
-                       'NiAs c/a 1.7: degenerate ordering branches use the largest eigenvalue of the projected G')
+      print '(2x,a,2f14.10)', 'NiAs c/a 1.7: g_ord and the (K, kz) line average of the anion G:', sn2%g_ord, gav
+      call check_close(sn2%g_ord, gav, 1.0e-10_dp, 'NiAs c/a 1.7: g_ord = mode average over the (K, kz) line (direct solve)')
     end block
     ! Cell-choice independence of g_ord.  Simple hexagonal (c/a 1.7, in-plane shell) in a cell doubled along c has two sites
-    ! stacked on top of each other.  Both branches have c1 = -1/2 at (K, kz') and G_12 /= 0 there.  The two branches are the
-    ! primitive wavevectors (K, kz) and (K, kz + 1/2) folded together, so g_ord must be the largest a / (a + M(K, kz)) of the
-    ! one-site lattice (coulomb_k) at kz = 0, 1/4, 1/2 (the folded special points kz' = 0, 1/2).
+    ! stacked on top of each other.  Both branches have c1 = -1/2 on the line (K, kz') and G_12 /= 0 there.  They are the
+    ! primitive wavevectors (K, kz) and (K, kz + 1/2) folded together.  So g_ord must be the average of a / (a + M(K, kz)) of the
+    ! one-site lattice (coulomb_k) over the primitive line kz in [0, 1).
     block
       use asr_crystal, only: structure_init
       type(structure_t) :: st2, sth
       type(screen_t) :: sd
-      real(dp) :: av2(3, 3), bp(3, 3), pp(3, 3), kp(3, 3), mp(3)
+      real(dp) :: av2(3, 3), bp(3, 3), pp(3, 3), kp(3, 96), mp(96)
+      integer :: jk
       call prototype_structure('hex', sth, msg, c_over_a=1.7_dp)
       av2 = sth%avec; av2(:, 3) = 2.0_dp * av2(:, 3)
       call structure_init(st2, av2, reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.5_dp], [3, 2]), [1, 1], msg)
@@ -366,14 +391,15 @@ program test_screening
       bp(:, 3) = [pp(2, 1) * pp(3, 2) - pp(3, 1) * pp(2, 2), pp(3, 1) * pp(1, 2) - pp(1, 1) * pp(3, 2), &
                   pp(1, 1) * pp(2, 2) - pp(2, 1) * pp(1, 2)]
       bp = 2.0_dp * pi * bp / dot_product(pp(:, 1), bp(:, 1))
-      kp = matmul(bp, reshape([1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.0_dp, 1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.25_dp, &
-                               1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.5_dp], [3, 3]))
+      do jk = 1, 96
+        kp(:, jk) = matmul(bp, [1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, (real(jk, dp) - 0.5_dp) / 96.0_dp])
+      end do
       call coulomb_k(pp, kp, mp)
-      print '(2x,a,f12.8,a,3f12.8)', 'hex doubled: g_ord', sd%g_ord, ';  one-site a / (a + M(K, kz = 0, 1/4, 1/2)):', &
-        sd%a / (sd%a + mp)
+      print '(2x,a,f14.10,a,f14.10)', 'hex doubled: g_ord', sd%g_ord, ';  one-site (K, kz) line average:', &
+        sum(sd%a / (sd%a + mp)) / 96.0_dp
       call check_close(sd%c1_ord, -0.5_dp, 1.0e-12_dp, 'hex doubled along c: c1_ord = -1/2')
-      call check_close(sd%g_ord, maxval(sd%a / (sd%a + mp)), 1.0e-12_dp, &
-                       'hex doubled along c: g_ord = largest one-site G at the folded K points (cell-choice independence)')
+      call check_close(sd%g_ord, sum(sd%a / (sd%a + mp)) / 96.0_dp, 1.0e-10_dp, &
+                       'hex doubled along c: g_ord = one-site average over the (K, kz) line (cell-choice independence)')
     end block
     call check_positive_decreasing(sn2, 'nias c/a 1.7 anion beta 1.0')
     ! In-plane shell: c1 = 1 on the whole line (0, 0, kz), for both anion sites.  Reference: the numpy closure
