@@ -609,6 +609,12 @@ contains
         seen(kk(1), kk(2), ks(1), ks(2)) = .true.; seen(kk(2), kk(1), ks(2), ks(1)) = .true.
       end do
     end do
+    if (count([(given(k, k), k=1, nsub)]) > 1) then
+      msg = '[[sro]] same-sublattice SRO on more than one sublattice is not supported (screening uses one SRO shell)'; return
+    end if
+    if (count([(given(k, k), k=1, nsub)]) == 1 .and. count(given) > 1) then
+      msg = '[[sro]] combining same-sublattice and inter-sublattice SRO is not supported (screening uses one SRO shell)'; return
+    end if
     inp%ci%sro = .true.
     allocate (inp%ci%sro_cond(nmax, nmax, nsub, nsub)); inp%ci%sro_cond = 0.0_dp
     do i = 1, nsub

@@ -271,7 +271,10 @@ contains
     if (inp%sro) then
       do kap = 1, ncls
         if (any(abs(inp%sro_cond(1:inp%nsc(kap), 1:inp%nsc(kap), kap, kap) - &
-                    spread(inp%conc(1:inp%nsc(kap), kap), 1, inp%nsc(kap))) > 1.0e-12_dp)) ksro = kap
+                    spread(inp%conc(1:inp%nsc(kap), kap), 1, inp%nsc(kap))) > 1.0e-12_dp)) then
+          if (ksro > 0) error stop 'class_scf: same-sublattice SRO on more than one sublattice is not supported'
+          ksro = kap
+        end if
       end do
     end if
     call screen_structure(st, inp%alat, inp%sim_beta, res%screen, smsg, sub_sro=ksro)

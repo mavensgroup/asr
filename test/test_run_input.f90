@@ -183,6 +183,22 @@ program test_run_input
   call read_run_input(f, inp, msg)
   call check(len(msg) == 0 .and. inp%ci%st%nb == 4 .and. inp%ci%st%nlabel == 2 .and. inp%ci%sro, &
              'nias prototype with anion disorder and intra-sublattice [[sro]] accepted')
+  call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c_over_a = 1.62'//nl//co//fe//al// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co", "Fe"]'//nl//'concentrations = [0.5, 0.5]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Fe", "Al"]'//nl//'concentrations = [0.6, 0.4]'//nl// &
+           '[[sro]]'//nl//'sublattices = ["cat", "cat"]'//nl//'pairs = [["Co", "Fe", -0.1]]'//nl// &
+           '[[sro]]'//nl//'sublattices = ["an", "an"]'//nl//'pairs = [["Fe", "Al", -0.15]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'same-sublattice SRO on more than one sublattice') > 0, &
+             'same-sublattice [[sro]] on two sublattices rejected')
+  call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c_over_a = 1.62'//nl//co//fe//al// &
+           '[[sublattice]]'//nl//'name = "cat"'//nl//'species = ["Co", "Fe"]'//nl//'concentrations = [0.5, 0.5]'//nl// &
+           '[[sublattice]]'//nl//'name = "an"'//nl//'species = ["Fe", "Al"]'//nl//'concentrations = [0.6, 0.4]'//nl// &
+           '[[sro]]'//nl//'sublattices = ["an", "an"]'//nl//'pairs = [["Fe", "Al", -0.15]]'//nl// &
+           '[[sro]]'//nl//'sublattices = ["cat", "an"]'//nl//'pairs = [["Co", "Fe", -0.05]]'//nl)
+  call read_run_input(f, inp, msg)
+  call check(index(msg, 'combining same-sublattice and inter-sublattice SRO') > 0, &
+             'combining same-sublattice and inter-sublattice [[sro]] rejected')
   call put('[structure]'//nl//'lattice = "nias"'//nl//'alat = 4.14'//nl//'c = 6.7068'//nl//co//al// &
            '[[sublattice]]'//nl//'name = "cat"'//nl//'positions = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5]]'//nl//'species = ["Co"]'//nl// &
            '[[sublattice]]'//nl//'name = "an"'//nl//'positions = [[0.333333333333, 0.666666666667, 0.25], '// &
