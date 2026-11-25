@@ -28,10 +28,23 @@
 !>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates at the ordering point k_o.
 !> c0 follows from alpha_1 = <c1 S> / <S> (bisection; it increases with c0).  Past the last mesh value the order condenses at
 !> k = 0 (Gamma -> 0 at alpha_1 = 1) or at k_o, the point of lowest M where c1 is minimal (bcc H: Gamma -> G(H), exact for
-!> perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not fix the order; sc R).  Gamma is positive, decreasing and continuous on the whole realizable range.  Tests (tools/sro_closure): exact model on
+!> perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not fix the order; sc R).  On a Bravais
+!> lattice Gamma is positive, decreasing and continuous on the whole realizable range.  Tests (tools/sro_closure): exact model on
 !> minimal-tail supercells (inverse Monte Carlo): Gamma within 1 % at beta 1.0 and 1.2 where the linear form is off by 25 %;
 !> CuZn alpha -0.148 unchanged.  On thermodynamic (long-tail) supercells the closure is within 4 % at beta 1.0; at beta 1.2 the
 !> answer depends on the tails, which the first-shell input does not fix.  No SRO and beta = 0 keep the linear form.
+!>
+!> Sublattices with n > 1 sites per primitive cell (screen_structure; check: tools/sro_closure/sro_basis_test.py).  The shell is
+!> an n x n Hermitian matrix C(k) with the bond phases exp(i k.R) of the full bond vectors R (the gauge of coulomb_k_basis).  Its
+!> eigenvalues c1_m(k) and eigenvectors v_m(k) are the branches of a concentration wave.  Branch m has the screening function
+!> g_m(k) = v_m^H G_kk(k) v_m, with G = a (a + M(k))^-1 restricted to the sites of the sublattice.  The closure acts on the
+!> n Nk branch values without change.  For n = 1 it is the Bravais closure.  The averages <c1_m> = 0, <c1_m^2> = 1/z,
+!> <g_m> = G00 and <g_m c1_m> = G1 hold for every n, so the linear range and its edges stay as above.  Gamma stays positive.
+!> It need not decrease: dGamma/dalpha_1 = Cov(g, c1) / Var(c1) over the active tail.  In NiAs at c/a 1.6 the anion shell is out
+!> of plane.  There Gamma rises from G00 on the ordering side, has a maximum and falls to g_ord < G00 at alpha_1 = -1.  The
+!> exact supercell model does the same.  At full clustering the code sets Gamma = 0.  This is exact when the shell joins every site of the cell in three
+!> dimensions (Bravais lattices, ideal hcp).  On a sublattice smaller than the cell, or with a shell in the basal plane, the
+!> exact limit is positive.  The code does not treat that limit yet.
 !>
 !> A mode with Gamma = 0 has F = +infinity: its charge deviation must vanish.  V = F dq cannot represent it, but the drive
 !> u = db can: dq = Gamma u, V = a (1 - Gamma) u (screen_update).  This form has the same fixed point wherever F is finite.

@@ -85,10 +85,31 @@ first-shell **short-range order** the charge deviations respond to their drive \
 gives \(\Gamma=G_{00}+G_1\hat A\). For strong clustering this has a zero, because the truncated structure factor turns
 negative. The code keeps the first-shell structure factor wherever it is non-negative, which matches the ASR's own model
 of uncorrelated sites beyond the first shell. Beyond that range it clips the structure factor at zero and renormalises it,
-so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. It vanishes only for complete segregation, where the
+so it stays positive with as little order on further shells as possible. \(\Gamma\) then stays positive. On a Bravais lattice it vanishes only for complete segregation, where the
 segregated species must stay neutral (\(F=\infty\)). The SCF iterates \(\delta b\) itself, so this limit is finite. \(\delta b\) is saved in `save_potential`. A start
 without it (free atoms, or a potential of a run without SRO) starts it at zero, because such a potential holds no SRO part.
 `asr.out` lists the SRO modes with \(\Gamma\), the first-shell value and \(F\).
+
+**Sublattices with several sites per cell.** On a sublattice \(\kappa\) with \(n>1\) sites per primitive cell (hcp,
+either sublattice of NiAs) the first shell is an \(n\times n\) Hermitian matrix
+
+\[
+C_{rr'}(\mathbf k)=\frac1z\sum_{j:\,r\to r'}e^{i\mathbf k\cdot\mathbf R_j},
+\]
+
+summed over the shell bonds \(\mathbf R_j\) from site \(r\) to site \(r'\). Its eigenvalues \(c_{1,m}(\mathbf k)\) are the
+branches of a concentration wave. Branch \(m\) has the screening function
+\(g_m(\mathbf k)=v_m^\dagger(\mathbf k)\,G_{\kappa\kappa}(\mathbf k)\,v_m(\mathbf k)\). Here \(v_m\) is the eigenvector, and
+\(G_{\kappa\kappa}\) is the block of \(G=a\,(a+M)^{-1}\) on the sites of the sublattice. The closure clips the structure
+factor on the branches. For \(n=1\) it is the closure above. The averages \(\langle c_{1,m}\rangle=0\),
+\(\langle c_{1,m}^2\rangle=1/z\), \(\langle g_m\rangle=G_{00}\) and \(\langle g_m c_{1,m}\rangle=G_1\) hold for every \(n\).
+So the linear range and its edges do not change. \(\Gamma\) stays positive. It need not decrease with \(\alpha_1\), because
+\(\mathrm d\Gamma/\mathrm d\alpha_1\) is the covariance of \(g_m\) and \(c_{1,m}\) over the clipped tail divided by the variance
+of \(c_{1,m}\). In NiAs with \(c/a=1.6\) the anion shell lies out of the basal plane. There \(\Gamma\) rises from \(G_{00}\) on
+the ordering side, has a maximum, and falls below \(G_{00}\) at \(\alpha_1=-1\). The exact supercell model does the same. At complete clustering the
+code sets \(\Gamma=0\). This is exact when the shell joins every site of the cell in three dimensions, as on a Bravais lattice
+or in ideal hcp. On a sublattice smaller than the cell, or with a shell inside the basal plane, the exact limit is positive.
+The code does not treat that limit yet.
 
 For the **ordered B2** real-space route the two-site Madelung shifts are exact
 (Ewald sums with a neutralising background: \(V_i=\sum_j\Phi(i,j)\,q_j\) in
