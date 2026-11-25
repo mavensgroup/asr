@@ -27,9 +27,10 @@
 !>   lambda > -1/c1min (clustering): S ~ max(0, c1(k) - c0), c0 from c1min upwards; S concentrates at k = 0, where G = 0.
 !>   lambda < -1 (ordering):          S ~ max(0, c0 - c1(k)), c0 from 1 downwards; S concentrates at the ordering point k_o.
 !> c0 follows from alpha_1 = <c1 S> / <S> (bisection; it increases with c0).  Past the last mesh value the order condenses at
-!> k = 0 (Gamma -> 0 at alpha_1 = 1) or at k_o, the point of lowest M where c1 is minimal (bcc H: Gamma -> G(H), exact for
-!> perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not fix the order; sc R).  On a Bravais
-!> lattice Gamma is positive, decreasing and continuous on the whole realizable range.  Tests (tools/sro_closure): exact model on
+!> k = 0 (Gamma -> g_cl0 at alpha_1 = 1, which is 0 on a Bravais lattice) or at k_o, the point of lowest M where c1 is minimal
+!> (bcc H: Gamma -> G(H), exact for perfect B2 order; fcc W: on fcc alpha_1 = -1/3 holds on the whole X-W line and does not
+!> fix the order; sc R).  On a Bravais lattice Gamma is positive, decreasing and continuous on the whole realizable range.
+!> Tests (tools/sro_closure): exact model on
 !> minimal-tail supercells (inverse Monte Carlo): Gamma within 1 % at beta 1.0 and 1.2 where the linear form is off by 25 %;
 !> CuZn alpha -0.148 unchanged.  On thermodynamic (long-tail) supercells the closure is within 4 % at beta 1.0; at beta 1.2 the
 !> answer depends on the tails, which the first-shell input does not fix.  No SRO and beta = 0 keep the linear form.
@@ -42,9 +43,12 @@
 !> <g_m> = G00 and <g_m c1_m> = G1 hold for every n, so the linear range and its edges stay as above.  Gamma stays positive.
 !> It need not decrease: dGamma/dalpha_1 = Cov(g, c1) / Var(c1) over the active tail.  In NiAs at c/a 1.6 the anion shell is out
 !> of plane.  There Gamma rises from G00 on the ordering side, has a maximum and falls to g_ord < G00 at alpha_1 = -1.  The
-!> exact supercell model does the same.  At full clustering the code sets Gamma = 0.  This is exact when the shell joins every site of the cell in three
-!> dimensions (Bravais lattices, ideal hcp).  On a sublattice smaller than the cell, or with a shell in the basal plane, the
-!> exact limit is positive.  The code does not treat that limit yet.
+!> exact supercell model does the same.  At full clustering (alpha_1 = 1) the clipped structure factor ends evenly on the
+!> branches with c1 = 1, so Gamma ends at g_cl0, the average of g over them (clustering_set).  When the shell joins every site
+!> of the cell in three dimensions (Bravais lattices, ideal hcp) the only such branch is the uniform mode, and g_cl0 = 0.  On a
+!> sublattice smaller than the cell the other sublattices screen (NiAs anions: segregated regions stay neutral through the
+!> cation charges).  With a shell in the basal plane any stacking of pure planes has c1 = 1.  There g_cl0 > 0, as the exact
+!> supercell model gives.
 !>
 !> A mode with Gamma = 0 has F = +infinity: its charge deviation must vanish.  V = F dq cannot represent it, but the drive
 !> u = db can: dq = Gamma u, V = a (1 - Gamma) u (screen_update).  This form has the same fixed point wherever F is finite.
@@ -72,6 +76,7 @@ module asr_screening
     real(dp), allocatable :: gk(:), c1k(:)   !! G(k) and c1(k) on the mesh
     real(dp) :: g_ord = 0.0_dp, c1_ord = -1.0_dp   !! G and c1 at the ordering point k_o
     real(dp) :: c0_cl = 1.0_dp, alpha_cl = 1.0_dp, gam_cl = 0.0_dp      !! last clipped point on the mesh, clustering side
+    real(dp) :: g_cl0 = 0.0_dp           !! G of complete clustering: g averaged over the c1 = 1 branches (0 on Bravais lattices)
     real(dp) :: c0_ord = -1.0_dp, alpha_ord = -1.0_dp, gam_ord = 0.0_dp !! last clipped point on the mesh, ordering side
   end type screen_t
 
@@ -226,6 +231,132 @@ contains
     v(:, nb) = 1.0_dp / sqrt(real(nb, dp)); ev(nb) = 0.0_dp
   end subroutine neutral_eig
 
+  !> Wavevectors kc (Cartesian columns, 1/Bohr) that sample the set where the largest eigenvalue of the shell matrix C(k) is 1.
+  !> c1 = 1 needs a vector v with exp(i k.R_j) v_r' = v_r on every bond j (r -> r').  That holds exactly when k.L is a multiple
+  !> of 2 pi for every closed loop of bonds.  The loop vectors L are lattice translations, and they generate a lattice.  In
+  !> fractional reciprocal coordinates f (k = b f) the condition is that f.L is an integer.
+  !>   Loops in three directions: the set is finite.  It lies on the grid (1/D) Z^3, D the smallest non-zero |det| of three
+  !>   loops, and every grid point with f.L integer for all loops belongs to it (k = 0 always does).
+  !>   Loops in two directions only (a shell in the basal plane): the set is lines f0 + s u, u the primitive integer normal of
+  !>   the loop plane.  Every line meets the grid (1/D) Z^3 with D = |(L1 x L2).e| (e a unit vector with u.e /= 0); the grid
+  !>   points of one line are f0 + (m / D) u.  Each line is sampled at nline midpoints s = (q - 1/2) / nline.
+  !> b: reciprocal vectors (columns, 1/Bohr); tau: basis positions (Bohr); sh, sb1, sb2: the shell bonds (structure_sro_shell);
+  !> smap: basis site -> index on the sublattice.  msg is set when the loops span fewer than two directions.
+  subroutine clustering_set(b, tau, sh, sb1, sb2, smap, nline, kc, msg)
+    real(dp), intent(in) :: b(3, 3), tau(:, :), sh(:, :)
+    integer, intent(in) :: sb1(:), sb2(:), smap(:), nline
+    real(dp), allocatable, intent(out) :: kc(:, :)
+    character(len=:), allocatable, intent(out) :: msg
+    integer, parameter :: dmax = 64
+    integer, allocatable :: cells(:, :), t(:, :), loops(:, :)
+    real(dp), allocatable :: fs(:, :)
+    logical, allocatable :: got(:), seen(:, :, :)
+    real(dp) :: x(3)
+    integer :: nsh, nr, nl, np, j, ia, ib, ic, i1, i2, i3, d, iv(3), c(3), u(3), e, m, q
+    logical :: changed
+    msg = ''
+    nsh = size(sh, 2); nr = maxval(smap)
+    allocate (cells(3, nsh), t(3, nr), got(nr), loops(3, nsh))
+    do j = 1, nsh
+      x = matmul(transpose(b), sh(:, j) - (tau(:, sb2(j)) - tau(:, sb1(j)))) / (2.0_dp * pi)
+      cells(:, j) = nint(x)
+      if (maxval(abs(x - cells(:, j))) > 1.0e-6_dp) then; msg = 'clustering set: a shell bond is not a lattice bond'; return; end if
+    end do
+    ! cell offsets t of the sublattice sites along a spanning tree of each connected part of the shell graph
+    got = .false.; t = 0
+    do ia = 1, nr
+      if (got(ia)) cycle
+      got(ia) = .true.
+      changed = .true.
+      do while (changed)
+        changed = .false.
+        do j = 1, nsh
+          if (got(smap(sb1(j))) .and. .not. got(smap(sb2(j)))) then
+            t(:, smap(sb2(j))) = t(:, smap(sb1(j))) + cells(:, j); got(smap(sb2(j))) = .true.; changed = .true.
+          end if
+        end do
+      end do
+    end do
+    nl = 0
+    do j = 1, nsh
+      iv = t(:, smap(sb1(j))) + cells(:, j) - t(:, smap(sb2(j)))
+      if (all(iv == 0)) cycle
+      if (nl > 0) then
+        if (any([(all(loops(:, m) == iv), m=1, nl)])) cycle
+      end if
+      nl = nl + 1; loops(:, nl) = iv
+    end do
+    d = 0
+    do ia = 1, nl
+      do ib = ia + 1, nl
+        do ic = ib + 1, nl
+          m = abs(idet3(loops(:, ia), loops(:, ib), loops(:, ic)))
+          if (m > 0 .and. (d == 0 .or. m < d)) d = m
+        end do
+      end do
+    end do
+    if (d > 0) then
+      if (d > dmax) then; msg = 'clustering set: loop lattice index too large'; return; end if
+      allocate (fs(3, d**3)); np = 0
+      do i1 = 0, d - 1; do i2 = 0, d - 1; do i3 = 0, d - 1
+        iv = [i1, i2, i3]
+        if (all([(modulo(dot_product(iv, loops(:, m)), d) == 0, m=1, nl)])) then
+          np = np + 1; fs(:, np) = real(iv, dp) / real(d, dp)
+        end if
+      end do; end do; end do
+    else
+      c = 0
+      pair: do ia = 1, nl
+        do ib = ia + 1, nl
+          c = icross(loops(:, ia), loops(:, ib))
+          if (any(c /= 0)) exit pair
+        end do
+      end do pair
+      if (all(c == 0)) then
+        msg = 'screening: the SRO shell joins the sublattice in fewer than two directions (complete clustering undefined)'
+        return
+      end if
+      u = c / igcd3(c)
+      e = minloc(merge(abs(u), huge(1), u /= 0), 1)
+      d = abs(c(e))
+      if (d > dmax) then; msg = 'clustering set: loop lattice index too large'; return; end if
+      allocate (seen(0:d - 1, 0:d - 1, 0:d - 1), fs(3, d**3 * nline)); seen = .false.; np = 0
+      do i1 = 0, d - 1; do i2 = 0, d - 1; do i3 = 0, d - 1
+        iv = [i1, i2, i3]
+        if (seen(i1, i2, i3)) cycle
+        if (.not. all([(modulo(dot_product(iv, loops(:, m)), d) == 0, m=1, nl)])) cycle
+        do m = 0, d - 1
+          c = modulo(iv + m * u, d); seen(c(1), c(2), c(3)) = .true.
+        end do
+        do q = 1, nline
+          np = np + 1; fs(:, np) = real(iv, dp) / real(d, dp) + (real(q, dp) - 0.5_dp) / real(nline, dp) * real(u, dp)
+        end do
+      end do; end do; end do
+    end if
+    kc = matmul(b, fs(:, 1:np))
+  contains
+    pure integer function idet3(a1, a2, a3)
+      integer, intent(in) :: a1(3), a2(3), a3(3)
+      idet3 = dot_product(a1, icross(a2, a3))
+    end function idet3
+    pure function icross(a1, a2) result(cr)
+      integer, intent(in) :: a1(3), a2(3)
+      integer :: cr(3)
+      cr = [a1(2) * a2(3) - a1(3) * a2(2), a1(3) * a2(1) - a1(1) * a2(3), a1(1) * a2(2) - a1(2) * a2(1)]
+    end function icross
+    pure integer function igcd3(v)
+      integer, intent(in) :: v(3)
+      integer :: g, k, a, bb, tt
+      g = 0
+      do k = 1, 3
+        a = abs(v(k)); bb = g
+        do while (bb /= 0); tt = modulo(a, bb); a = bb; bb = tt; end do
+        g = a
+      end do
+      igcd3 = g
+    end function igcd3
+  end subroutine clustering_set
+
   !> Screened fluctuation electrostatics on any crystal structure st (asr_crystal, alat in Bohr) for SIM parameter beta.
   !> If the basis sites of st form a single Bravais lattice of translations (one site per primitive cell of that lattice: sc, bcc,
   !> fcc, or any cubic decoration cell), the cell is reduced to that Bravais primitive cell and solved with coulomb_k, reproducing
@@ -248,6 +379,7 @@ contains
     integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
     complex(dp) :: vz(st%nb, st%nb)
     complex(dp), allocatable :: sp_vc(:, :, :)
+    real(dp), allocatable :: kcl(:, :)
     logical, allocatable :: sp_kz(:)
     logical :: kzero
     msg = ''
@@ -383,11 +515,59 @@ contains
     do idx = 1, size(s%c1k)
       if (s%c1k(idx) < s%c1_ord + 1.0e-10_dp) s%g_ord = max(s%g_ord, s%gk(idx))
     end do
+    ! Complete clustering (alpha_1 = 1): the clipped structure factor ends on the branches with c1 = 1.  It spreads evenly over
+    ! them, so the limit is g averaged over that set (clustering_set).  The set is k = 0 alone when the shell joins every site
+    ! of the cell in three dimensions; then its only branch is the uniform mode and g_cl0 = 0.  On a sublattice smaller than the
+    ! cell the other sublattices screen, and with a shell in the basal plane any stacking of pure planes has c1 = 1: g_cl0 > 0.
+    call clustering_set(b, tau, sh, sb1, sb2, smap, 24, kcl, msg)
+    if (len(msg) > 0) return
+    s%g_cl0 = cl_green(kcl)
     s%c0_cl = maxval(s%c1k, mask=s%c1k < maxval(s%c1k) - 1.0e-12_dp)
     s%c0_ord = minval(s%c1k, mask=s%c1k > minval(s%c1k) + 1.0e-12_dp)
     call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
     call clip_point(s, s%c0_ord, .false., s%alpha_ord, s%gam_ord)
   contains
+    !> Mode-weighted average of g = v^H G_kk v over the branches with c1 = 1 at the wavevectors kc (clustering_set).
+    real(dp) function cl_green(kc) result(gav)
+      real(dp), intent(in) :: kc(:, :)
+      complex(dp) :: mk(nb, nb, 1), uk(nb, nb), gs(nb_sro, nb_sro), cc(nb_sro, nb_sro)
+      complex(dp) :: cwa(max(1, 2 * nb)), cwb(max(1, 2 * nb_sro))
+      real(dp) :: evk(nb), wk(nb), ecc(nb_sro), rwa(max(1, 3 * nb)), rwb(max(1, 3 * nb_sro)), tr, phk
+      integer :: ic, r1, r2, jb, nd, infc, mm
+      tr = 0.0_dp; nd = 0
+      do ic = 1, size(kc, 2)
+        call coulomb_k_basis(p, tau, kc(:, ic:ic), mk, gamma_neutral=.true.)
+        if (norm2(kc(:, ic)) < 1.0e-12_dp) then
+          call neutral_eig(mk(:, :, 1), evk, uk)
+          wk = s%a / (s%a + evk); wk(nb) = 0.0_dp
+        else
+          uk = mk(:, :, 1)
+          call zheev('V', 'U', nb, uk, nb, evk, cwa, size(cwa), rwa, infc)
+          if (infc /= 0) error stop 'screen_structure: zheev failed on the clustering set'
+          wk = s%a / (s%a + evk)
+        end if
+        do r2 = 1, nb_sro
+          do r1 = 1, nb_sro
+            gs(r1, r2) = sum(uk(sro_sites(r1), :) * wk * conjg(uk(sro_sites(r2), :)))
+          end do
+        end do
+        cc = (0.0_dp, 0.0_dp)
+        do jb = 1, nsh
+          phk = dot_product(kc(:, ic), sh(:, jb))
+          cc(smap(sb1(jb)), smap(sb2(jb))) = cc(smap(sb1(jb)), smap(sb2(jb))) + cmplx(cos(phk), sin(phk), dp) / real(s%z, dp)
+        end do
+        call zheev('V', 'U', nb_sro, cc, nb_sro, ecc, cwb, size(cwb), rwb, infc)
+        if (infc /= 0) error stop 'screen_structure: shell zheev failed on the clustering set'
+        do mm = 1, nb_sro
+          if (ecc(mm) > 1.0_dp - 1.0e-9_dp) then
+            tr = tr + real(dot_product(cc(:, mm), matmul(gs, cc(:, mm))), dp); nd = nd + 1
+          end if
+        end do
+      end do
+      if (nd == 0) error stop 'screen_structure: no branch with c1 = 1 on the clustering set'
+      gav = tr / real(nd, dp)
+    end function cl_green
+
     !> Largest eigenvalue of V^H G_kk V at special point ik, V the shell eigenvectors sel.  G_kk = U diag(a / (a + ev)) U^H on
     !> the sites of the sublattice; at k = 0 the uniform mode (last column) has G = 0.
     real(dp) function proj_g_max(ik, sel) result(gmax)
@@ -706,7 +886,7 @@ contains
     up = lam > 0.0_dp
     if (up .and. al >= s%alpha_cl) then
       m = min(1.0_dp, (al - s%alpha_cl) / (1.0_dp - s%alpha_cl))
-      gam = (1.0_dp - m) * s%gam_cl
+      gam = (1.0_dp - m) * s%gam_cl + m * s%g_cl0
       return
     else if (.not. up .and. al <= s%alpha_ord) then
       ! m > 1 only for alpha_1 below c1(k_o) (fcc: not realizable on one sublattice); G(k_o) >= gam_ord keeps Gamma > 0

@@ -96,6 +96,97 @@ def green_k0(m, a):
     return a * q @ np.linalg.inv(a * np.eye(q.shape[1]) + q.T @ m @ q) @ q.T
 
 
+def clustering_set(p, sites, bonds, nline=48):
+    """Wavevectors (Cartesian, columns) that sample the set where the largest shell eigenvalue is c1 = 1.
+
+    c1 = 1 needs a vector v with exp(i k.R_j) v_r' = v_r on every bond j (r -> r').  That holds exactly when k.L is a multiple
+    of 2 pi for every closed loop of bonds; the loop vectors L are lattice translations and generate a lattice.  Rank 3: the
+    set is a finite set of points (the dual group).  Rank 2: lines along the direction normal to the loop plane, each
+    sampled at nline midpoints.  In fractional reciprocal coordinates f (k = b f) the condition is f.L in Z.
+    """
+    smap = {s_: i for i, s_ in enumerate(sites)}
+    n = len(sites)
+    t = [None] * n
+    for root in range(n):
+        if t[root] is not None:
+            continue
+        t[root] = np.zeros(3, dtype=int)
+        changed = True
+        while changed:
+            changed = False
+            for (b1, b2, cell, _) in bonds:
+                r1, r2 = smap[b1], smap[b2]
+                if t[r1] is not None and t[r2] is None:
+                    t[r2] = t[r1] + np.asarray(cell, dtype=int); changed = True
+    loops = {tuple(t[smap[b1]] + np.asarray(cell, dtype=int) - t[smap[b2]]) for (b1, b2, cell, _) in bonds}
+    loops = [np.array(l) for l in loops if any(l)]
+    b = 2 * pi * np.linalg.inv(p).T
+    best = None
+    for i in range(len(loops)):
+        for j in range(i + 1, len(loops)):
+            for k in range(j + 1, len(loops)):
+                d = abs(int(round(np.linalg.det(np.array([loops[i], loops[j], loops[k]], dtype=float)))))
+                if d and (best is None or d < best):
+                    best = d
+    grid = lambda D: (np.array(np.meshgrid(*[np.arange(D)] * 3, indexing='ij')).reshape(3, -1).T)
+    if best is not None:                                   # rank 3: points
+        D = best
+        pts = [i / D for i in grid(D) if all((i @ l) % D == 0 for l in loops)]
+        return b @ np.array(pts).T
+    u = None
+    for i in range(len(loops)):
+        for j in range(i + 1, len(loops)):
+            c = np.cross(loops[i], loops[j])
+            if any(c):
+                u = c // np.gcd.reduce(np.abs(c)); break
+        if u is not None:
+            break
+    if u is None:
+        raise ValueError('SRO shell joins the sublattice in fewer than two directions')
+    e = np.argmin(np.where(u != 0, np.abs(u), 10 ** 9))
+    D = None  # |(La x Lb) . e| for the first independent pair: every line meets the grid (1/D) Z^3
+    for i in range(len(loops)):
+        for j in range(i + 1, len(loops)):
+            c = np.cross(loops[i], loops[j])
+            if any(c):
+                D = abs(int(c[e])); break
+        if D:
+            break
+    seen = set()
+    pts = []
+    for i in grid(D):
+        if tuple(i) in seen or not all((i @ l) % D == 0 for l in loops):
+            continue
+        for m in range(D):
+            seen.add(tuple((i + m * u) % D))
+        for q in range(nline):
+            pts.append(i / D + (q + 0.5) / nline * u)
+    return b @ np.array(pts).T
+
+
+def mode_green_c1max(p, tau, sites, bonds, z, a, kset):
+    """Mode-weighted average of g over the c1 = 1 branches at the wavevectors kset (uniform mode G = 0 at k = 0)."""
+    smap = {s_: i for i, s_ in enumerate(sites)}
+    tr, nd = 0.0, 0
+    for ik in range(kset.shape[1]):
+        k = kset[:, ik]
+        mk = coulomb_k_basis(p, tau, k[:, None])[:, :, 0]
+        if np.linalg.norm(k) < 1e-12:
+            G = green_k0(mk, a)
+        else:
+            G = a * np.linalg.inv(a * np.eye(tau.shape[1]) + mk)
+        ck = np.zeros((len(sites),) * 2, dtype=complex)
+        for (b1, b2, _, rv) in bonds:
+            ck[smap[b1], smap[b2]] += np.exp(1j * (k @ rv)) / z
+        ec, vc = np.linalg.eigh(ck)
+        v = vc[:, ec > 1 - 1e-9]
+        if v.shape[1] == 0:
+            raise RuntimeError('clustering set: no c1 = 1 branch')
+        tr += np.trace(v.conj().T @ G[np.ix_(sites, sites)] @ v).real
+        nd += v.shape[1]
+    return tr / nd
+
+
 def proto(name, coa=None):
     if name == 'bcc':
         avec = np.array([[-0.5, 0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, -0.5]]).T
@@ -237,11 +328,13 @@ def branch_model(avec, tau0, label, alat, beta, nk=14, ksro=0):
     c1_ord = min(c1_flat.min(), min(ec.min() for ec in sp_c1))
     g_ord_cands = []
     for ik in range(ksp.shape[1]):
-        ov = np.abs(sp_v[ik].conj().T @ sp_u[ik]) ** 2
-        g_sp = ov @ (a / (a + sp_ev[ik]))
-        for m in range(nb_sro):
-            if sp_c1[ik][m] < c1_ord + 1e-10:
-                g_ord_cands.append(g_sp[m])
+        sel = sp_c1[ik] < c1_ord + 1e-10
+        if not sel.any():
+            continue
+        # degenerate branches: largest eigenvalue of G projected on the subspace (independent of the eigenvector basis)
+        gs = (sp_u[ik] * (a / (a + sp_ev[ik]))) @ sp_u[ik].conj().T
+        v = sp_v[ik][:, sel]
+        g_ord_cands.append(np.linalg.eigvalsh(v.conj().T @ gs @ v).max())
     for ik in range(kv.shape[1]):
         for m in range(nb_sro):
             if c1_br[m, ik] < c1_ord + 1e-10:
@@ -249,8 +342,11 @@ def branch_model(avec, tau0, label, alat, beta, nk=14, ksro=0):
     # Ordering point: highest G (lowest effective M) among modes attaining c1_ord, matching screen_lattice
     g_ord = max(g_ord_cands)
 
+    # Complete-clustering condensate: g averaged over the c1 = 1 branches (0 when the shell joins every site of the cell)
+    g_cl0 = mode_green_c1max(p, tau, sites, bonds, z, a, clustering_set(p, sites, bonds))
+
     return dict(a=a, g00=g00, g1=g1, z=z, r1_nn=r1_nn, r1_sh=r1_sh,
-                c1k=c1_flat, gk=gk_flat, c1_ord=c1_ord, g_ord=g_ord)
+                c1k=c1_flat, gk=gk_flat, c1_ord=c1_ord, g_ord=g_ord, g_cl0=g_cl0)
 
 
 def clip_gamma(mdl, lam):
@@ -266,7 +362,7 @@ def clip_gamma(mdl, lam):
         acl, gcl = pt(c0_cl)
         if al >= acl:
             m = min(1.0, (al - acl) / (1.0 - acl))
-            return (1.0 - m) * gcl
+            return (1.0 - m) * gcl + m * mdl['g_cl0']
         lo, hi = c1_ord, c0_cl
     else:
         c0_ord = c1[c1 > c1.min() + 1e-12].min()
@@ -389,11 +485,11 @@ def check_monotonic(mdl, label):
     gams = [clip_gamma(mdl, l) for l in lams]
     lams_cl = np.linspace(-1.0, z, 301)
     gams_cl = [clip_gamma(mdl, l) for l in lams_cl]
-    pos = all(g > 0 for g in gams[:-1]) and abs(gams[-1]) < 1e-14
+    pos = all(g > 0 for g in gams[:-1]) and abs(gams[-1] - mdl['g_cl0']) < 1e-14  # Gamma(z) = g_cl0 (0 on Bravais)
     dec_all = all(gams[i + 1] <= gams[i] + 1e-12 for i in range(len(gams) - 1))
     dec_cl = all(gams_cl[i + 1] <= gams_cl[i] + 1e-12 for i in range(len(gams_cl) - 1))
     print(f"  {label}: c1_ord={c1_ord:+.4f}, g_ord={mdl['g_ord']:.4f}, G00={mdl['g00']:.4f}, z*G1={z*mdl['g1']:+.4f}, "
-          f"pos={pos}, dec_all={dec_all}, dec_[-1,z]={dec_cl}, Gamma(z*c1_ord)={gams[0]:.4f}")
+          f"pos={pos}, g_cl0={mdl['g_cl0']:.4f}, dec_all={dec_all}, dec_[-1,z]={dec_cl}, Gamma(z*c1_ord)={gams[0]:.4f}")
 
 
 def main():

@@ -106,10 +106,13 @@ factor on the branches. For \(n=1\) it is the closure above. The averages \(\lan
 So the linear range and its edges do not change. \(\Gamma\) stays positive. It need not decrease with \(\alpha_1\), because
 \(\mathrm d\Gamma/\mathrm d\alpha_1\) is the covariance of \(g_m\) and \(c_{1,m}\) over the clipped tail divided by the variance
 of \(c_{1,m}\). In NiAs with \(c/a=1.6\) the anion shell lies out of the basal plane. There \(\Gamma\) rises from \(G_{00}\) on
-the ordering side, has a maximum, and falls below \(G_{00}\) at \(\alpha_1=-1\). The exact supercell model does the same. At complete clustering the
-code sets \(\Gamma=0\). This is exact when the shell joins every site of the cell in three dimensions, as on a Bravais lattice
-or in ideal hcp. On a sublattice smaller than the cell, or with a shell inside the basal plane, the exact limit is positive.
-The code does not treat that limit yet.
+the ordering side, has a maximum, and falls below \(G_{00}\) at \(\alpha_1=-1\). The exact supercell model does the same. At complete clustering
+(\(\alpha_1=1\)) the clipped structure factor ends evenly on the branches with \(c_{1,m}=1\). So \(\Gamma\) ends at the
+average of \(g_m\) over them. When the shell joins every site of the cell in three dimensions, as on a Bravais lattice or in
+ideal hcp, the only such branch is the uniform mode, and \(\Gamma=0\). On a sublattice smaller than the cell the other
+sublattices screen. In NiAs a Cu-rich and a Zn-rich anion region each stay neutral through the charges of their cations, so
+the anion charges need not vanish. With a shell inside the basal plane any stacking of pure planes has \(\alpha_1=1\). In both
+cases the end value is positive, as in the exact supercell model.
 
 For the **ordered B2** real-space route the two-site Madelung shifts are exact
 (Ewald sums with a neutralising background: \(V_i=\sum_j\Phi(i,j)\,q_j\) in

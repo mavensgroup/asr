@@ -222,6 +222,7 @@ program test_screening
     call check_close(shcp%c1_ord, -1.0_dp / 3.0_dp, 1.0e-12_dp, 'hcp ideal ordering branch: c1_ord = -1/3')
     call check_close(screen_gamma(shcp, 0.0_dp), shcp%g00, 1.0e-14_dp, 'hcp closure: random limit Gamma(0) = G00')
     call check_close(screen_gamma(shcp, 12.0_dp), 0.0_dp, 1.0e-14_dp, 'hcp closure: complete clustering Gamma(z) = 0')
+    call check_close(shcp%g_cl0, 0.0_dp, 1.0e-14_dp, 'hcp ideal: the only c1 = 1 branch is the uniform mode, g_cl0 = 0')
     call check_close(screen_gamma(shcp, -4.0_dp), shcp%g_ord, 1.0e-12_dp, 'hcp closure: ordering limit Gamma(z c1_ord) = g_ord')
     call check_positive_decreasing(shcp, 'hcp beta 1.0')
 
@@ -234,7 +235,7 @@ program test_screening
                      'NiAs c/a 1.6 anion branches: <c1_m^2> = 1 / z')
     call check_close(sn1%c1_ord, -1.0_dp, 1.0e-12_dp, 'NiAs c/a 1.6 bipartite anion shell: c1_ord = -1 at k = 0')
     call check_close(screen_gamma(sn1, 0.0_dp), sn1%g00, 1.0e-14_dp, 'NiAs c/a 1.6 closure: Gamma(0) = G00')
-    call check_close(screen_gamma(sn1, 6.0_dp), 0.0_dp, 1.0e-14_dp, 'NiAs c/a 1.6 closure: Gamma(z) = 0')
+    call check_close(screen_gamma(sn1, 6.0_dp), sn1%g_cl0, 1.0e-14_dp, 'NiAs c/a 1.6 closure: Gamma(z) = g_cl0')
     call check_close(screen_gamma(sn1, -6.0_dp), sn1%g_ord, 1.0e-12_dp, 'NiAs c/a 1.6 closure: Gamma(-z) = g_ord')
     ! At c/a = 1.6 < sqrt(8/3) the out-of-plane shell (0.9866 a) is nearly degenerate with the in-plane shell (1.0000 a).
     ! Alternating out-of-plane layers at k = 0 force like in-plane neighbours, so Gamma turns over below lambda = -2 while
@@ -295,6 +296,16 @@ program test_screening
         abs(sn1%g_ord - sn1%a * dot_product(qv, xs))
       call check_close(sn1%g_ord, sn1%a * dot_product(qv, xs), 1.0e-12_dp, &
                        'NiAs c/a 1.6: g_ord is the k = 0 neutral mode Green function (direct solve)')
+      ! Complete clustering: the only c1 = 1 branch is v+ = (0, 0, 1, 1) / sqrt(2) at k = 0.  Its neutral part is the ionic
+      ! mode, which the cations screen, so g_cl0 = a v+^T Q (a + Q^T M(0) Q)^-1 Q^T v+ > 0.
+      qv = matmul(transpose(q), [0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp] / sqrt(2.0_dp))
+      am = matmul(transpose(q), matmul(real(m0a(:, :, 1), dp), q))
+      do jq = 1, 3; am(jq, jq) = am(jq, jq) + sn1%a; end do
+      xs = qv
+      call dgesv(3, 1, am, 3, ipiv, xs, 3, info)
+      print '(2x,a,f16.12)', 'NiAs c/a 1.6 g_cl0:', sn1%g_cl0
+      call check_close(sn1%g_cl0, sn1%a * dot_product(qv, xs), 1.0e-12_dp, &
+                       'NiAs c/a 1.6: g_cl0 is the screened ionic part of the in-phase anion mode (direct solve)')
     end block
 
     call prototype_structure('nias', st, msg, c_over_a=1.7_dp)
@@ -365,6 +376,22 @@ program test_screening
                        'hex doubled along c: g_ord = largest one-site G at the folded K points (cell-choice independence)')
     end block
     call check_positive_decreasing(sn2, 'nias c/a 1.7 anion beta 1.0')
+    ! In-plane shell: c1 = 1 on the whole line (0, 0, kz), for both anion sites.  Reference: the numpy closure
+    ! (tools/sro_closure/sro_basis_test.py, clustering_set, 48 points per line), same nk = 10 mesh.
+    call check_close(sn2%g_cl0, 1.414259242335_dp, 1.0e-10_dp, 'NiAs c/a 1.7: g_cl0 = average over the kz line (numpy reference)')
+    call check_close(screen_gamma(sn2, 6.0_dp), sn2%g_cl0, 1.0e-14_dp, 'NiAs c/a 1.7 closure: Gamma(z) = g_cl0')
+    block
+      type(screen_t) :: sh7
+      type(structure_t) :: st7
+      call prototype_structure('hcp', st7, msg, c_over_a=1.7_dp)
+      call screen_structure(st7, alat, 1.0_dp, sh7, msg, nk=10)
+      call check(len(msg) == 0 .and. sh7%z == 6, 'hcp c/a 1.7: in-plane shell, z = 6')
+      print '(2x,a,f16.12)', 'hcp c/a 1.7 g_cl0:', sh7%g_cl0
+      ! any stacking of pure planes has alpha_1 = 1; the exact supercell model gave 0.72 and 0.83 at alpha_1 = 0.95
+      call check_close(sh7%g_cl0, 0.686622371698_dp, 1.0e-10_dp, 'hcp c/a 1.7: g_cl0 = average over the kz line (numpy reference)')
+      call check_close(screen_gamma(sh7, 6.0_dp), sh7%g_cl0, 1.0e-14_dp, 'hcp c/a 1.7 closure: Gamma(z) = g_cl0')
+      call check_positive_decreasing(sh7, 'hcp c/a 1.7 beta 1.0')
+    end block
     rvs(:, 1) = 0.0_dp; rvs(:, 2) = [alat, 0.0_dp, 0.0_dp]
     call screen_structure_shells(st, alat, sn2, rvs, grs, wrs, b0=3, b2=[3, 3], nk=10)
     call screen_structure_shells(st, alat, sn2, rvs(:, 1:1), gr4, wr4, b0=4, b2=[4], nk=10)
