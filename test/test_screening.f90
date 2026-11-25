@@ -301,6 +301,69 @@ program test_screening
     call screen_structure(st, alat, 1.0_dp, sn2, msg, nk=10, sub_sro=2)
     call check(len(msg) == 0 .and. sn2%z == 6, 'NiAs c/a 1.7 anion SRO shell: z = 6 in plane')
     call check_close(sn2%c1_ord, -0.5_dp, 1.0e-12_dp, 'NiAs c/a 1.7 in-plane anion shell: c1_ord = -1/2 at K')
+    ! The in-plane shell joins each anion site only to itself, so both branches have c1 = -1/2 at K and H.  g_ord is then the
+    ! largest eigenvalue of the 2 x 2 anion block of G = a (a + M)^-1 at K or H, not a diagonal element.
+    block
+      use asr_lapack, only: zgesv
+      complex(dp) :: mkh(4, 4, 2), gk4(4, 4), id4(4, 4)
+      real(dp) :: fkh(3, 2), kkh(3, 2), bb(3, 3), pp(3, 3), gmx, gdiag
+      integer :: ip4(4), info4, jk
+      pp = st%avec * alat
+      bb(:, 1) = [pp(2, 2) * pp(3, 3) - pp(3, 2) * pp(2, 3), pp(3, 2) * pp(1, 3) - pp(1, 2) * pp(3, 3), &
+                  pp(1, 2) * pp(2, 3) - pp(2, 2) * pp(1, 3)]
+      bb(:, 2) = [pp(2, 3) * pp(3, 1) - pp(3, 3) * pp(2, 1), pp(3, 3) * pp(1, 1) - pp(1, 3) * pp(3, 1), &
+                  pp(1, 3) * pp(2, 1) - pp(2, 3) * pp(1, 1)]
+      bb(:, 3) = [pp(2, 1) * pp(3, 2) - pp(3, 1) * pp(2, 2), pp(3, 1) * pp(1, 2) - pp(1, 1) * pp(3, 2), &
+                  pp(1, 1) * pp(2, 2) - pp(2, 1) * pp(1, 2)]
+      bb = 2.0_dp * pi * bb / dot_product(pp(:, 1), bb(:, 1))
+      fkh(:, 1) = [1.0_dp, 1.0_dp, 0.0_dp] / 3.0_dp; fkh(:, 2) = [1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.5_dp]
+      kkh = matmul(bb, fkh)
+      call coulomb_k_basis(pp, st%tau * alat, kkh, mkh)
+      gmx = 0.0_dp; gdiag = 0.0_dp
+      do jk = 1, 2
+        id4 = (0.0_dp, 0.0_dp); do j = 1, 4; id4(j, j) = sn2%a; end do
+        gk4 = mkh(:, :, jk); do j = 1, 4; gk4(j, j) = gk4(j, j) + sn2%a; end do
+        call zgesv(4, 4, gk4, 4, ip4, id4, 4, info4)
+        gmx = max(gmx, 0.5_dp * real(id4(3, 3) + id4(4, 4), dp) + &
+                       sqrt(0.25_dp * real(id4(3, 3) - id4(4, 4), dp)**2 + abs(id4(3, 4))**2))
+        gdiag = max(gdiag, real(id4(3, 3), dp), real(id4(4, 4), dp))
+      end do
+      print '(2x,a,3f12.8)', 'NiAs c/a 1.7: g_ord, largest eigenvalue of G_anion(K, H), largest diagonal:', sn2%g_ord, gmx, gdiag
+      call check_close(sn2%g_ord, gmx, 1.0e-12_dp, &
+                       'NiAs c/a 1.7: degenerate ordering branches use the largest eigenvalue of the projected G')
+    end block
+    ! Cell-choice independence of g_ord.  Simple hexagonal (c/a 1.7, in-plane shell) in a cell doubled along c has two sites
+    ! stacked on top of each other.  Both branches have c1 = -1/2 at (K, kz') and G_12 /= 0 there.  The two branches are the
+    ! primitive wavevectors (K, kz) and (K, kz + 1/2) folded together, so g_ord must be the largest a / (a + M(K, kz)) of the
+    ! one-site lattice (coulomb_k) at kz = 0, 1/4, 1/2 (the folded special points kz' = 0, 1/2).
+    block
+      use asr_crystal, only: structure_init
+      type(structure_t) :: st2, sth
+      type(screen_t) :: sd
+      real(dp) :: av2(3, 3), bp(3, 3), pp(3, 3), kp(3, 3), mp(3)
+      call prototype_structure('hex', sth, msg, c_over_a=1.7_dp)
+      av2 = sth%avec; av2(:, 3) = 2.0_dp * av2(:, 3)
+      call structure_init(st2, av2, reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.5_dp], [3, 2]), [1, 1], msg)
+      call check(len(msg) == 0, 'hex doubled along c: structure accepted')
+      call screen_structure(st2, alat, 1.0_dp, sd, msg, nk=10)
+      call check(len(msg) == 0 .and. sd%z == 6, 'hex doubled along c: in-plane shell, z = 6')
+      pp = sth%avec * alat
+      bp(:, 1) = [pp(2, 2) * pp(3, 3) - pp(3, 2) * pp(2, 3), pp(3, 2) * pp(1, 3) - pp(1, 2) * pp(3, 3), &
+                  pp(1, 2) * pp(2, 3) - pp(2, 2) * pp(1, 3)]
+      bp(:, 2) = [pp(2, 3) * pp(3, 1) - pp(3, 3) * pp(2, 1), pp(3, 3) * pp(1, 1) - pp(1, 3) * pp(3, 1), &
+                  pp(1, 3) * pp(2, 1) - pp(2, 3) * pp(1, 1)]
+      bp(:, 3) = [pp(2, 1) * pp(3, 2) - pp(3, 1) * pp(2, 2), pp(3, 1) * pp(1, 2) - pp(1, 1) * pp(3, 2), &
+                  pp(1, 1) * pp(2, 2) - pp(2, 1) * pp(1, 2)]
+      bp = 2.0_dp * pi * bp / dot_product(pp(:, 1), bp(:, 1))
+      kp = matmul(bp, reshape([1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.0_dp, 1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.25_dp, &
+                               1.0_dp / 3.0_dp, 1.0_dp / 3.0_dp, 0.5_dp], [3, 3]))
+      call coulomb_k(pp, kp, mp)
+      print '(2x,a,f12.8,a,3f12.8)', 'hex doubled: g_ord', sd%g_ord, ';  one-site a / (a + M(K, kz = 0, 1/4, 1/2)):', &
+        sd%a / (sd%a + mp)
+      call check_close(sd%c1_ord, -0.5_dp, 1.0e-12_dp, 'hex doubled along c: c1_ord = -1/2')
+      call check_close(sd%g_ord, maxval(sd%a / (sd%a + mp)), 1.0e-12_dp, &
+                       'hex doubled along c: g_ord = largest one-site G at the folded K points (cell-choice independence)')
+    end block
     call check_positive_decreasing(sn2, 'nias c/a 1.7 anion beta 1.0')
     rvs(:, 1) = 0.0_dp; rvs(:, 2) = [alat, 0.0_dp, 0.0_dp]
     call screen_structure_shells(st, alat, sn2, rvs, grs, wrs, b0=3, b2=[3, 3], nk=10)

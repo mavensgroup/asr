@@ -247,6 +247,8 @@ contains
     integer, allocatable :: sb1(:), sb2(:), sro_sites(:)
     integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
     complex(dp) :: vz(st%nb, st%nb)
+    complex(dp), allocatable :: sp_vc(:, :, :)
+    logical, allocatable :: sp_kz(:)
     logical :: kzero
     msg = ''
     ksro = 0; if (present(sub_sro)) ksro = sub_sro
@@ -306,7 +308,7 @@ contains
     end do
     ! high-symmetry points (zone-boundary points, hexagonal K and H, and for nb > 1 also neutral optical modes at k = 0)
     call zone_special_k(b, nb > 1, ksp, nsp)
-    allocate (msp(nb, nb, nsp), sp_ev(nb, nsp), sp_c1(nb_sro, nsp), sp_ov(nb_sro, nb, nsp))
+    allocate (msp(nb, nb, nsp), sp_ev(nb, nsp), sp_c1(nb_sro, nsp), sp_ov(nb_sro, nb, nsp), sp_vc(nb_sro, nb_sro, nsp), sp_kz(nsp))
     call coulomb_k_basis(p, tau, ksp, msp, gamma_neutral=.true.)
     do ik = 1, nsp
       kzero = norm2(ksp(:, ik)) < 1.0e-12_dp
@@ -328,7 +330,7 @@ contains
       end do
       call zheev('V', 'U', nb_sro, ck, nb_sro, ec, cw_c, size(cw_c), rw_c, info)
       if (info /= 0) error stop 'screen_structure: shell zheev failed on special k'
-      sp_c1(:, ik) = ec
+      sp_c1(:, ik) = ec; sp_vc(:, :, ik) = ck; sp_kz(ik) = kzero
       do m = 1, nb
         do r = 1, nb_sro
           sp_ov(r, m, ik) = abs(dot_product(ck(:, r), msp(sro_sites, m, ik)))**2
@@ -362,14 +364,21 @@ contains
     s%w1 = -s%a * s%g1
     s%lambda = -s%a * s%g1 * r1_sh / (2.0_dp * s%g00**2)
     s%c1_ord = min(minval(s%c1k), minval(sp_c1))
+    ! G at the ordering point: the largest mode Green function among the branches with c1 = c1_ord.  When several branches
+    ! share c1_ord at one k, the eigenvectors zheev returns are one arbitrary basis of that subspace.  Then use the largest
+    ! eigenvalue of G projected on the subspace, which does not depend on the basis.
     s%g_ord = 0.0_dp
     do ik = 1, nsp
-      do r = 1, nb_sro
-        if (sp_c1(r, ik) < s%c1_ord + 1.0e-10_dp) then
-          gsp = sum(sp_ov(r, :, ik) * (s%a / (s%a + sp_ev(:, ik))))
-          s%g_ord = max(s%g_ord, gsp)
-        end if
-      end do
+      if (count(sp_c1(:, ik) < s%c1_ord + 1.0e-10_dp) > 1) then
+        s%g_ord = max(s%g_ord, proj_g_max(ik, pack([(r, r=1, nb_sro)], sp_c1(:, ik) < s%c1_ord + 1.0e-10_dp)))
+      else
+        do r = 1, nb_sro
+          if (sp_c1(r, ik) < s%c1_ord + 1.0e-10_dp) then
+            gsp = sum(sp_ov(r, :, ik) * (s%a / (s%a + sp_ev(:, ik))))
+            s%g_ord = max(s%g_ord, gsp)
+          end if
+        end do
+      end if
     end do
     do idx = 1, size(s%c1k)
       if (s%c1k(idx) < s%c1_ord + 1.0e-10_dp) s%g_ord = max(s%g_ord, s%gk(idx))
@@ -379,6 +388,25 @@ contains
     call clip_point(s, s%c0_cl, .true., s%alpha_cl, s%gam_cl)
     call clip_point(s, s%c0_ord, .false., s%alpha_ord, s%gam_ord)
   contains
+    !> Largest eigenvalue of V^H G_kk V at special point ik, V the shell eigenvectors sel.  G_kk = U diag(a / (a + ev)) U^H on
+    !> the sites of the sublattice; at k = 0 the uniform mode (last column) has G = 0.
+    real(dp) function proj_g_max(ik, sel) result(gmax)
+      integer, intent(in) :: ik, sel(:)
+      complex(dp) :: gs(nb_sro, nb_sro), ap(size(sel), size(sel)), cwp(max(1, 2 * size(sel)))
+      real(dp) :: wm(nb), ep(size(sel)), rwp(max(1, 3 * size(sel)))
+      integer :: r1, r2, infp
+      wm = s%a / (s%a + sp_ev(:, ik)); if (sp_kz(ik)) wm(nb) = 0.0_dp
+      do r2 = 1, nb_sro
+        do r1 = 1, nb_sro
+          gs(r1, r2) = sum(msp(sro_sites(r1), :, ik) * wm * conjg(msp(sro_sites(r2), :, ik)))
+        end do
+      end do
+      ap = matmul(conjg(transpose(sp_vc(:, sel, ik))), matmul(gs, sp_vc(:, sel, ik)))
+      call zheev('N', 'U', size(sel), ap, size(sel), ep, cwp, size(cwp), rwp, infp)
+      if (infp /= 0) error stop 'screen_structure: zheev failed on the ordering subspace'
+      gmax = maxval(ep)
+    end function proj_g_max
+
     real(dp) function beta_of_st(a)
       real(dp), intent(in) :: a
       real(dp) :: g
