@@ -111,8 +111,10 @@ contains
   !> tau(3, nb) (Bohr):
   !>     M_bb'(k) = sum_T (2 / |T + tau_b' - tau_b|) exp(i k . (T + tau_b' - tau_b))   (T = 0 excluded when b = b').
   !> M(k) is Hermitian.  For a single-site Bravais cell (nb = 1, tau = 0) it equals coulomb_k.  eta (optional, 1/Bohr) overrides
-  !> the default Ewald splitting parameter.  When gamma_neutral is true and k = 0, the G = 0 term is replaced by the Ewald
-  !> neutralising background plus a large positive penalty on the cell-uniform mode so neutral optical modes get 2 Phi.
+  !> the default Ewald splitting parameter.  When gamma_neutral is true and k = 0, the divergent G = 0 term is left out and the
+  !> Ewald background term -pi / (Omega eta^2) is kept.  Both are the same for every pair (b, b'), so they change only the
+  !> cell-uniform component.  At k = 0 only the neutral block Q^T M Q is defined (Q: orthonormal vectors with zero component
+  !> sum); it is the limit k -> 0 of the neutral block of M(k).  Diagonalise it with neutral_eig, which drops the uniform mode.
   subroutine coulomb_k_basis(p, tau, kv, mb, eta, gamma_neutral)
     real(dp), intent(in) :: p(3, 3), tau(:, :), kv(:, :)
     complex(dp), intent(out) :: mb(size(tau, 2), size(tau, 2), size(kv, 2))
@@ -184,9 +186,32 @@ contains
           if (b2 > b1) mb(b2, b1, ik) = conjg(mb(b1, b2, ik))
         end do
       end do
-      if (kzero) mb(:, :, ik) = mb(:, :, ik) + 1.0e12_dp / real(nb, dp)
     end do
   end subroutine coulomb_k_basis
+
+  !> Eigenpairs of a basis Coulomb matrix m at k = 0 (coulomb_k_basis with gamma_neutral) on the neutral subspace.  Q is the
+  !> Helmert basis: q_j has 1 / sqrt(j (j + 1)) on sites 1 .. j and -j / sqrt(j (j + 1)) on site j + 1 (j = 1 .. nb - 1).  The
+  !> nb - 1 neutral eigenpairs come from Q^T m Q, so the uniform mode never enters the eigensolver.  They are returned in
+  !> ev(1:nb - 1) and v(:, 1:nb - 1).  Column nb of v is the uniform vector (1, ..., 1) / sqrt(nb) with ev(nb) = 0.  Its
+  !> charge costs infinite energy, so the caller must give it a Green function of zero.
+  subroutine neutral_eig(m, ev, v)
+    complex(dp), intent(in) :: m(:, :)
+    real(dp), intent(out) :: ev(size(m, 1))
+    complex(dp), intent(out) :: v(size(m, 1), size(m, 1))
+    real(dp) :: q(size(m, 1), size(m, 1) - 1), rw(max(1, 3 * size(m, 1)))
+    complex(dp) :: a(size(m, 1) - 1, size(m, 1) - 1), cw(max(1, 2 * size(m, 1)))
+    integer :: nb, j, info
+    nb = size(m, 1)
+    q = 0.0_dp
+    do j = 1, nb - 1
+      q(1:j, j) = 1.0_dp / sqrt(real(j * (j + 1), dp)); q(j + 1, j) = -real(j, dp) / sqrt(real(j * (j + 1), dp))
+    end do
+    a = matmul(transpose(q), matmul(m, q))
+    call zheev('V', 'U', nb - 1, a, nb - 1, ev, cw, size(cw), rw, info)
+    if (info /= 0) error stop 'neutral_eig: zheev failed'
+    v(:, 1:nb - 1) = matmul(q, a)
+    v(:, nb) = 1.0_dp / sqrt(real(nb, dp)); ev(nb) = 0.0_dp
+  end subroutine neutral_eig
 
   !> Screened fluctuation electrostatics on any crystal structure st (asr_crystal, alat in Bohr) for SIM parameter beta.
   !> If the basis sites of st form a single Bravais lattice of translations (one site per primitive cell of that lattice: sc, bcc,
@@ -208,6 +233,8 @@ contains
     complex(dp), allocatable :: mb(:, :, :), msp(:, :, :), cw(:), ck(:, :), cw_c(:)
     integer, allocatable :: sb1(:), sb2(:), sro_sites(:)
     integer :: smap(st%nb), n, nb, i1, i2, i3, ik, j, m, r, idx, nsh, nsp, ksro, nb_sro, info
+    complex(dp) :: vz(st%nb, st%nb)
+    logical :: kzero
     msg = ''
     ksro = 0; if (present(sub_sro)) ksro = sub_sro
     if ((ksro == 0 .or. st%nlabel == 1) .and. match_cubic_bravais(st, p_pr, al_brav, k_pr)) then
@@ -269,10 +296,18 @@ contains
     allocate (msp(nb, nb, nsp), sp_ev(nb, nsp), sp_c1(nb_sro, nsp), sp_ov(nb_sro, nb, nsp))
     call coulomb_k_basis(p, tau, ksp, msp, gamma_neutral=.true.)
     do ik = 1, nsp
-      call zheev('V', 'U', nb, msp(:, :, ik), nb, ev, cw, size(cw), rwork, info)
-      if (info /= 0) error stop 'screen_structure: zheev failed on special k'
+      kzero = norm2(ksp(:, ik)) < 1.0e-12_dp
+      if (kzero) then
+        ! k = 0: neutral modes only; the uniform mode (last column) carries the G = 0 divergence and gets G = 0 below
+        call neutral_eig(msp(:, :, ik), ev, vz)
+        msp(:, :, ik) = vz
+        s%a_min = max(s%a_min, -minval(ev(1:nb - 1)))
+      else
+        call zheev('V', 'U', nb, msp(:, :, ik), nb, ev, cw, size(cw), rwork, info)
+        if (info /= 0) error stop 'screen_structure: zheev failed on special k'
+        s%a_min = max(s%a_min, -minval(ev))
+      end if
       sp_ev(:, ik) = ev
-      s%a_min = max(s%a_min, -minval(ev))
       ck = (0.0_dp, 0.0_dp)
       do j = 1, nsh
         ph = dot_product(ksp(:, ik), sh(:, j))
@@ -286,6 +321,7 @@ contains
           sp_ov(r, m, ik) = abs(dot_product(ck(:, r), msp(sro_sites, m, ik)))**2
         end do
       end do
+      if (kzero) sp_ov(:, nb, ik) = 0.0_dp
     end do
     s%beta_max = beta_of_st(s%a_min * (1.0_dp + 1.0e-9_dp))
     if (beta >= s%beta_max) then

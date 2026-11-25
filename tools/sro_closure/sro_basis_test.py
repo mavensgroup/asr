@@ -8,7 +8,7 @@ Tests multi-site sublattices:
      z = 6 out-of-plane at c/a = 1.6 and z = 6 in-plane at c/a = 1.7).
 
 On an L x L x L periodic supercell of the primitive cell, M_super is block-diagonalised by discrete Fourier
-transform over the L^3 commensurate wavevectors k (with M(k = 0) projected onto the neutral cell subspace).
+transform over the L^3 commensurate wavevectors k (at k = 0 the solve is done on the neutral cell subspace, see green_k0).
 Canonical Metropolis Monte Carlo generates binary configurations on the active sublattice with pair coupling K kT
 on the SRO shell, from ordering (K < 0) through random (K = 0) to phase separation (K > 0).
 """
@@ -17,7 +17,11 @@ import numpy as np
 
 
 def coulomb_k_basis(p, tau, kv, eta=None):
-    """Ewald lattice Coulomb matrix M_bb'(k) in Ry/e (tau gauge). At k = 0 omits G = 0 and shifts uniform mode."""
+    """Ewald lattice Coulomb matrix M_bb'(k) in Ry/e (tau gauge).
+
+    At k = 0 the divergent G = 0 term is left out.  It is the same for every pair (b, b'), so only the neutral block
+    Q^T M Q is defined there (neutral_basis).  Callers use neutral_eig or green_k0 at k = 0 and give the uniform mode G = 0.
+    """
     nb = tau.shape[1]
     om = abs(np.linalg.det(p))
     b = 2 * pi * np.linalg.inv(p).T
@@ -64,10 +68,32 @@ def coulomb_k_basis(p, tau, kv, eta=None):
                 mb[b1, b2, ik] = 2.0 * val
                 if b2 > b1:
                     mb[b2, b1, ik] = np.conj(mb[b1, b2, ik])
-    for ik in range(nk):
-        if np.linalg.norm(kv[:, ik]) < 1e-12:
-            mb[:, :, ik] += 1e12 / nb
     return mb
+
+
+def neutral_basis(nb):
+    """Helmert basis Q (nb x nb-1) of the vectors whose components sum to zero."""
+    q = np.zeros((nb, nb - 1))
+    for j in range(1, nb):
+        q[:j, j - 1] = 1.0 / sqrt(j * (j + 1))
+        q[j, j - 1] = -j / sqrt(j * (j + 1))
+    return q
+
+
+def neutral_eig(m):
+    """Eigenpairs of M(k = 0) on the neutral subspace; the uniform mode is appended with eigenvalue +inf (G = 0)."""
+    nb = m.shape[0]
+    q = neutral_basis(nb)
+    ev, w = np.linalg.eigh(q.T @ m @ q)
+    return np.append(ev, np.inf), np.hstack([q @ w, np.full((nb, 1), 1.0 / sqrt(nb))])
+
+
+def green_k0(m, a):
+    """G = a (a + M(0))^-1 on the neutral subspace, zero on the uniform mode (no large penalty in the solve)."""
+    if m.shape[0] == 1:
+        return np.zeros((1, 1))
+    q = neutral_basis(m.shape[0])
+    return a * q @ np.linalg.inv(a * np.eye(q.shape[1]) + q.T @ m @ q) @ q.T
 
 
 def proto(name, coa=None):
@@ -166,8 +192,12 @@ def branch_model(avec, tau0, label, alat, beta, nk=14, ksro=0):
     sp_c1 = []
     sp_v = []
     for ik in range(ksp.shape[1]):
-        ev, u = np.linalg.eigh(msp[:, :, ik])
-        amin = max(amin, -ev.min())
+        if np.linalg.norm(ksp[:, ik]) < 1e-12:
+            ev, u = neutral_eig(msp[:, :, ik])
+        else:
+            ev, u = np.linalg.eigh(msp[:, :, ik])
+        if np.isfinite(ev).any():  # a one-site cell has no neutral mode at k = 0
+            amin = max(amin, -ev[np.isfinite(ev)].min())
         sp_ev.append(ev)
         sp_u.append(u[sites, :])
         ck = np.zeros((nb_sro, nb_sro), dtype=complex)
@@ -301,7 +331,10 @@ class BasisSupercell:
             ph = np.exp(-1j * (self.tau.T @ k))  # exp(-i k . tau_b)
             # M_tilde = diag(exp(i k.tau)) M diag(exp(-i k.tau))
             mtilde = (np.conj(ph)[:, None] * mb[:, :, ik]) * ph[None, :]
-            gtilde = a * np.linalg.inv(a * np.eye(self.nb) + mtilde)
+            if np.linalg.norm(k) < 1e-12:
+                gtilde = green_k0(mtilde, a)
+            else:
+                gtilde = a * np.linalg.inv(a * np.eye(self.nb) + mtilde)
             i1, i2, i3 = int(round(f[0, ik] * L)), int(round(f[1, ik] * L)), int(round(f[2, ik] * L))
             self.gsro_k[i1, i2, i3] = gtilde[np.ix_(self.sites, self.sites)]
 

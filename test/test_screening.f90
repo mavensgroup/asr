@@ -254,6 +254,48 @@ program test_screening
       call screen_structure_shells(st, alat, sn1, rvo, gro, wro, b0=3, b2=[4, 4, 4, 4, 4, 4], nk=10)
       call check_close(sum(gro) / 6.0_dp, sn1%g1, 1.0e-12_dp, 'NiAs c/a 1.6 inter-site shell: <G(R1_anion)> = G1')
     end block
+    ! k = 0.  The G = 0 term of M(k) is the same for every pair of basis sites, so at k = 0 only the neutral block
+    ! Q^T M(0) Q is defined (Q: an orthonormal basis of the vectors whose components sum to zero).  The neutral block does
+    ! not depend on eta.  It is the limit of the neutral block of M(k) for k -> 0.  The ordering mode of the c/a 1.6 anion
+    ! shell is v = (0, 0, 1, -1) / sqrt(2) at k = 0, so g_ord = a v^T Q (a + Q^T M(0) Q)^-1 Q^T v (solved here directly).
+    block
+      use asr_lapack, only: dgesv
+      complex(dp) :: m0a(4, 4, 1), m0b(4, 4, 1), mk1(4, 4, 1), mk2(4, 4, 1)
+      real(dp) :: q(4, 3), n0a(3, 3), n0b(3, 3), kz(3, 1), ks1(3, 1), ks2(3, 1), am(3, 3), qv(3), xs(3), d1, d2
+      integer :: ipiv(3), info, jq
+      q = 0.0_dp
+      do jq = 1, 3
+        q(1:jq, jq) = 1.0_dp / sqrt(real(jq * (jq + 1), dp)); q(jq + 1, jq) = -real(jq, dp) / sqrt(real(jq * (jq + 1), dp))
+      end do
+      kz = 0.0_dp
+      call coulomb_k_basis(st%avec * alat, st%tau * alat, kz, m0a, eta=0.35_dp, gamma_neutral=.true.)
+      call coulomb_k_basis(st%avec * alat, st%tau * alat, kz, m0b, eta=0.60_dp, gamma_neutral=.true.)
+      n0a = matmul(transpose(q), matmul(real(m0a(:, :, 1), dp), q))
+      n0b = matmul(transpose(q), matmul(real(m0b(:, :, 1), dp), q))
+      call check_close(maxval(abs(n0a - n0b)) / maxval(abs(n0a)), 0.0_dp, 1.0e-12_dp, &
+                       'NiAs M(0): neutral block independent of Ewald eta')
+      call check_close(maxval(abs(aimag(m0a))), 0.0_dp, 1.0e-12_dp, 'NiAs M(0) is real')
+      ks1(:, 1) = 1.0e-3_dp * [0.6_dp, -0.48_dp, 0.64_dp]; ks2 = 0.1_dp * ks1
+      call coulomb_k_basis(st%avec * alat, st%tau * alat, ks1, mk1, eta=0.35_dp)
+      call coulomb_k_basis(st%avec * alat, st%tau * alat, ks2, mk2, eta=0.35_dp)
+      d1 = maxval(abs(matmul(transpose(q), matmul(mk1(:, :, 1), q)) - n0a))
+      d2 = maxval(abs(matmul(transpose(q), matmul(mk2(:, :, 1), q)) - n0a))
+      print '(2x,a,2es10.2)', 'NiAs neutral block |N(k) - N(0)| at |k| = 1e-3, 1e-4 (1/Bohr):', d1, d2
+      ! Pairs of sites not related by inversion give terms linear in k, so the difference falls by 10 when |k| does.
+      call check(abs(d1 / d2 - 10.0_dp) < 0.05_dp .and. d1 < 1.0e-2_dp * maxval(abs(n0a)), &
+                 'NiAs M(k): neutral block is continuous at k = 0 (difference linear in |k|)')
+      qv = matmul(transpose(q), [0.0_dp, 0.0_dp, 1.0_dp, -1.0_dp] / sqrt(2.0_dp))
+      call coulomb_k_basis(st%avec * alat, st%tau * alat, kz, m0a, gamma_neutral=.true.)
+      am = matmul(transpose(q), matmul(real(m0a(:, :, 1), dp), q))
+      do jq = 1, 3; am(jq, jq) = am(jq, jq) + sn1%a; end do
+      xs = qv
+      call dgesv(3, 1, am, 3, ipiv, xs, 3, info)
+      call check(info == 0, 'NiAs k = 0 neutral solve')
+      print '(2x,a,es24.16,es10.2)', 'NiAs c/a 1.6 g_ord and |g_ord - direct solve|:', sn1%g_ord, &
+        abs(sn1%g_ord - sn1%a * dot_product(qv, xs))
+      call check_close(sn1%g_ord, sn1%a * dot_product(qv, xs), 1.0e-12_dp, &
+                       'NiAs c/a 1.6: g_ord is the k = 0 neutral mode Green function (direct solve)')
+    end block
 
     call prototype_structure('nias', st, msg, c_over_a=1.7_dp)
     call screen_structure(st, alat, 1.0_dp, sn2, msg, nk=10, sub_sro=2)
