@@ -66,6 +66,7 @@ the first line of each source file).
 | B2 FeCo (FM) moments | Fe 2.760, Co 1.768 μ\(_B\) (k-space) vs Elk LSDA 2.75 / ≈ 1.75 (2.856 Å); real-space recursion, depth 24: 2.745 / 1.716 |
 | Augmented-space recursion = exact configuration average | 10⁻¹⁴ |
 | Real-space augmented-space recursion = ordered k-space recursion | 10⁻¹⁴ |
+| Ordered hexagonal SCF = `method = "kspace"` (same Hamiltonian, \(n_k=40\)) | hcp Co, hcp Cu, NiAs, ferromagnetic MnSb: differences of the size of the cubic recursion error at the same settings (\(E_F\) within 2.7 mRy, charges within 0.007 e, moments within about 1 %); the charge error falls with the chain length; hcp − fcc energy of Cu +0.90 mRy (k space +0.87) |
 | Alloy SCF in the trivial-alloy limit = ordered SCF | `test_alloy_scf` (14 assertions) |
 | Energy-dependent exact KKR-ASA = same-model k-space KKR | ordered limit passed |
 | Sum rule: for \(E_F\) far above the bands \(M_0=1,3,5\) (s, p, d) | exact for Fe at 8 and 14 levels |
